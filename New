@@ -116,3 +116,60 @@ print(f"Customer {customer_id} Persona (Cosine Similarity): {persona_label}")
 
 persona_label = identify_persona(customer_id, similarity_method="jaccard")
 print(f"Customer {customer_id} Persona (Jaccard Similarity): {persona_label}")
+
+
+
+
+
+
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import SpectralClustering
+from sklearn.preprocessing import StandardScaler
+
+# Load your data
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Create a pivot table to summarize transaction frequencies per sector for each account
+sector_frequency = df.pivot_table(
+    index="ACCT",
+    columns="Sector",
+    values="TRAN_AMT",
+    aggfunc='count',
+    fill_value=0
+)
+
+# Normalize the data
+# It's a good practice to normalize the data when using cosine similarity
+scaler = StandardScaler()
+sector_frequency_scaled = scaler.fit_transform(sector_frequency)
+
+# Compute the cosine similarity matrix
+cosine_sim_matrix = cosine_similarity(sector_frequency_scaled)
+
+# Apply Spectral Clustering using the precomputed cosine similarity matrix
+# Adjust 'n_clusters' based on your specific needs or insights from the data
+n_clusters = 5
+spectral_clust = SpectralClustering(n_clusters=n_clusters, affinity='precomputed', random_state=0)
+clusters = spectral_clust.fit_predict(cosine_sim_matrix)
+
+# Add the cluster labels to the original data
+sector_frequency['Cluster'] = clusters
+
+# Explore the resulting clusters
+# This is a basic example of how to examine the clusters
+for i in range(n_clusters):
+    print(f"\nCluster {i} characteristics:")
+    cluster_members = sector_frequency[sector_frequency['Cluster'] == i]
+    print(cluster_members.mean())
+
+# If needed, save the results to a new CSV file
+# sector_frequency.to_csv("clustered_data.csv")
+
+# Example: Identifying the cluster for a specific customer
+customer_id = '12345'  # Replace with an actual ACCT number from your dataset
+if customer_id in sector_frequency.index:
+    customer_cluster = sector_frequency.loc[customer_id, 'Cluster']
+    print(f"\nCustomer {customer_id} is in Cluster: {customer_cluster}")
+else:
+    print("\nCustomer ID not found in dataset.")
