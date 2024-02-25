@@ -1,6 +1,87 @@
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score
+
+# Load your data
+data = pd.read_csv("transaction_data.csv")
+
+# Feature engineering
+data['date'] = pd.to_datetime(data['date'])
+data['month'] = data['date'].dt.month
+
+# Aggregate by customer
+customer_data = data.groupby('Acct').agg({
+    'tran_amt': ['sum', 'mean', 'count'], 
+    'Sector': 'first',  
+    'age_num': 'mean',
+    'month': 'count'
+})
+
+# Flatten multi-level columns 
+customer_data.columns = ['_'.join(col) for col in customer_data.columns]
+
+# Select features (adjust as needed)
+features = customer_data[['tran_amt_sum_Entertainment', 'tran_amt_sum_Travel', 
+                          'tran_amt_sum_Shopping', 'tran_amt_sum_Groceries', 
+                          'tran_amt_sum_Restaurant', 'age_num']]
+
+# Outlier Detection (Choose one technique)
+scaler = StandardScaler()
+
+# Technique 1: Z-Score Thresholding
+z_scores = np.abs(scaler.fit_transform(features))
+customer_data = customer_data[(z_scores < 3).all(axis=1)] 
+features = customer_data[['tran_amt_sum_Entertainment', 'tran_amt_sum_Travel', 
+                          'tran_amt_sum_Shopping', 'tran_amt_sum_Groceries', 
+                          'tran_amt_sum_Restaurant', 'age_num']]
+
+# Technique 2: IQR-based
+# Q1 = features.quantile(0.25)
+# Q3 = features.quantile(0.75)
+# IQR = Q3 - Q1
+# customer_data = customer_data[~((features < (Q1 - 1.5 * IQR)) | (features > (Q3 + 1.5 * IQR))).any(axis=1)]
+# ... (Re-select features if using IQR technique)
+
+
+# Data Scaling (after outlier handling)
+scaled_features = scaler.fit_transform(features) 
+
+# Clustering and Validation
+cluster_range = range(2, 8)
+results = []
+
+for num_clusters in cluster_range:
+    kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+    cluster_labels = kmeans.fit_predict(scaled_features)
+
+    silhouette_avg = silhouette_score(scaled_features, cluster_labels)  
+    results.append((num_clusters, silhouette_avg))
+
+best_result = max(results, key=lambda x: x[1])
+num_clusters = best_result[0]
+
+# Perform Clustering with the best number of clusters
+kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+clusters = kmeans.fit_predict(scaled_features)
+
+# Add cluster labels back to the customer data
+customer_data['Cluster'] = clusters
+print(customer_data)
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 # Load data
 data = pd.read_csv("transaction_data.csv")
