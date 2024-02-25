@@ -1,0 +1,54 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler, RobustScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.impute import SimpleImputer
+
+# Load dataset
+data = pd.read_csv('IF_MAIN5.csv')
+data['Date'] = pd.to_datetime(data['Date'])
+data['ACCT'] = data['ACCT'].astype(str)
+
+def preprocess_and_engineer(data):
+    transaction_data = data.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0).reset_index()
+    scaler = RobustScaler()
+    transaction_features = scaler.fit_transform(transaction_data.drop('ACCT', axis=1))
+    user_data = data[['ACCT', 'AGE_NUM', 'JOB_TITLE']].drop_duplicates('ACCT').fillna({'JOB_TITLE': 'Unknown'})
+    preprocessor = ColumnTransformer(transformers=[
+        ('num', StandardScaler(), ['AGE_NUM']),
+        ('cat', OneHotEncoder(handle_unknown='ignore'), ['JOB_TITLE'])
+    ])
+    user_data_preprocessed = preprocessor.fit_transform(user_data.drop(['ACCT'], axis=1))
+    combined_features = np.hstack([transaction_features, user_data_preprocessed])
+    imputer = SimpleImputer(strategy='median')
+    combined_features_imputed = imputer.fit_transform(combined_features)
+    return combined_features_imputed, transaction_data['ACCT'].values
+
+combined_features_imputed, acct_ids = preprocess_and_engineer(data)
+
+pca = PCA(n_components=0.9)
+reduced_features = pca.fit_transform(combined_features_imputed)
+
+def find_optimal_clusters(features):
+    range_n_clusters = list(range(2, 11))
+    silhouette_scores = []
+    for n_clusters in range_n_clusters:
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(features)
+        silhouette_avg = silhouette_score(features, cluster_labels)
+        silhouette_scores.append(silhouette_avg)
+        print(f"Clusters: {n_clusters}, Silhouette Score: {silhouette_avg:.4f}")
+    optimal_clusters = range_n_clusters[silhouette_scores.index(max(silhouette_scores))]
+    print(f"Optimal number of clusters (KMeans): {optimal_clusters}")
+    return optimal_clusters
+
+optimal_clusters = find_optimal_clusters(reduced_features)
+
+kmeans = KMeans(n_clusters=optimal_clusters, random_state=42, n_init=10)
+clusters = kmeans.fit_predict(reduced_features)
+
+persona_df = pd.DataFrame({'ACCT': acct_ids, 'Cluster': clusters})
+print(persona_df.head())
