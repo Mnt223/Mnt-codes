@@ -1,0 +1,49 @@
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import svds
+
+# Read the data from the CSV file
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Create a pivot table to get transaction frequencies per sector
+sector_frequency = df.pivot_table(
+    index = "ACCT",
+    columns = "Sector",
+    values = "TRAN_AMT",  
+    aggfunc = 'count', 
+    fill_value = 0       
+)
+
+# Function for Cosine Similarity
+def calculate_cosine_similarity(data):
+    similarity_matrix = cosine_similarity(data)
+    return similarity_matrix
+
+# Function for Jaccard similarity 
+def calculate_jaccard_similarity(data):
+    data_matrix = csr_matrix(data)  # Convert to a sparse matrix for efficiency
+    similarity_matrix = 1 - svds(data_matrix, k=10)[1]  # Efficient for large datasets
+    return similarity_matrix
+
+# Define a function to identify the dominant persona label for a customer
+def identify_persona(customer_id, similarity_method="cosine"):
+    if similarity_method == 'cosine':
+        similarity_matrix = calculate_cosine_similarity(sector_frequency)
+    elif similarity_method == 'jaccard':
+        similarity_matrix = calculate_jaccard_similarity(sector_frequency)
+    else:
+        raise ValueError("Invalid similarity method")
+
+    similarities = similarity_matrix[sector_frequency.index == customer_id].iloc[0]
+    most_similar_customer = sector_frequency.index[similarities.idxmax()]
+    dominant_sector = sector_frequency.loc[most_similar_customer].idxmax() 
+    return dominant_sector
+
+# Example usage (choose your preferred similarity method)
+customer_id = "12345" 
+persona_label = identify_persona(customer_id, similarity_method="cosine")
+print(f"Customer {customer_id} Persona (Cosine Similarity): {persona_label}") 
+
+persona_label = identify_persona(customer_id, similarity_method="jaccard")
+print(f"Customer {customer_id} Persona (Jaccard Similarity): {persona_label}") 
