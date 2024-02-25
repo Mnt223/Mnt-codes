@@ -52,3 +52,141 @@ clusters = kmeans.fit_predict(reduced_features)
 
 persona_df = pd.DataFrame({'ACCT': acct_ids, 'Cluster': clusters})
 print(persona_df.head())
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler, RobustScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.impute import SimpleImputer
+
+# Load dataset
+data = pd.read_csv('IF_MAIN5.csv')
+data['Date'] = pd.to_datetime(data['Date'])
+data['ACCT'] = data['ACCT'].astype(str)
+
+def preprocess_and_engineer(data):
+    # Aggregate transaction data by ACCT and Sector
+    transaction_data = data.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+    # RobustScaler for transaction data
+    scaler = RobustScaler()
+    transaction_features = scaler.fit_transform(transaction_data)
+
+    # Handle user demographics
+    user_data = data[['ACCT', 'AGE_NUM', 'JOB_TITLE']].drop_duplicates('ACCT').fillna({'JOB_TITLE': 'Unknown'})
+
+    # One-hot encode 'JOB_TITLE' and scale 'AGE_NUM'
+    column_trans = ColumnTransformer(
+        [('num', StandardScaler(), ['AGE_NUM']),
+         ('cat', OneHotEncoder(handle_unknown='ignore'), ['JOB_TITLE'])],
+        remainder='drop'
+    )
+    user_data_transformed = column_trans.fit_transform(user_data)
+
+    # Ensuring that user_data_transformed is 2D
+    if user_data_transformed.ndim == 1:
+        user_data_transformed = user_data_transformed.reshape(-1, 1)
+
+    # Ensuring transaction_features is 2D
+    if transaction_features.ndim == 1:
+        transaction_features = transaction_features.reshape(-1, 1)
+
+    # Combine transaction and user features, ensuring they have the same number of rows
+    combined_features = np.hstack((transaction_features, user_data_transformed))
+
+    # Impute missing values
+    imputer = SimpleImputer(strategy='median')
+    combined_features_imputed = imputer.fit_transform(combined_features)
+
+    return combined_features_imputed, transaction_data.index.values
+
+combined_features_imputed, acct_ids = preprocess_and_engineer(data)
+
+# Apply PCA for dimensionality reduction (optional)
+pca = PCA(n_components=0.9)
+reduced_features = pca.fit_transform(combined_features_imputed)
+
+# Determine the optimal number of clusters using silhouette scores
+optimal_clusters = find_optimal_clusters(reduced_features)
+
+# Apply KMeans with the Optimal Number of Clusters
+kmeans = KMeans(n_clusters=optimal_clusters, random_state=42, n_init=10)
+clusters = kmeans.fit_predict(reduced_features)
+
+# Creating a DataFrame with ACCT and assigned cluster for analysis
+persona_df = pd.DataFrame({'ACCT': acct_ids, 'Cluster': clusters})
+print(persona_df.head())
+
+def find_optimal_clusters(features):
+    range_n_clusters = list(range(2, 11))
+    silhouette_scores = []
+    for n_clusters in range_n_clusters:
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(features)
+        silhouette_avg = silhouette_score(features, cluster_labels)
+        silhouette_scores.append(silhouette_avg)
+        print(f"Clusters: {n_clusters}, Silhouette Score: {silhouette_avg:.4f}")
+    optimal_clusters = range_n_clusters[silhouette_scores.index(max(silhouette_scores))]
+    print(f"Optimal number of clusters (KMeans): {optimal_clusters}")
+    return optimal_clusters
+
+
+
+
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import svds
+
+# Read the data from the CSV file
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Create a pivot table to get transaction frequencies per sector
+sector_frequency = df.pivot_table(
+    index = "ACCT",
+    columns = "Sector",
+    values = "TRAN_AMT",  
+    aggfunc = 'count', 
+    fill_value = 0       
+)
+
+# Function for Cosine Similarity
+def calculate_cosine_similarity(data):
+    similarity_matrix = cosine_similarity(data)
+    return similarity_matrix
+
+# Function for Jaccard similarity 
+def calculate_jaccard_similarity(data):
+    data_matrix = csr_matrix(data)  # Convert to a sparse matrix for efficiency
+    similarity_matrix = 1 - svds(data_matrix, k=10)[1]  # Efficient for large datasets
+    return similarity_matrix
+
+# Define a function to identify the dominant persona label for a customer
+def identify_persona(customer_id, similarity_method="cosine"):
+    if similarity_method == 'cosine':
+        similarity_matrix = calculate_cosine_similarity(sector_frequency)
+    elif similarity_method == 'jaccard':
+        similarity_matrix = calculate_jaccard_similarity(sector_frequency)
+    else:
+        raise ValueError("Invalid similarity method")
+
+    similarities = similarity_matrix[sector_frequency.index == customer_id].iloc[0]
+    most_similar_customer = sector_frequency.index[similarities.idxmax()]
+    dominant_sector = sector_frequency.loc[most_similar_customer].idxmax() 
+    return dominant_sector
+
+# Example usage (choose your preferred similarity method)
+customer_id = "12345" 
+persona_label = identify_persona(customer_id, similarity_method="cosine")
+print(f"Customer {customer_id} Persona (Cosine Similarity): {persona_label}") 
+
+persona_label = identify_persona(customer_id, similarity_method="jaccard")
+print(f"Customer {customer_id} Persona (Jaccard Similarity): {persona_label}") 
