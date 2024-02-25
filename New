@@ -1,6 +1,40 @@
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+
+# Load data
+data = pd.read_csv("transaction_data.csv")
+
+# Feature engineering
+data['date'] = pd.to_datetime(data['date']) 
+data['month'] = data['date'].dt.month  
+
+# Aggregate by customer
+customer_data = data.groupby('Acct').agg({
+    'tran_amt': ['sum', 'mean', 'count'], 
+    'Sector': 'first',  # Take the first occurring sector
+    'age_num': 'mean',
+    'month': 'count'  # Count transactions per month 
+})
+
+# Flatten multi-level columns 
+customer_data.columns = ['_'.join(col) for col in customer_data.columns]
+
+# Select features (adjust as needed)
+features = customer_data[['tran_amt_sum_Entertainment', 'tran_amt_sum_Travel', 
+                          'tran_amt_sum_Shopping', 'tran_amt_sum_Groceries', 
+                          'tran_amt_sum_Restaurant', 'age_num']]
+
+# ... (Rest of the code: scaling, clustering, validation - same as before)
+
+
+
+
+
+
+import pandas as pd
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 
 # Load data
