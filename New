@@ -173,3 +173,64 @@ if customer_id in sector_frequency.index:
     print(f"\nCustomer {customer_id} is in Cluster: {customer_cluster}")
 else:
     print("\nCustomer ID not found in dataset.")
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import SpectralClustering
+from sklearn.preprocessing import StandardScaler
+
+# Load your data
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Initial data cleaning to ensure no 'inf' or 'NaN' values that could disrupt the process
+df.replace([np.inf, -np.inf], np.nan, inplace=True)  # Replace inf with NaN
+df.fillna(0, inplace=True)  # Fill NaN values with 0
+
+# Create a pivot table to summarize transaction frequencies per sector for each account
+sector_frequency = df.pivot_table(
+    index="ACCT",
+    columns="Sector",
+    values="TRAN_AMT",
+    aggfunc='count',
+    fill_value=0
+)
+
+# Check and handle columns with no variance, which can cause issues during normalization
+variance = sector_frequency.var()
+columns_with_no_variance = variance[variance == 0].index
+if not columns_with_no_variance.empty:
+    sector_frequency.drop(columns=columns_with_no_variance, axis=1, inplace=True)
+
+# Normalize the data
+scaler = StandardScaler()
+sector_frequency_scaled = scaler.fit_transform(sector_frequency)
+
+# Compute the cosine similarity matrix
+cosine_sim_matrix = cosine_similarity(sector_frequency_scaled)
+
+# Apply Spectral Clustering using the precomputed cosine similarity matrix
+n_clusters = 5  # This is an example; adjust based on your data analysis
+spectral_clust = SpectralClustering(n_clusters=n_clusters, affinity='precomputed', random_state=0)
+clusters = spectral_clust.fit_predict(cosine_sim_matrix)
+
+# Add the cluster labels to the original DataFrame
+sector_frequency['Cluster'] = clusters
+
+# Example: Identifying the cluster for a specific customer
+customer_id = '12345'  # Replace with an actual ACCT number from your dataset
+if customer_id in sector_frequency.index:
+    customer_cluster = sector_frequency.loc[customer_id, 'Cluster']
+    print(f"\nCustomer {customer_id} is in Cluster: {customer_cluster}")
+else:
+    print("\nCustomer ID not found in dataset.")
+
+# Optionally, explore the clusters
+# Here, you can print out the mean transaction frequency per sector for each cluster or any other metric of interest
+for i in range(n_clusters):
+    print(f"\nCluster {i} characteristics:")
+    cluster_members = sector_frequency[sector_frequency['Cluster'] == i]
+    print(cluster_members.mean().sort_values(ascending=False).head())  # Top sectors for each cluster
