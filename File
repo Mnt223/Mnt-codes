@@ -1,4 +1,62 @@
 import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+# Read the data from the CSV file
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Convert 'TRAN_DATE' to datetime and categorize transactions into 'Weekday' or 'Weekend'
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Create a pivot table to get transaction frequencies per sector and day type
+sector_frequency_by_day = df.pivot_table(
+    index="ACCT",
+    columns=["Sector", "Day_Type"],
+    values="TRAN_AMT",
+    aggfunc='count',
+    fill_value=0
+)
+
+# Function for Cosine Similarity
+def calculate_cosine_similarity(data):
+    similarity_matrix = cosine_similarity(data)
+    return similarity_matrix
+
+# Define a function to identify the dominant persona label for a customer considering day type
+def identify_persona(customer_id, day_type, similarity_method="cosine"):
+    # Ensure customer_id is correctly formatted for indexing
+    customer_id = int(customer_id) if str(customer_id).isdigit() else customer_id
+    
+    if similarity_method == 'cosine':
+        # Filter the pivot table for the specific day_type ('Weekday' or 'Weekend')
+        filtered_data = sector_frequency_by_day.xs(day_type, level='Day_Type', axis=1)
+        similarity_matrix = calculate_cosine_similarity(filtered_data.values)
+    else:
+        raise ValueError("Invalid similarity method")
+    
+    # Convert filtered_data.index (ACCT) to a list and find the index of the customer_id
+    customer_index = list(filtered_data.index).index(customer_id)
+    
+    # Get similarity scores for the specified customer_id
+    similarities = similarity_matrix[customer_index]
+    
+    # Convert similarities to a Series to utilize idxmax()
+    similarities_series = pd.Series(similarities, index=filtered_data.index)
+    
+    # Find the most similar customer
+    most_similar_customer = similarities_series.idxmax()
+    
+    # Determine the dominant sector for the most similar customer
+    dominant_sector = filtered_data.loc[[most_similar_customer]].idxmax(axis=1).values[0]
+    
+    return dominant_sector
+
+# Example usage
+customer_id = "12345"  # Ensure this matches an ACCT value in your CSV
+day_type = "Weekend"  # Choose 'Weekday' or 'Weekend'
+persona_label = identify_persona(customer_id, day_type)
+print(f"Customer {customer_id} Persona (Cosine Similarity) for {day_type}: {persona_label}")import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
