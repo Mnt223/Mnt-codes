@@ -1,5 +1,56 @@
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+# Step 1: Load and pivot the transaction data
+df = pd.read_csv('path/to/your/transactions.csv')  # Make sure to adjust the path to your CSV file
+df_pivoted = df.pivot_table(index='CustomerID', columns='Sector', values='Amount', aggfunc='sum', fill_value=0)
+
+# Step 2: Compute the cosine similarity matrix
+similarity_matrix = cosine_similarity(df_pivoted)
+np.fill_diagonal(similarity_matrix, 0)  # Ignore self-similarity by setting diagonal to 0
+
+# Convert the similarity matrix to a DataFrame for easier manipulation
+similarity_df = pd.DataFrame(similarity_matrix, index=df_pivoted.index, columns=df_pivoted.index)
+
+# Step 3: Define a function to infer persona based on the most similar customers
+def infer_persona(customer_id, top_n=3):
+    # Get top N similar customers for the target customer
+    top_neighbors = similarity_df.loc[customer_id].sort_values(ascending=False).head(top_n).index
+    
+    # Aggregate the spending of these neighbors to infer dominant sector
+    neighbors_spending = df_pivoted.loc[top_neighbors].sum().idxmax()
+    
+    # Mapping from sector to persona (customize as needed)
+    sector_to_persona = {
+        'Entertainment': 'Entertainment Enthusiast',
+        'Shopping': 'Shopping Addict',
+        'Travel': 'Travel Buff',
+        'Restaurant': 'Restaurant Regular',
+        'Groceries': 'Grocery Guru'
+    }
+    
+    return sector_to_persona.get(neighbors_spending, 'Other')
+
+# Example usage
+# Replace 'some_customer_id' with an actual CustomerID from your dataset
+some_customer_id = df_pivoted.index[0]  # Example: Use the first CustomerID in the pivoted DataFrame
+persona = infer_persona(some_customer_id)
+print(f"Customer {some_customer_id} inferred persona: {persona}")
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Read the data from the CSV file
 df = pd.read_csv("IF_MAIN6.csv")
