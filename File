@@ -1,5 +1,97 @@
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+
+# Read the data from the CSV file
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Convert 'TRAN_DATE' to datetime and categorize transactions into 'Weekday' or 'Weekend'
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Create a pivot table to get transaction frequencies per sector
+sector_frequency = df.pivot_table(
+    index="ACCT",
+    columns="Sector",
+    values="TRAN_AMT",
+    aggfunc='count',
+    fill_value=0
+)
+
+# Create pivot tables for weekday and weekend transaction frequencies per sector
+sector_frequency_weekday = df[df['Day_Type'] == 'Weekday'].pivot_table(
+    index="ACCT",
+    columns="Sector",
+    values="TRAN_AMT",
+    aggfunc='count',
+    fill_value=0
+)
+
+sector_frequency_weekend = df[df['Day_Type'] == 'Weekend'].pivot_table(
+    index="ACCT",
+    columns="Sector",
+    values="TRAN_AMT",
+    aggfunc='count',
+    fill_value=0
+)
+
+# Function for Cosine Similarity
+def calculate_cosine_similarity(data):
+    similarity_matrix = cosine_similarity(data)
+    return similarity_matrix
+
+# Function to find the dominant sector based on cosine similarity
+def find_dominant_sector(data, customer_index):
+    similarities = calculate_cosine_similarity(data.values)
+    similarities_series = pd.Series(similarities[customer_index], index=data.index)
+    most_similar_customer = similarities_series.idxmax()
+    dominant_sector = data.loc[[most_similar_customer]].idxmax(axis=1).values[0]
+    return dominant_sector
+
+# Function to find the sector with the highest transaction frequency
+def find_sector_with_highest_transactions(data, customer_index):
+    return data.iloc[customer_index].idxmax()
+
+# Define a function to identify the dominant persona labels for a customer
+def identify_persona_and_transactions(customer_id):
+    customer_id = int(customer_id) if str(customer_id).isdigit() else customer_id
+    customer_index = list(sector_frequency.index).index(customer_id)
+
+    # Overall dominant sector based on cosine similarity
+    dominant_sector_overall = find_dominant_sector(sector_frequency, customer_index)
+    # Sector with the highest transaction frequency overall
+    highest_transactions_overall = find_sector_with_highest_transactions(sector_frequency, customer_index)
+
+    # Weekday dominant sector based on cosine similarity
+    dominant_sector_weekday = find_dominant_sector(sector_frequency_weekday, customer_index)
+    # Weekday sector with the highest transaction frequency
+    highest_transactions_weekday = find_sector_with_highest_transactions(sector_frequency_weekday, customer_index)
+
+    # Weekend dominant sector based on cosine similarity
+    dominant_sector_weekend = find_dominant_sector(sector_frequency_weekend, customer_index)
+    # Weekend sector with the highest transaction frequency
+    highest_transactions_weekend = find_sector_with_highest_transactions(sector_frequency_weekend, customer_index)
+
+    return (dominant_sector_overall, highest_transactions_overall, 
+            dominant_sector_weekday, highest_transactions_weekday, 
+            dominant_sector_weekend, highest_transactions_weekend)
+
+# Example usage
+customer_id = "12345"  # Ensure this matches an ACCT value in your CSV
+results = identify_persona_and_transactions(customer_id)
+print(f"Customer {customer_id} Overall Dominant Sector (Cosine Similarity): {results[0]}, Highest Transactions: {results[1]}")
+print(f"Customer {customer_id} Weekday Dominant Sector (Cosine Similarity): {results[2]}, Highest Transactions: {results[3]}")
+print(f"Customer {customer_id} Weekend Dominant Sector (Cosine Similarity): {results[4]}, Highest Transactions: {results[5]}")
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
 # Step 1: Load and pivot the transaction data
