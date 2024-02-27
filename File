@@ -1,3 +1,59 @@
+/* Assuming your dataset is named 'customer_data'  */
+
+data customer_transformed;
+   set customer_data;
+   by customer_id content_id product outcome_date; /* Sort for restructuring */
+
+   retain pending_date pending_time sent_date sent_time 
+          impression_date impression_time accepted_date accepted_time; 
+   /* Retain values across rows */
+
+   if first.outcome_date then do; /* Initialize values for new groups */
+       pending_date = ' ';
+       pending_time = ' ';
+       sent_date = ' ';
+       sent_time = ' ';
+       impression_date = ' ';
+       impression_time = ' ';
+       accepted_date = ' ';
+       accepted_time = ' ';
+   end;
+
+   /* Logic to assign values */
+   if outcome = 'pending' then do;
+       pending_date = outcome_date;
+       pending_time = outcome_time;
+   end; 
+   else if outcome = 'sent' then do;
+       sent_date = outcome_date;
+       sent_time = outcome_time;
+   end;
+   else if outcome = 'impression' then do;
+       impression_date = outcome_date;
+       impression_time = outcome_time;
+   end;
+   else if outcome = 'accepted' then do;
+       accepted_date = outcome_date;
+       accepted_time = outcome_time;
+   end;
+
+   output; /* Output every row with updated values */
+   keep customer_id content_id product pending pending_date pending_time 
+        sent sent_date sent_time impression impression_date impression_time
+        accepted accepted_date accepted_time; 
+run;
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 
