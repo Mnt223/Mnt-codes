@@ -1,3 +1,72 @@
+# Import necessary libraries
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Function to calculate cosine similarity
+def calculate_cosine_similarity(data):
+    similarity_matrix = cosine_similarity(data)
+    return similarity_matrix
+
+# Function to find the top 5 sectors based on cosine similarity
+def find_top_sectors(data, customer_index, n=5):
+    similarities = calculate_cosine_similarity(data.values)
+    similarities_series = pd.Series(similarities[customer_index], index=data.index)
+    sorted_similarities = similarities_series.sort_values(ascending=False)
+    top_sectors = []
+    for similar_customer in sorted_similarities.index[:n]:
+        top_sector = data.loc[similar_customer].idxmax()
+        if top_sector not in top_sectors:
+            top_sectors.append(top_sector)
+        if len(top_sectors) == n:
+            break
+    return top_sectors
+
+# Load data
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Preprocessing
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Pivot tables for sector frequencies
+sector_frequency = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_frequency_weekday = df[df['Day_Type'] == 'Weekday'].pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_frequency_weekend = df[df['Day_Type'] == 'Weekend'].pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+
+# Initialize an empty DataFrame to store results
+results_df = pd.DataFrame(columns=['ACCT', 'Overall Top Sectors', 'Weekday Top Sectors', 'Weekend Top Sectors'])
+
+# Iterate over each customer
+for customer_id in sector_frequency.index:
+    customer_index = list(sector_frequency.index).index(customer_id)
+    overall_top_sectors = find_top_sectors(sector_frequency, customer_index)
+    weekday_top_sectors = find_top_sectors(sector_frequency_weekday, customer_index)
+    weekend_top_sectors = find_top_sectors(sector_frequency_weekend, customer_index)
+    
+    # Create a temporary DataFrame for the current row
+    temp_df = pd.DataFrame([{
+        'ACCT': customer_id,
+        'Overall Top Sectors': overall_top_sectors,
+        'Weekday Top Sectors': weekday_top_sectors,
+        'Weekend Top Sectors': weekend_top_sectors
+    }])
+    
+    # Use concat instead of append
+    results_df = pd.concat([results_df, temp_df], ignore_index=True)
+
+# Save the results to a CSV file
+results_df.to_csv("Customer_Top_Sectors.csv", index=False)
+
+print("File saved: Customer_Top_Sectors.csv")
+
+
+
+
+
+
+
+
+
 import requests
 from bs4 import BeautifulSoup
 import time
