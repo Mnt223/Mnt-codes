@@ -1,4 +1,63 @@
 import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import MinMaxScaler
+
+# Assuming all previous steps are the same and focusing on generating output for all customers
+
+# Load and preprocess the data
+df = pd.read_csv("IF_MAIN6.csv")
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+
+# Create pivot tables for transaction metrics
+sector_frequency = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_sum = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
+sector_avg = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='mean', fill_value=0)
+
+# Normalize, compute cosine similarity, and combine as before
+scaler = MinMaxScaler()
+frequency_scaled, sum_scaled, avg_scaled = [scaler.fit_transform(matrix) for matrix in [sector_frequency, sector_sum, sector_avg]]
+similarity_matrices = [cosine_similarity(matrix) for matrix in [frequency_scaled, sum_scaled, avg_scaled]]
+combined_similarity = sum(similarity_matrices) / len(similarity_matrices)
+
+# Define the function to suggest dominant sectors based on similar customers
+def suggest_dominant_sectors(combined_similarity_matrix, customer_index, top_n=5):
+    sorted_indices = combined_similarity_matrix[customer_index].argsort()[::-1][1:top_n+1]  # Exclude self
+    similar_customer_ids = sector_frequency.index[sorted_indices].tolist()
+    # Aggregate sector data for similar customers
+    similar_sector_frequency = sector_frequency.loc[similar_customer_ids].sum().rank(ascending=False).sort_values().index[:3].tolist()
+    similar_sector_sum = sector_sum.loc[similar_customer_ids].sum().rank(ascending=False).sort_values().index[:3].tolist()
+    similar_sector_avg = sector_avg.loc[similar_customer_ids].sum().rank(ascending=False).sort_values().index[:3].tolist()
+    return similar_sector_frequency, similar_sector_sum, similar_sector_avg
+
+# Prepare a DataFrame to store the results
+results_df = pd.DataFrame(columns=['ACCT', 'Top_Frequency_Sectors', 'Top_Sum_Sectors', 'Top_Average_Sectors'])
+
+# Iterate over all customers
+for customer_id in sector_frequency.index:
+    customer_index = sector_frequency.index.get_loc(customer_id)
+    freq_sectors, sum_sectors, avg_sectors = suggest_dominant_sectors(combined_similarity, customer_index)
+    results_df = results_df.append({
+        'ACCT': customer_id, 
+        'Top_Frequency_Sectors': ', '.join(freq_sectors),
+        'Top_Sum_Sectors': ', '.join(sum_sectors),
+        'Top_Average_Sectors': ', '.join(avg_sectors)
+    }, ignore_index=True)
+
+# Save the results to a CSV file
+results_df.to_csv("All_Customers_Dominant_Sectors.csv", index=False)
+
+print("Dominant sectors for all customers have been saved to All_Customers_Dominant_Sectors.csv")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
 # Load the data
