@@ -12,6 +12,81 @@ df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 
 sector_frequency = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
 sector_amounts = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
 
+# Create separate pivot tables for weekday and weekend
+sector_frequency_weekday = df[df['Day_Type'] == 'Weekday'].pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_amounts_weekday = df[df['Day_Type'] == 'Weekday'].pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
+
+sector_frequency_weekend = df[df['Day_Type'] == 'Weekend'].pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_amounts_weekend = df[df['Day_Type'] == 'Weekend'].pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
+
+# Normalize the frequency and amounts to ensure they are on the same scale
+scaler = MinMaxScaler()
+# Overall
+sector_frequency_scaled = pd.DataFrame(scaler.fit_transform(sector_frequency), index=sector_frequency.index, columns=sector_frequency.columns)
+sector_amounts_scaled = pd.DataFrame(scaler.fit_transform(sector_amounts), index=sector_amounts.index, columns=sector_amounts.columns)
+
+# Weekday
+sector_frequency_weekday_scaled = pd.DataFrame(scaler.fit_transform(sector_frequency_weekday), index=sector_frequency_weekday.index, columns=sector_frequency_weekday.columns)
+sector_amounts_weekday_scaled = pd.DataFrame(scaler.fit_transform(sector_amounts_weekday), index=sector_amounts_weekday.index, columns=sector_amounts_weekday.columns)
+
+# Weekend
+sector_frequency_weekend_scaled = pd.DataFrame(scaler.fit_transform(sector_frequency_weekend), index=sector_frequency_weekend.index, columns=sector_frequency_weekend.columns)
+sector_amounts_weekend_scaled = pd.DataFrame(scaler.fit_transform(sector_amounts_weekend), index=sector_amounts_weekend.index, columns=sector_amounts_weekend.columns)
+
+# Define a function to rank sectors within a DataFrame row
+def rank_sectors(row):
+    return row.rank(ascending=False, method='min')
+
+# Apply the ranking function to each DataFrame
+ranked_frequency = sector_frequency_scaled.apply(rank_sectors, axis=1)
+ranked_amounts = sector_amounts_scaled.apply(rank_sectors, axis=1)
+ranked_composite = ((sector_frequency_scaled + sector_amounts_scaled) / 2).apply(rank_sectors, axis=1)
+
+ranked_frequency_weekday = sector_frequency_weekday_scaled.apply(rank_sectors, axis=1)
+ranked_amounts_weekday = sector_amounts_weekday_scaled.apply(rank_sectors, axis=1)
+
+ranked_frequency_weekend = sector_frequency_weekend_scaled.apply(rank_sectors, axis=1)
+ranked_amounts_weekend = sector_amounts_weekend_scaled.apply(rank_sectors, axis=1)
+
+# Combine the rankings into a single DataFrame for easier export
+combined_rankings = pd.concat([
+    ranked_frequency.add_suffix('_FreqRank'), 
+    ranked_amounts.add_suffix('_AmtRank'), 
+    ranked_composite.add_suffix('_CompRank'),
+    ranked_frequency_weekday.add_suffix('_FreqRank_Weekday'), 
+    ranked_amounts_weekday.add_suffix('_AmtRank_Weekday'),
+    ranked_frequency_weekend.add_suffix('_FreqRank_Weekend'), 
+    ranked_amounts_weekend.add_suffix('_AmtRank_Weekend'),
+], axis=1)
+
+# Save the combined rankings to a CSV file
+combined_rankings.to_csv("Customer_Sector_Rankings_Inclusive.csv")
+
+print("Rankings saved to Customer_Sector_Rankings_Inclusive.csv")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+
+# Load the data
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Convert 'TRAN_DATE' to datetime and categorize transactions into 'Weekday' or 'Weekend'
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Create pivot tables for transaction frequencies and total amounts per sector
+sector_frequency = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_amounts = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
+
 # Normalize the frequency and amounts to ensure they are on the same scale
 scaler = MinMaxScaler()
 sector_frequency_scaled = pd.DataFrame(scaler.fit_transform(sector_frequency), index=sector_frequency.index, columns=sector_frequency.columns)
