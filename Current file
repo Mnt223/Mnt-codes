@@ -1,0 +1,132 @@
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+
+# Load the data
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Convert 'TRAN_DATE' to datetime and categorize transactions into 'Weekday' or 'Weekend'
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Create pivot tables for transaction frequencies and total amounts per sector
+sector_frequency = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_amounts = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
+
+# Normalize the frequency and amounts to ensure they are on the same scale
+scaler = MinMaxScaler()
+sector_frequency_scaled = pd.DataFrame(scaler.fit_transform(sector_frequency), index=sector_frequency.index, columns=sector_frequency.columns)
+sector_amounts_scaled = pd.DataFrame(scaler.fit_transform(sector_amounts), index=sector_amounts.index, columns=sector_amounts.columns)
+
+# Calculate a composite score by averaging the scaled frequency and amount scores
+sector_composite = (sector_frequency_scaled + sector_amounts_scaled) / 2
+
+# Define a function to rank sectors within a DataFrame row
+def rank_sectors(row):
+    return row.rank(ascending=False, method='min')
+
+# Apply the ranking function to each DataFrame
+ranked_frequency = sector_frequency_scaled.apply(rank_sectors, axis=1)
+ranked_amounts = sector_amounts_scaled.apply(rank_sectors, axis=1)
+ranked_composite = sector_composite.apply(rank_sectors, axis=1)
+
+# Combine the rankings into a single DataFrame for easier export
+combined_rankings = pd.concat([ranked_frequency.add_suffix('_FreqRank'), 
+                               ranked_amounts.add_suffix('_AmtRank'), 
+                               ranked_composite.add_suffix('_CompRank')], axis=1)
+
+# Save the combined rankings to a CSV file
+combined_rankings.to_csv("Customer_Sector_Rankings.csv")
+
+print("Rankings saved to Customer_Sector_Rankings.csv")
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+
+# Load the data
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Convert 'TRAN_DATE' to datetime and categorize transactions into 'Weekday' or 'Weekend'
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Create pivot tables for transaction frequencies and total amounts per sector
+sector_frequency = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_amounts = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
+
+# Normalize the frequency and amounts to ensure they are on the same scale
+scaler = MinMaxScaler()
+sector_frequency_scaled = pd.DataFrame(scaler.fit_transform(sector_frequency), index=sector_frequency.index, columns=sector_frequency.columns)
+sector_amounts_scaled = pd.DataFrame(scaler.fit_transform(sector_amounts), index=sector_amounts.index, columns=sector_amounts.columns)
+
+# Calculate a composite score by averaging the scaled frequency and amount scores
+sector_composite = (sector_frequency_scaled + sector_amounts_scaled) / 2
+
+# Define a function to rank sectors within a DataFrame row
+def rank_sectors(row):
+    return row.rank(ascending=False, method='min')
+
+# Apply the ranking function to each DataFrame
+ranked_frequency = sector_frequency_scaled.apply(rank_sectors, axis=1)
+ranked_amounts = sector_amounts_scaled.apply(rank_sectors, axis=1)
+ranked_composite = sector_composite.apply(rank_sectors, axis=1)
+
+# Example: Print the rankings for a specific customer
+customer_id = '12345'  # Example customer ID, adjust to your dataset
+if customer_id in ranked_frequency.index:
+    print(f"Frequency Rankings for Customer {customer_id}:\n{ranked_frequency.loc[customer_id]}")
+    print(f"Amount Rankings for Customer {customer_id}:\n{ranked_amounts.loc[customer_id]}")
+    print(f"Composite Score Rankings for Customer {customer_id}:\n{ranked_composite.loc[customer_id]}")
+else:
+    print("Customer ID not found in dataset.")
+
+
+
+
+
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Read the data from the CSV file
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Convert 'TRAN_DATE' to datetime and categorize transactions into 'Weekday' or 'Weekend'
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Create a pivot table to get transaction frequencies and total amounts per sector
+sector_frequency = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_amounts = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
+
+# Combine frequency and amount for a composite score
+# Adjust the weighting as necessary to balance frequency vs. amount importance
+sector_composite = (sector_frequency + sector_amounts) / 2
+
+# Function for Cosine Similarity (for composite scores)
+def calculate_cosine_similarity(data):
+    similarity_matrix = cosine_similarity(data)
+    return similarity_matrix
+
+# Function to find the dominant sector based on highest value
+def find_dominant_sector(data):
+    return data.idxmax(axis=1)
+
+# Prepare results DataFrame
+results = pd.DataFrame(index=sector_frequency.index)
+
+# Find dominant sectors based on frequency, amount, and composite score
+results['Dominant_Frequency'] = find_dominant_sector(sector_frequency)
+results['Dominant_Amount'] = find_dominant_sector(sector_amounts)
+results['Dominant_Composite'] = find_dominant_sector(sector_composite)
+
+# Print or save results to CSV
+print(results.head())  # For quick inspection
+results.to_csv("Dominant_Sectors_Analysis.csv")
+
+print("Analysis saved to Dominant_Sectors_Analysis.csv")
