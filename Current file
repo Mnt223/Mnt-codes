@@ -2,6 +2,76 @@ import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import MinMaxScaler
 
+# Load and preprocess the data
+df = pd.read_csv("IF_MAIN6.csv")
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+
+# Create pivot tables for transaction metrics
+sector_frequency = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='count', fill_value=0)
+sector_sum = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='sum', fill_value=0)
+sector_avg = df.pivot_table(index="ACCT", columns="Sector", values="TRAN_AMT", aggfunc='mean', fill_value=0)
+
+# Normalize the matrices
+scaler = MinMaxScaler()
+frequency_scaled, sum_scaled, avg_scaled = [scaler.fit_transform(matrix) for matrix in [sector_frequency, sector_sum, sector_avg]]
+
+# Calculate the composite score
+composite_scaled = (frequency_scaled + sum_scaled + avg_scaled) / 3
+
+# Compute cosine similarity for each matrix and the composite
+similarity_matrices = [cosine_similarity(matrix) for matrix in [frequency_scaled, sum_scaled, avg_scaled, composite_scaled]]
+
+# Save the cosine similarity matrices to CSV files
+similarity_labels = ['Frequency', 'Sum', 'Average', 'Composite']
+for similarity_matrix, label in zip(similarity_matrices, similarity_labels):
+    similarity_df = pd.DataFrame(similarity_matrix, index=sector_frequency.index, columns=sector_frequency.index)
+    similarity_df.to_csv(f"Cosine_Similarity_{label}.csv")
+
+# Function to suggest dominant sectors
+def suggest_dominant_sectors(customer_index, similarity_matrix, top_n=5):
+    sorted_indices = similarity_matrix[customer_index].argsort()[::-1][1:top_n+1]
+    similar_customer_ids = sector_frequency.index[sorted_indices].tolist()
+    similar_sectors = sector_frequency.loc[similar_customer_ids].sum().rank(ascending=False).sort_values().index[:3].tolist()
+    return similar_sectors
+
+# Initialize an empty DataFrame to store the results
+results_df = pd.DataFrame()
+
+# Iterate over all customers to suggest dominant sectors based on the composite score
+for customer_id in sector_frequency.index:
+    customer_index = sector_frequency.index.get_loc(customer_id)
+    composite_sectors = suggest_dominant_sectors(customer_index, similarity_matrices[-1])  # Using composite similarity
+    temp_df = pd.DataFrame({
+        'ACCT': [customer_id], 
+        'Top_Composite_Sectors': [', '.join(composite_sectors)]
+    })
+    # Use pandas.concat instead of DataFrame.append
+    results_df = pd.concat([results_df, temp_df], ignore_index=True)
+
+# Save the results to a CSV file
+results_df.to_csv("All_Customers_Dominant_Sectors_Composite.csv", index=False)
+
+print("Dominant sectors based on composite scores for all customers have been saved to All_Customers_Dominant_Sectors_Composite.csv")
+print("Cosine similarity matrices saved as CSV files.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import MinMaxScaler
+
 # Assuming all previous steps are the same and focusing on generating output for all customers
 
 # Load and preprocess the data
