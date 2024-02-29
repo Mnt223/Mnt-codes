@@ -1,3 +1,23 @@
+proc sql;
+   create table highest_priority as 
+   select a.*
+   from your_table as a
+   inner join (
+       select customer_no, min(priority) as min_priority
+       from your_table
+       group by customer_no
+   ) as b
+   on a.customer_no = b.customer_no and a.priority = b.min_priority;
+quit;
+
+
+
+
+
+
+
+
+
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
