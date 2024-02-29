@@ -1,5 +1,56 @@
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+
+# Read the data from the CSV file
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Assuming 'Age' is a column in your dataframe and 'Occupation' is a categorical feature
+# First, one-hot encode 'Occupation' and standardize 'Age'
+column_transformer = ColumnTransformer(transformers=[
+    ('numerical', StandardScaler(), ['Age']),
+    ('categorical', OneHotEncoder(), ['Occupation'])
+], remainder='passthrough')
+
+# Apply the transformations and create a new DataFrame
+transformed_features = column_transformer.fit_transform(df[['Age', 'Occupation']])
+transformed_features_df = pd.DataFrame(transformed_features)
+
+# Assuming the rest of your dataframe ('df') consists of the transaction data needed for the pivot table
+# Concatenate the transformed features with the pivot table data
+# You might need to adjust this part depending on the structure of your original dataframe
+sector_frequency = df.pivot_table(
+    index="ACCT",
+    columns="Sector",
+    values="TRAN_AMT",
+    aggfunc='count',
+    fill_value=0
+)
+
+# Combine the sector frequency data with the transformed features
+combined_features = pd.concat([transformed_features_df, sector_frequency.reset_index(drop=True)], axis=1)
+
+# Continue with your cosine similarity calculations using 'combined_features'
+def calculate_cosine_similarity(data):
+    similarity_matrix = cosine_similarity(data)
+    return similarity_matrix
+
+# The rest of your code for identifying personas would remain largely the same,
+# but ensure to use the combined features for similarity calculations
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import MinMaxScaler
 
 # Load and preprocess the data
