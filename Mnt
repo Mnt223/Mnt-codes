@@ -1,0 +1,45 @@
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+
+# Load the data
+df = pd.read_csv("IF_MAIN6.csv")
+
+# Create a pivot table for transaction frequencies per sector
+sector_frequency = df.pivot_table(
+    index="ACCT",
+    columns="Sector",
+    values="TRAN_AMT",
+    aggfunc='count',
+    fill_value=0
+)
+
+# Prepare the dataset with 'Age' and 'Occupation' for encoding
+# Assuming 'Age' is numerical and 'Occupation' is categorical
+features_to_encode = df[['Age', 'Occupation']].drop_duplicates()
+features_to_encode.index = df['ACCT'].drop_duplicates()
+
+# One-hot encode 'Occupation' and standardize 'Age'
+column_transformer = ColumnTransformer(transformers=[
+    ('numerical', StandardScaler(), ['Age']),
+    ('categorical', OneHotEncoder(), ['Occupation'])
+], remainder='drop')
+
+encoded_features = column_transformer.fit_transform(features_to_encode)
+encoded_features_df = pd.DataFrame(encoded_features, index=features_to_encode.index)
+
+# Combine encoded features with sector frequency data
+combined_features = pd.concat([encoded_features_df, sector_frequency], axis=1, join='inner')
+
+# Define a function to calculate cosine similarity
+def calculate_cosine_similarity(data):
+    similarity_matrix = cosine_similarity(data)
+    return similarity_matrix
+
+# Calculate cosine similarity matrix
+cosine_similarity_matrix = calculate_cosine_similarity(combined_features)
+
+# Display the cosine similarity matrix
+print(cosine_similarity_matrix)
