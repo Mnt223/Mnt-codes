@@ -1,4 +1,176 @@
 import pandas as pd
+import spacy
+from datasets import Dataset, DatasetDict
+from transformers import RobertaTokenizerFast, RobertaForTokenClassification, Trainer, TrainingArguments
+
+# Load spaCy English model
+nlp = spacy.load("en_core_web_sm")
+
+def preprocess_with_ner(address):
+    # Use spaCy for NER to identify potential merchant names
+    doc = nlp(address.lower())
+    tokens = [token.text for token in doc]
+    labels = [0] * len(tokens)  # Initialize labels
+    
+    for ent in doc.ents:
+        # Expand entity types that could be relevant to merchant names
+        if ent.label_ in ["ORG", "GPE", "PRODUCT", "EVENT"]:
+            for i in range(ent.start, ent.end):
+                labels[i] = 1  # Mark as merchant name
+    
+    return {'tokens': tokens, 'ner_labels': labels}
+
+# Load your dataset
+df = pd.read_csv('your_dataset.csv', usecols=['address'])
+
+# Apply preprocessing to each address
+preprocessed_data = [preprocess_with_ner(address) for address in df['address']]
+tokens = [item['tokens'] for item in preprocessed_data]
+labels = [item['ner_labels'] for item in preprocessed_data]
+
+# Prepare dataset for token classification
+data = DatasetDict({
+    'train': Dataset.from_dict({'tokens': tokens, 'ner_labels': labels})
+})
+
+# Initialize RoBERTa tokenizer
+tokenizer = RobertaTokenizerFast.from_pretrained('roberta-base')
+
+# Tokenize and align labels
+def tokenize_and_align_labels(examples):
+    tokenized_inputs = tokenizer(examples['tokens'], truncation=True, padding='max_length', is_split_into_words=True)
+    labels = []
+    for i, label in enumerate(examples['ner_labels']):
+        word_ids = tokenized_inputs.word_ids(batch_index=i)
+        label_ids = [-100 if id is None else label[id] for id in word_ids]
+        labels.append(label_ids)
+    tokenized_inputs['labels'] = labels
+    return tokenized_inputs
+
+tokenized_data = data.map(tokenize_and_align_labels, batched=True)
+
+# Define RoBERTa model for token classification
+model = RobertaForTokenClassification.from_pretrained('roberta-base', num_labels=2)
+
+# Training arguments
+training_args = TrainingArguments(
+    output_dir='./roberta_merchant_name_model',
+    evaluation_strategy='epoch',
+    learning_rate=5e-5,
+    per_device_train_batch_size=8,
+    num_train_epochs=3,
+    weight_decay=0.01,
+)
+
+# Initialize and train the model
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_data['train'],
+)
+
+trainer.train()
+
+# Save the trained model and tokenizer
+model.save_pretrained('./roberta_merchant_name_model')
+tokenizer.save_pretrained('./roberta_merchant_name_model')
+
+
+
+
+
+
+
+import pandas as pd
+import spacy
+from datasets import Dataset
+from transformers import BertTokenizerFast, BertForTokenClassification, Trainer, TrainingArguments
+
+# Load spaCy English model for NER
+nlp = spacy.load("en_core_web_sm")
+
+def preprocess_with_ner(address):
+    doc = nlp(address.lower())
+    tokens = [token.text for token in doc]
+    labels = [0] * len(tokens)  # Initialize all tokens as non-merchant
+    
+    # Use NER to improve merchant name identification
+    for ent in doc.ents:
+        # Include more entity types that could be relevant to merchant names
+        if ent.label_ in ["ORG", "GPE", "PRODUCT", "EVENT"]:
+            for i in range(ent.start, ent.end):
+                labels[i] = 1  # Mark as merchant name
+
+    return tokens, labels
+
+# Load your dataset
+df = pd.read_csv('your_dataset.csv', usecols=['address'])
+
+# Apply the preprocessing
+processed_data = df['address'].apply(preprocess_with_ner)
+df['tokens'], df['labels'] = zip(*processed_data)
+
+# Convert processed data to a Hugging Face Dataset and tokenize
+data = Dataset.from_pandas(pd.DataFrame({
+    'tokens': df['tokens'].tolist(),
+    'labels': df['labels'].tolist()
+}))
+
+tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
+
+def tokenize_and_align_labels(examples):
+    tokenized_inputs = tokenizer(examples['tokens'], truncation=True, padding='max_length', is_split_into_words=True)
+    labels = []
+    for i, label in enumerate(examples['labels']):
+        word_ids = tokenized_inputs.word_ids(batch_index=i)
+        label_ids = [-100 if id is None else label[id] for id in word_ids]
+        labels.append(label_ids)
+    tokenized_inputs['labels'] = labels
+    return tokenized_inputs
+
+tokenized_data = data.map(tokenize_and_align_labels, batched=True)
+
+# Define the model for token classification
+model = BertForTokenClassification.from_pretrained('bert-base-uncased', num_labels=2)
+
+# Training arguments
+training_args = TrainingArguments(
+    output_dir='./merchant_name_model_final',
+    evaluation_strategy='epoch',
+    learning_rate=5e-5,
+    per_device_train_batch_size=8,
+    num_train_epochs=3,
+    weight_decay=0.01,
+)
+
+# Initialize Trainer
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_data,
+)
+
+# Train the model
+trainer.train()
+
+# Save the trained model and tokenizer
+model.save_pretrained('./merchant_name_model_final')
+tokenizer.save_pretrained('./merchant_name_model_final')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
