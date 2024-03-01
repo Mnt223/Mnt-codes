@@ -1,4 +1,66 @@
 import pandas as pd
+from implicit.als import AlternatingLeastSquares
+import numpy as np 
+
+# Load your data
+df = pd.read_csv("transactions.csv")
+
+# Preprocessing - Discretize Age
+def discretize_age(age):
+    if age <= 25:
+        return "young"
+    elif age <= 40:
+        return "mid"
+    else:
+        return "senior"
+
+df['Age_group'] = df['Age'].apply(discretize_age)
+
+# Preprocessing - Weekend Calculation
+def is_weekend(date):
+    return date.weekday() >= 5 
+
+df['is_weekend'] = df['Date'].apply(is_weekend)
+
+# One-hot Encode Categorical Features
+df = pd.get_dummies(df, columns=['Occupation', 'Age_group'])
+
+# Feature Engineering
+df['avg_spending'] = df.groupby('ACCT')['TRAN_AMT'].transform('mean')
+df['weekend_ratio'] = df.groupby('ACCT')['is_weekend'].transform(lambda x: x.sum() / len(x))
+
+# Customer-Sector Matrix
+cust_sector_matrix = df.pivot_table(
+    index='ACCT', columns='Sector', values='TRAN_AMT', fill_value=0
+)
+
+# Include Additional Features
+cust_sector_matrix = pd.concat([cust_sector_matrix, df[['avg_spending', 'weekend_ratio']]], axis=1)
+
+# Confidence Weighting 
+confidence_matrix = cust_sector_matrix * 40 
+
+# Model Training
+model = AlternatingLeastSquares(factors=50, regularization=0.01) 
+model.fit(confidence_matrix)
+
+# Get Recommendations 
+customer_id = 12345
+recommendations = model.recommend(userid=customer_id, user_items=cust_sector_matrix[customer_id])
+top_sector = recommendations[0][0]
+print(f"Top predicted sector for customer {customer_id}: {top_sector}")
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import spacy
 from datasets import Dataset, DatasetDict
 from transformers import RobertaTokenizerFast, RobertaForTokenClassification, Trainer, TrainingArguments
