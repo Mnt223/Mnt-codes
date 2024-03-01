@@ -1,0 +1,45 @@
+import pandas as pd
+from implicit.als import AlternatingLeastSquares
+import numpy as np 
+
+# Load your data (assuming a CSV file)
+df = pd.read_csv("transactions.csv")
+
+# Preprocessing
+def discretize_age(age):
+    if age <= 25:
+        return "young"
+    elif age <= 40:
+        return "mid"
+    else:
+        return "senior"
+
+df['Age_group'] = df['Age'].apply(discretize_age)
+
+# One-hot encode categorical features
+df = pd.get_dummies(df, columns=['Occupation', 'Age_group'])
+
+# Feature Engineering
+df['avg_spending'] = df.groupby('ACCT')['TRAN_AMT'].transform('mean')
+df['weekend_ratio'] =  # ... logic to calculate weekend spending proportion 
+
+# Customer-Sector Matrix Creation
+cust_sector_matrix = df.pivot_table(
+    index='ACCT', columns='Sector', values='TRAN_AMT', fill_value=0
+)
+
+# Include additional features
+cust_sector_matrix = pd.concat([cust_sector_matrix, df[['avg_spending', 'weekend_ratio']]], axis=1)
+
+# Confidence Weighting 
+confidence_matrix = cust_sector_matrix * 40 
+
+# Model Training
+model = AlternatingLeastSquares(factors=50, regularization=0.01) 
+model.fit(confidence_matrix)
+
+# Get Recommendations for a Specific Customer
+customer_id = 12345
+recommendations = model.recommend(userid=customer_id, user_items=cust_sector_matrix[customer_id])
+top_sector = recommendations[0][0]
+print(f"Top predicted sector for customer {customer_id}: {top_sector}")
