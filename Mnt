@@ -1,4 +1,70 @@
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from xgboost import XGBClassifier
+from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.impute import SimpleImputer
+
+# Assuming data is loaded and preprocessed
+
+# Define column transformer for preprocessing
+numeric_features = ['TRAN_AMT', 'AGE_NUM']
+numeric_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())])
+
+categorical_features = ['JOB_TITLE']
+categorical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))])
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transformer, numeric_features),
+        ('cat', categorical_transformer, categorical_features)])
+
+# Initialize the XGBClassifier
+xgb_model = XGBClassifier(use_label_encoder=False, eval_metric='mlogloss')
+
+# Create a pipeline with the preprocessor and the classifier
+pipeline = Pipeline(steps=[('preprocessor', preprocessor),
+                           ('classifier', xgb_model)])
+
+# Splitting the dataset
+X = data.drop(['ACCT', 'Date', 'Sector'], axis=1)
+y = data['Sector']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train the model
+pipeline.fit(X_train, y_train)
+
+# Predictions and Evaluation
+y_pred = pipeline.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print(f'Accuracy: {accuracy:.2f}')
+print(classification_report(y_test, y_pred))
+
+# Confusion Matrix
+conf_mat = confusion_matrix(y_test, y_pred)
+sns.heatmap(conf_mat, annot=True, fmt='d', cmap='Blues')
+plt.xlabel('Predicted')
+plt.ylabel('True')
+plt.title('Confusion Matrix')
+plt.show()
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
