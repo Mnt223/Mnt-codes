@@ -1,4 +1,97 @@
 import pandas as pd
+from scipy.sparse import csr_matrix
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import MaxAbsScaler
+
+class CollaborativeFilteringModel:
+    def __init__(self):
+        self.customer_to_idx = {}
+        self.idx_to_customer = {}
+        self.sector_to_idx = {}
+        self.idx_to_sector = {}
+        self.nn_model = NearestNeighbors(metric='cosine', algorithm='auto')
+
+    def fit(self, transactions):
+        # Assign unique indices to customers and sectors
+        self._assign_indices(transactions)
+        
+        # Build interaction matrices for counts and amounts
+        counts_matrix, amounts_matrix = self._build_interaction_matrices(transactions)
+        
+        # Combine the matrices (here we use simple addition, but other methods like weighted sum can be applied)
+        combined_matrix = counts_matrix + amounts_matrix
+        
+        # Fit the Nearest Neighbors model
+        self.nn_model.fit(combined_matrix)
+
+    def _assign_indices(self, transactions):
+        unique_customers = transactions['ACCT'].unique()
+        unique_sectors = transactions['Sector'].unique()
+        
+        self.customer_to_idx = {customer: idx for idx, customer in enumerate(unique_customers)}
+        self.idx_to_customer = {idx: customer for customer, idx in self.customer_to_idx.items()}
+        
+        self.sector_to_idx = {sector: idx for idx, sector in enumerate(unique_sectors)}
+        self.idx_to_sector = {idx: sector for sector, idx in self.sector_to_idx.items()}
+
+    def _build_interaction_matrices(self, transactions):
+        # Initialize sparse matrices
+        shape = (len(self.customer_to_idx), len(self.sector_to_idx))
+        counts_matrix = csr_matrix(shape, dtype=int)
+        amounts_matrix = csr_matrix(shape, dtype=float)
+        
+        # Populate matrices
+        for _, row in transactions.iterrows():
+            customer_idx = self.customer_to_idx[row['ACCT']]
+            sector_idx = self.sector_to_idx[row['Sector']]
+            counts_matrix[customer_idx, sector_idx] += 1
+            amounts_matrix[customer_idx, sector_idx] += row['TRAN_AMT']
+        
+        # Normalize matrices to ensure equal weighting
+        scaler = MaxAbsScaler()
+        counts_matrix = csr_matrix(scaler.fit_transform(counts_matrix))
+        amounts_matrix = csr_matrix(scaler.fit_transform(amounts_matrix))
+        
+        return counts_matrix, amounts_matrix
+
+    def predict_top_sectors(self, customer_id, top_n=5):
+        if customer_id not in self.customer_to_idx:
+            return []
+        
+        customer_idx = self.customer_to_idx[customer_id]
+        distances, indices = self.nn_model.kneighbors([self.nn_model._fit_X[customer_idx]], n_neighbors=top_n + 1)
+        
+        # Aggregate sectors from the neighbors
+        sector_scores = {}
+        for neighbor_idx in indices.flatten()[1:]:
+            sectors = self.nn_model._fit_X[neighbor_idx].nonzero()[1]
+            for sector_idx in sectors:
+                sector = self.idx_to_sector[sector_idx]
+                sector_scores[sector] = sector_scores.get(sector, 0) + 1
+        
+        # Return the top N sectors
+        top_sectors = sorted(sector_scores, key=sector_scores.get, reverse=True)[:top_n]
+        return top_sectors
+
+# Example Usage
+transactions = pd.read_csv("path/to/your/transaction_data.csv")
+model = CollaborativeFilteringModel()
+model.fit(transactions)
+
+customer_id = 'example_customer_id'  # Replace with an actual customer ID from your dataset
+top_sectors = model.predict_top_sectors(customer_id, top_n=5)
+print(f"Top sectors for customer {customer_id}: {top_sectors}")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
