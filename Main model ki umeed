@@ -1,0 +1,76 @@
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+import numpy as np
+
+class SectorRankingModel:
+    def __init__(self):
+        self.norm_counts = None
+        self.norm_amounts = None
+        self.customer_index_mapping = {}  # Maps ACCT ID to numerical index
+        self.index_customer_mapping = {}  # Maps numerical index back to ACCT ID
+        self.sectors = None
+
+    def fit(self, transactions):
+        transactions['Day_Type'] = transactions['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+        
+        # Create pivot tables
+        pivot_counts = self.create_pivot_tables(transactions, 'count')
+        pivot_amounts = self.create_pivot_tables(transactions, 'sum')
+        
+        # Normalize data
+        self.norm_counts = self.normalize_data(pivot_counts)
+        self.norm_amounts = self.normalize_data(pivot_amounts)
+        
+        # Create mappings for ACCT IDs
+        self.customer_index_mapping = {acct: idx for idx, acct in enumerate(pivot_counts.index)}
+        self.index_customer_mapping = {idx: acct for acct, idx in self.customer_index_mapping.items()}
+        self.sectors = pivot_counts.columns
+
+    def create_pivot_tables(self, dataframe, aggfunc):
+        return dataframe.pivot_table(
+            index='ACCT',
+            columns='Sector',
+            values='TRAN_AMT',
+            aggfunc=aggfunc,
+            fill_value=0
+        )
+    
+    def normalize_data(self, data):
+        scaler = StandardScaler()
+        scaled_data = scaler.fit_transform(data)
+        return pd.DataFrame(scaled_data, index=data.index, columns=data.columns)
+    
+    def predict(self, customer_id, n_top=5):
+        if customer_id not in self.customer_index_mapping:
+            return []
+        customer_index = self.customer_index_mapping[customer_id]
+        similarity_matrix = cosine_similarity(self.norm_counts + self.norm_amounts)
+        
+        weighted_scores = np.dot(similarity_matrix[customer_index], (self.norm_counts + self.norm_amounts) / 2)
+        top_sector_indices = weighted_scores.argsort()[::-1][:n_top]
+        
+        top_sectors = [self.sectors[i] for i in top_sector_indices]
+        return top_sectors
+
+    @staticmethod
+    def evaluate_precision_at_k(model, test_transactions, k=5):
+        test_transactions['Day_Type'] = test_transactions['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+        test_pivot = model.create_pivot_tables(test_transactions, 'count')
+        
+        hits = 0
+        total = 0
+        
+        for customer_id in test_pivot.index:
+            if customer_id not in model.customer_index_mapping:
+                continue  # Skip customers not in the training set
+            actual_top_sectors = test_pivot.loc[customer_id].sort_values(ascending=False).head(k).index
+            predicted_top_sectors = model.predict(customer_id, n_top=k)
+            
+            # Count how many of the predicted top sectors are in the actual top sectors
+            hits += len(set(predicted_top_sectors) & set(actual_top_sectors))
+            total += k
+        
+        precision_at_k = hits / total if total > 0 else 0
+        return precision_at_k
