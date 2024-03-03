@@ -1,4 +1,90 @@
 import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+
+# Assuming you've already loaded your DataFrame 'df' from "IF_MAIN6.csv"
+
+# Convert 'TRAN_DATE' to datetime and categorize transactions into 'Weekday' or 'Weekend'
+df['TRAN_DATE'] = pd.to_datetime(df['TRAN_DATE'])
+df['Day_Type'] = df['TRAN_DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Function to create pivot tables for counts and amounts
+def create_pivot_tables(dataframe, aggfunc):
+    return dataframe.pivot_table(
+        index='ACCT',
+        columns='Sector',
+        values='TRAN_AMT',
+        aggfunc=aggfunc,
+        fill_value=0
+    )
+
+# Creating pivot tables
+pivot_counts = create_pivot_tables(df, 'count')
+pivot_amounts = create_pivot_tables(df, 'sum')
+pivot_counts_weekday = create_pivot_tables(df[df['Day_Type'] == 'Weekday'], 'count')
+pivot_counts_weekend = create_pivot_tables(df[df['Day_Type'] == 'Weekend'], 'count')
+pivot_amounts_weekday = create_pivot_tables(df[df['Day_Type'] == 'Weekday'], 'sum')
+pivot_amounts_weekend = create_pivot_tables(df[df['Day_Type'] == 'Weekend'], 'sum')
+
+# Normalize data
+def normalize_data(data):
+    scaler = StandardScaler()
+    scaled_data = scaler.fit_transform(data)
+    return pd.DataFrame(scaled_data, index=data.index, columns=data.columns)
+
+# Normalizing all pivot tables
+norm_counts = normalize_data(pivot_counts)
+norm_amounts = normalize_data(pivot_amounts)
+norm_counts_weekday = normalize_data(pivot_counts_weekday)
+norm_counts_weekend = normalize_data(pivot_counts_weekend)
+norm_amounts_weekday = normalize_data(pivot_amounts_weekday)
+norm_amounts_weekend = normalize_data(pivot_amounts_weekend)
+
+# Function to calculate cosine similarity
+def calculate_cosine_similarity(data):
+    return cosine_similarity(data)
+
+# Function to find top sectors
+def find_top_sectors(customer_id, counts_data, amounts_data, n_top=5):
+    similarity_matrix = calculate_cosine_similarity(counts_data + amounts_data)
+    customer_index = counts_data.index.get_loc(customer_id)
+    customer_similarities = similarity_matrix[customer_index]
+    
+    # Predicting interests based on similarities
+    weighted_counts = np.dot(customer_similarities, counts_data)
+    weighted_amounts = np.dot(customer_similarities, amounts_data)
+    
+    # Combining count and amount predictions
+    combined_scores = (weighted_counts + weighted_amounts) / 2
+    top_sector_indices = combined_scores.argsort()[::-1][:n_top]
+    
+    top_sectors = [counts_data.columns[i] for i in top_sector_indices]
+    return top_sectors
+
+# Example usage
+customer_id = df['ACCT'].iloc[0]  # Replace with a specific customer ID as needed
+
+# Overall top sectors
+top_sectors_overall = find_top_sectors(customer_id, norm_counts, norm_amounts, n_top=5)
+print(f"Customer {customer_id} Top 5 Sectors Overall: {top_sectors_overall}")
+
+# Weekday and Weekend dominant sector
+weekday_sector = find_top_sectors(customer_id, norm_counts_weekday, norm_amounts_weekday, n_top=1)
+weekend_sector = find_top_sectors(customer_id, norm_counts_weekend, norm_amounts_weekend, n_top=1)
+print(f"Customer {customer_id} Dominant Sector Weekday: {weekday_sector}")
+print(f"Customer {customer_id} Dominant Sector Weekend: {weekend_sector}")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import numpy as np
 from datetime import datetime
 from sklearn.preprocessing import LabelEncoder
