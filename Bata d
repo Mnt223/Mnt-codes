@@ -1,0 +1,56 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from sklearn.preprocessing import LabelEncoder
+from scipy.sparse import coo_matrix
+from implicit.bpr import BayesianPersonalizedRanking
+
+# Assuming 'df' is preloaded with your data
+
+# Preprocessing
+df['Date'] = pd.to_datetime(df['Date'])
+df['Weekday'] = df['Date'].dt.weekday  # 0=Monday, 6=Sunday
+df['IsWeekend'] = df['Weekday'] >= 5  # True for weekends
+current_date = pd.to_datetime('2024-03-03')
+df['Recency'] = (current_date - df['Date']).dt.days
+
+# Encoding
+acct_encoder = LabelEncoder()
+df['ACCT'] = acct_encoder.fit_transform(df['ACCT'])
+
+sector_encoder = LabelEncoder()
+df['Sector'] = sector_encoder.fit_transform(df['Sector'])
+
+occupation_encoder = LabelEncoder()
+df['Occupation'] = occupation_encoder.fit_transform(df['Occupation'])
+
+# Feature Engineering: Simplify for demonstration
+# Aggregating transaction counts, including weekend flag
+agg_funcs = {'TRAN_AMT': 'count', 'IsWeekend': 'mean', 'Recency': 'min'}
+features = df.groupby(['ACCT', 'Sector']).agg(agg_funcs).reset_index()
+
+# Normalizing features
+features['TRAN_AMT'] = (features['TRAN_AMT'] - features['TRAN_AMT'].min()) / (features['TRAN_AMT'].max() - features['TRAN_AMT'].min())
+features['Recency'] = (features['Recency'] - features['Recency'].min()) / (features['Recency'].max() - features['Recency'].min())
+
+# Interaction matrix with transaction count as the basis
+interaction_values = features['TRAN_AMT'] - features['Recency']  # Simplified interaction value
+interaction_matrix = coo_matrix((interaction_values, 
+                                 (features['ACCT'], features['Sector'])),
+                                shape=(df['ACCT'].nunique(), df['Sector'].nunique()))
+
+# BPR Model Training
+model = BayesianPersonalizedRanking(iterations=100, learning_rate=0.01, lambda_reg=0.01)
+model.fit(interaction_matrix.T)
+
+# Predicting and Ranking Sectors for a Specific User
+user_id = 0  # Placeholder for an example user ID
+scores = model.user_factors[user_id] @ model.item_factors.T
+recommended_sector_ids = np.argsort(scores)[::-1]
+recommended_sectors = sector_encoder.inverse_transform(recommended_sector_ids)
+
+print(f"Recommended Sectors for User {acct_encoder.inverse_transform([user_id])[0]}: {recommended_sectors[:5]}")
+
+# Analyzing Weekday vs. Weekend Preferences
+# This could involve generating separate recommendations based on transactions flagged as weekend or not.
+# For a detailed analysis, consider splitting the dataset by 'IsWeekend' and repeating the modeling process for each subset.
