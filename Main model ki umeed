@@ -1,4 +1,83 @@
 import pandas as pd
+from scipy.sparse import lil_matrix, csr_matrix
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import MaxAbsScaler
+
+class CollaborativeFilteringModel:
+    def __init__(self):
+        self.nearest_neighbors = NearestNeighbors(metric='cosine', algorithm='auto')
+        self.customer_to_idx = {}
+        self.idx_to_customer = {}
+        self.sector_to_idx = {}
+        self.idx_to_sector = {}
+
+    def fit(self, transactions):
+        # Assign indices for customers and sectors
+        self._assign_indices(transactions)
+
+        # Create and normalize interaction matrix
+        counts_matrix, amounts_matrix = self._create_interaction_matrices(transactions)
+        self.combined_matrix = self._normalize_and_combine_matrices(counts_matrix, amounts_matrix)
+
+        # Fit NearestNeighbors model
+        self.nearest_neighbors.fit(self.combined_matrix)
+
+    def _assign_indices(self, transactions):
+        self.customer_to_idx = {customer: i for i, customer in enumerate(transactions['ACCT'].unique())}
+        self.idx_to_customer = {i: customer for customer, i in self.customer_to_idx.items()}
+        self.sector_to_idx = {sector: i for i, sector in enumerate(transactions['Sector'].unique())}
+        self.idx_to_sector = {i: sector for sector, i in self.sector_to_idx.items()}
+
+    def _create_interaction_matrices(self, transactions):
+        shape = (len(self.customer_to_idx), len(self.sector_to_idx))
+        counts_matrix = lil_matrix(shape, dtype=int)
+        amounts_matrix = lil_matrix(shape, dtype=float)
+
+        for _, row in transactions.iterrows():
+            c_idx = self.customer_to_idx[row['ACCT']]
+            s_idx = self.sector_to_idx[row['Sector']]
+            counts_matrix[c_idx, s_idx] += 1
+            amounts_matrix[c_idx, s_idx] += row['TRAN_AMT']
+
+        return counts_matrix.tocsr(), amounts_matrix.tocsr()
+
+    def _normalize_and_combine_matrices(self, counts_matrix, amounts_matrix):
+        scaler = MaxAbsScaler(with_mean=False)
+        normalized_counts = scaler.fit_transform(counts_matrix)
+        normalized_amounts = scaler.fit_transform(amounts_matrix)
+        # Combine normalized matrices. You might adjust this logic based on your specific needs.
+        return normalized_counts + normalized_amounts
+
+    def predict_top_sectors(self, customer_id, top_n=5):
+        if customer_id not in self.customer_to_idx:
+            return []
+
+        customer_idx = self.customer_to_idx[customer_id]
+        _, indices = self.nearest_neighbors.kneighbors(self.combined_matrix[customer_idx:customer_idx+1], n_neighbors=top_n + 1)
+        
+        sector_votes = {}
+        for idx_array in indices:
+            for idx in idx_array[1:]:  # Skip the first one (itself)
+                sectors = self.combined_matrix[idx].nonzero()[1]
+                for sector_idx in sectors:
+                    sector = self.idx_to_sector[sector_idx]
+                    sector_votes[sector] = sector_votes.get(sector, 0) + 1
+
+        sorted_sectors = sorted(sector_votes, key=sector_votes.get, reverse=True)[:top_n]
+        return sorted_sectors
+
+# Example usage remains the same
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 from scipy.sparse import csr_matrix
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import MaxAbsScaler
