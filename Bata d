@@ -5,6 +5,74 @@ from sklearn.preprocessing import LabelEncoder
 from scipy.sparse import coo_matrix
 from implicit.bpr import BayesianPersonalizedRanking
 
+# Assuming 'df' is your DataFrame loaded with transaction data
+# Sample preprocessing steps
+df['Date'] = pd.to_datetime(df['Date'])
+current_date = pd.to_datetime('2024-03-03')
+df['Recency'] = (current_date - df['Date']).dt.days
+df.sort_values('Date', inplace=True)
+
+# Encoding categorical data
+acct_encoder = LabelEncoder()
+df['ACCT'] = acct_encoder.fit_transform(df['ACCT'])
+
+sector_encoder = LabelEncoder()
+df['Sector'] = sector_encoder.fit_transform(df['Sector'])
+
+# Feature Engineering: Simplify for demonstration
+features = df.groupby(['ACCT', 'Sector']).agg(
+    Total_Spend=('TRAN_AMT', 'sum'),
+    Transaction_Count=('TRAN_AMT', 'count'),
+    Recency=('Recency', 'min')
+).reset_index()
+
+# Normalizing features
+features['Total_Spend'] = (features['Total_Spend'] - features['Total_Spend'].min()) / (features['Total_Spend'].max() - features['Total_Spend'].min())
+features['Transaction_Count'] = (features['Transaction_Count'] - features['Transaction_Count'].min()) / (features['Transaction_Count'].max() - features['Transaction_Count'].min())
+features['Recency'] = (features['Recency'] - features['Recency'].min()) / (features['Recency'].max() - features['Recency'].min())
+
+# Interaction matrix with normalized features
+interaction_values = features['Total_Spend'] + features['Transaction_Count'] - features['Recency']
+interaction_matrix = coo_matrix((interaction_values, (features['ACCT'], features['Sector'])),
+                                shape=(df['ACCT'].nunique(), df['Sector'].nunique())).tocsr()
+
+# BPR Model Training
+model = BayesianPersonalizedRanking(iterations=100, learning_rate=0.01, regularization=0.01)
+model.fit(interaction_matrix.T)
+
+# Mapping ACCT values to their corresponding model indices
+acct_to_model_idx = {acct: idx for idx, acct in enumerate(acct_encoder.classes_)}
+
+# Function to generate recommendations using ACCT value directly
+def get_recommendations_for_acct(acct_value):
+    if acct_value in acct_to_model_idx:
+        user_idx = acct_to_model_idx[acct_value]
+        scores = model.user_factors[user_idx] @ model.item_factors.T
+        recommended_sector_indices = np.argsort(scores)[::-1][:5]  # Top 5 recommendations
+        recommended_sectors = sector_encoder.inverse_transform(recommended_sector_indices)
+        print(f"Recommended Sectors for Account {acct_value}: {recommended_sectors}")
+    else:
+        print(f"Account {acct_value} not found.")
+
+# Example usage
+# Replace 'some_acct_value' with an actual ACCT value from your dataset
+get_recommendations_for_acct(some_acct_value)
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from sklearn.preprocessing import LabelEncoder
+from scipy.sparse import coo_matrix
+from implicit.bpr import BayesianPersonalizedRanking
+
 # Assuming 'df' is preloaded with your data
 
 # Preprocessing
