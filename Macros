@@ -1,3 +1,59 @@
+# Final Code with Excel Output Integration
+import pandas as pd
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import MinMaxScaler
+from scipy.sparse import csr_matrix
+
+# Load the dataset
+df_demo = pd.read_csv('main6.csv')
+df_demo['DATE'] = pd.to_datetime(df_demo['DATE'])
+df_demo['Day_Type'] = df_demo['DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Creating and normalizing interaction matrices
+interaction_matrix_counts = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_matrix_amounts = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+scaler = MinMaxScaler()
+interaction_matrix_counts_scaled = scaler.fit_transform(interaction_matrix_counts)
+interaction_matrix_amounts_scaled = scaler.fit_transform(interaction_matrix_amounts)
+combined_matrix_scaled = (interaction_matrix_counts_scaled + interaction_matrix_amounts_scaled) / 2
+combined_matrix_sparse = csr_matrix(combined_matrix_scaled)
+
+# Calculate the similarity matrix
+similarity_matrix = cosine_similarity(combined_matrix_sparse.transpose(), dense_output=False)
+
+# Define the enhanced recommendation function
+def recommend_sectors_enhanced(account_id, ...):
+    # Function body remains unchanged
+    ...
+
+# Generate batch recommendations
+def generate_batch_recommendations(account_ids, ...):
+    # Function body remains unchanged
+    ...
+
+# Apply the batch recommendation function
+account_ids = df_demo['ACCT'].unique()
+batch_recommendations = generate_batch_recommendations(account_ids, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, n_recommendations=5)
+
+# Convert recommendations to DataFrame
+recommendations_df = pd.DataFrame.from_dict(batch_recommendations, orient='index', columns=['Primary Sector', 'Secondary Sector', 'Third Sector', 'Fourth Sector', 'Fifth Sector'])
+
+# Export to Excel
+recommendations_df.to_excel('sector_recommendations.xlsx', index=True, index_label='ACCT')
+
+print("Recommendations have been successfully saved to 'sector_recommendations.xlsx'.")
+
+
+
+
+
+
+
+
+
+
+
 Certainly! Below is a consolidated code snippet that includes creating a UserForm with a TextBox for the customer ID input, a CommandButton to trigger the search, and the VBA macro to search for the customer ID in a specified column. This example assumes customer IDs are stored in column A of a sheet named "Sheet1". The code will display a message box indicating whether the customer was found and on which row.
 
 ### Step 1: UserForm Code
