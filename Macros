@@ -1,0 +1,57 @@
+Certainly! Below is a consolidated code snippet that includes creating a UserForm with a TextBox for the customer ID input, a CommandButton to trigger the search, and the VBA macro to search for the customer ID in a specified column. This example assumes customer IDs are stored in column A of a sheet named "Sheet1". The code will display a message box indicating whether the customer was found and on which row.
+
+### Step 1: UserForm Code
+First, ensure you've added a UserForm named `UserForm1`, a TextBox named `TextBox1`, and a CommandButton named `CommandButton1`. In the VBA Editor, double-click `UserForm1` to open its code window and add:
+
+```vba
+Private Sub CommandButton1_Click()
+    SearchCustomer
+End Sub
+```
+
+### Step 2: Module Code
+In a new module, paste the following code:
+
+```vba
+Public Sub SearchCustomer()
+    Dim ws As Worksheet
+    Dim searchRange As Range
+    Dim foundCell As Range
+    Dim customerID As String
+    
+    ' Adjust these to match your setup
+    Set ws = ThisWorkbook.Sheets("Sheet1") ' Change "Sheet1" to your sheet's name
+    Set searchRange = ws.Range("A:A") ' Assuming customer IDs are in column A
+    
+    customerID = UserForm1.TextBox1.Value ' Assuming your UserForm is named UserForm1 and your TextBox is TextBox1
+    
+    Set foundCell = searchRange.Find(What:=customerID, LookIn:=xlValues)
+    
+    If Not foundCell Is Nothing Then
+        ' Display full row data or do something with it
+        MsgBox "Customer found in row " & foundCell.Row ' Example action
+        ' Here, you could also write code to display all the details in the UserForm or elsewhere
+    Else
+        MsgBox "Customer ID not found."
+    End If
+End Sub
+```
+
+### Step 3: Showing the UserForm
+To show the UserForm from Excel, add a button on your sheet and assign this macro to it:
+
+```vba
+Sub ShowSearchForm()
+    UserForm1.Show
+End Sub
+```
+
+To add this macro:
+1. Go back to Excel.
+2. On the Developer tab, click "Insert" and choose "Button" under Form Controls.
+3. Draw the button on your sheet.
+4. Assign the `ShowSearchForm` macro to this button.
+
+When you click this button in Excel, `UserForm1` will appear. Enter a customer ID in `TextBox1` and click the command button to search. A message box will inform you if the customer was found and on which row.
+
+This script is a basic example to get you started. Depending on your needs, you might want to expand it to display more detailed information about the search results directly on the UserForm or elsewhere in the workbook.
