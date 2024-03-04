@@ -1,3 +1,16 @@
+# Example to split and export the first two chunks of the user similarity matrix to separate sheets
+with pd.ExcelWriter('user_similarity_matrix.xlsx', engine='openpyxl') as writer:
+    user_similarity_df.iloc[:50000, :].to_excel(writer, sheet_name='Sheet1')  # Adjust numbers based on your needs
+    user_similarity_df.iloc[50000:100000, :].to_excel(writer, sheet_name='Sheet2')  # Adjust numbers based on your needs
+
+
+
+
+
+
+
+
+
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
