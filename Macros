@@ -1,3 +1,98 @@
+import pandas as pd
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import MinMaxScaler
+from scipy.sparse import csr_matrix
+
+# Ensure you have openpyxl installed for Excel output
+# pip install openpyxl
+
+# Load the dataset
+df_demo = pd.read_csv('main6.csv')
+
+# Preprocess the data
+df_demo['DATE'] = pd.to_datetime(df_demo['DATE'])
+df_demo['Day_Type'] = df_demo['DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Creating Interaction Matrices for Counts and Amounts
+interaction_matrix_counts = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_matrix_amounts = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+# Normalize the matrices using MinMaxScaler
+scaler = MinMaxScaler()
+interaction_matrix_counts_scaled = scaler.fit_transform(interaction_matrix_counts)
+interaction_matrix_amounts_scaled = scaler.fit_transform(interaction_matrix_amounts)
+
+# Combine the scaled matrices to create a unified interaction matrix
+combined_matrix_scaled = (interaction_matrix_counts_scaled + interaction_matrix_amounts_scaled) / 2
+combined_matrix_sparse = csr_matrix(combined_matrix_scaled)  # Convert to sparse matrix for efficiency
+
+# Calculate the similarity matrix (Sector-Sector for Item-Based Collaborative Filtering)
+similarity_matrix = cosine_similarity(combined_matrix_sparse.transpose(), dense_output=False)
+
+# Function to recommend sectors based on enhanced aggregation of preferences
+def recommend_sectors_enhanced(account_id, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, n_recommendations=5):
+    if account_id not in interaction_matrix_counts.index:
+        return "Account not found."
+    
+    aggregated_counts = interaction_matrix_counts.loc[account_id] * 0.6  # Weight for counts
+    aggregated_amounts = interaction_matrix_amounts.loc[account_id] * 0.4  # Weight for amounts
+    aggregated_preferences = aggregated_counts + aggregated_amounts
+    
+    preferred_sectors = aggregated_preferences.sort_values(ascending=False).index[:n_recommendations]
+    
+    recommended_sectors = []
+    already_recommended = set()  # To avoid repetitive recommendations
+    
+    for sector in preferred_sectors:
+        sector_idx = list(interaction_matrix_counts.columns).index(sector)
+        sector_similarities = similarity_matrix[sector_idx].toarray().flatten()
+        
+        for idx in sector_similarities.argsort()[-2::-1]:  # Find the next most similar sector
+            most_similar_sector = interaction_matrix_counts.columns[idx]
+            if most_similar_sector not in already_recommended:
+                recommended_sectors.append(most_similar_sector)
+                already_recommended.add(most_similar_sector)
+                break
+        
+        if len(recommended_sectors) >= n_recommendations:  # Ensure only the top N recommendations are returned
+            break
+    
+    return recommended_sectors
+
+# Generate batch recommendations for all accounts
+def generate_batch_recommendations(account_ids, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, n_recommendations=5):
+    recommendations = {}
+    
+    for account_id in account_ids:
+        recommended_sectors = recommend_sectors_enhanced(account_id, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, n_recommendations)
+        recommendations[account_id] = recommended_sectors
+    
+    return recommendations
+
+# Apply the batch recommendation function
+account_ids = df_demo['ACCT'].unique()
+batch_recommendations = generate_batch_recommendations(account_ids, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, n_recommendations=5)
+
+# Convert recommendations to DataFrame
+recommendations_df = pd.DataFrame.from_dict(batch_recommendations, orient='index', columns=['Primary Sector', 'Secondary Sector', 'Third Sector', 'Fourth Sector', 'Fifth Sector'])
+
+# Export to Excel
+recommendations_df.to_excel('sector_recommendations.xlsx', index=True, index_label='ACCT')
+
+print("Recommendations have been successfully saved to 'sector_recommendations.xlsx'.")
+
+
+
+
+
+
+
+
+
+
+
+
 # Final Code with Excel Output Integration
 import pandas as pd
 import numpy as np
