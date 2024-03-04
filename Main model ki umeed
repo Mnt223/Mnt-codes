@@ -1,4 +1,72 @@
 import pandas as pd
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import MinMaxScaler
+from scipy.sparse import csr_matrix
+
+# Load the dataset
+df_demo = pd.read_csv('main6.csv')
+
+# Ensure 'DATE' is in datetime format and create 'Day_Type'
+df_demo['DATE'] = pd.to_datetime(df_demo['DATE'])
+df_demo['Day_Type'] = df_demo['DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Creating Interaction Matrices for Counts and Amounts
+interaction_matrix_counts = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_matrix_amounts = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+# Normalize the matrices using MinMaxScaler
+scaler = MinMaxScaler()
+interaction_matrix_counts_scaled = scaler.fit_transform(interaction_matrix_counts)
+interaction_matrix_amounts_scaled = scaler.fit_transform(interaction_matrix_amounts)
+
+# Convert normalized matrices to sparse format for efficiency
+interaction_matrix_counts_sparse = csr_matrix(interaction_matrix_counts_scaled)
+interaction_matrix_amounts_sparse = csr_matrix(interaction_matrix_amounts_scaled)
+
+# Combine the scaled matrices to create a unified interaction matrix
+combined_matrix_sparse = (interaction_matrix_counts_sparse + interaction_matrix_amounts_sparse) / 2
+
+# Calculate similarity matrix (Item-Based Collaborative Filtering)
+# Note: Ensure dense_output is set to False for large datasets
+similarity_matrix = cosine_similarity(combined_matrix_sparse.transpose(), dense_output=False)
+
+# Enhanced recommendation function considering both interaction counts and amounts
+def recommend_sectors_enhanced(account_id, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, sectors, n_recommendations=5):
+    if account_id not in interaction_matrix_counts.index:
+        return "Account not found."
+    
+    account_idx = interaction_matrix_counts.index.get_loc(account_id)
+    
+    scores = similarity_matrix[account_idx].toarray().flatten()
+    
+    top_indices = scores.argsort()[-n_recommendations-1:-1][::-1]
+    
+    weight_counts = 0.6
+    weight_amounts = 0.4
+    aggregated_counts = interaction_matrix_counts.iloc[top_indices].sum(axis=0) * weight_counts
+    aggregated_amounts = interaction_matrix_amounts.iloc[top_indices].sum(axis=0) * weight_amounts
+    aggregated_preferences = (aggregated_counts + aggregated_amounts).sort_values(ascending=False)
+    
+    top_sectors = aggregated_preferences.index[:n_recommendations].tolist()
+    
+    return top_sectors
+
+# Example usage
+account_id_example = 'ACCT_1'  # Replace with an actual account ID from your dataset
+sectors = interaction_matrix_counts.columns
+recommended_sectors = recommend_sectors_enhanced(account_id_example, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, sectors, n_recommendations=5)
+print(f"Enhanced Recommended Sectors for {account_id_example}: {recommended_sectors}")
+
+
+
+
+
+
+
+
+
+import pandas as pd
 from scipy.sparse import lil_matrix, csr_matrix
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import MaxAbsScaler
