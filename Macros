@@ -1,3 +1,75 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+import openpyxl  # Ensure this is installed for Excel export
+
+# Load the dataset
+df = pd.read_csv('main6.csv')
+
+# Preprocess the data
+df['DATE'] = pd.to_datetime(df['DATE'])  # Convert 'DATE' to datetime if needed
+
+# Creating Interaction Matrices for Counts and Amounts
+interaction_counts = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_amounts = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+# Normalize the interaction matrices
+scaler = MinMaxScaler()
+interaction_counts_normalized = scaler.fit_transform(interaction_counts)
+interaction_amounts_normalized = scaler.fit_transform(interaction_amounts)
+
+# Combine normalized matrices with equal weight for demonstration purposes
+combined_interaction = (interaction_counts_normalized + interaction_amounts_normalized) / 2
+
+# Calculate sector-to-sector similarity matrix from the combined interaction matrix
+sector_similarity = cosine_similarity(combined_interaction.T)
+sector_similarity_df = pd.DataFrame(sector_similarity, index=interaction_counts.columns, columns=interaction_counts.columns)
+
+# Function to generate recommendations for all customers
+def generate_recommendations_for_all(interaction_matrix, sector_similarity_matrix, top_n=5):
+    recommendations = {}
+    sector_names = interaction_matrix.columns
+    for account in interaction_matrix.index:
+        user_vector = interaction_matrix.loc[account].values.reshape(1, -1)
+        user_sector_similarity = np.dot(user_vector, sector_similarity_matrix)[0]
+        top_sector_indices = np.argsort(-user_sector_similarity)[:top_n]
+        recommended_sectors = sector_names[top_sector_indices]
+        recommendations[account] = recommended_sectors.tolist()
+    return recommendations
+
+# Convert interaction matrices back to DataFrame for easier handling
+interaction_counts_df = pd.DataFrame(interaction_counts_normalized, index=interaction_counts.index, columns=interaction_counts.columns)
+interaction_amounts_df = pd.DataFrame(interaction_amounts_normalized, index=interaction_amounts.index, columns=interaction_amounts.columns)
+combined_interaction_df = pd.DataFrame(combined_interaction, index=interaction_counts.index, columns=interaction_counts.columns)
+
+# Generate recommendations for all customers
+all_recommendations = generate_recommendations_for_all(combined_interaction_df, sector_similarity, top_n=5)
+
+# Convert recommendations to DataFrame for export
+recommendations_df = pd.DataFrame.from_dict(all_recommendations, orient='index', columns=[f'Top {i+1}' for i in range(5)])
+
+# Export to Excel with separate sheets
+with pd.ExcelWriter('recommendations_and_matrices.xlsx', engine='openpyxl') as writer:
+    recommendations_df.to_excel(writer, sheet_name='Customer Recommendations')
+    interaction_counts_df.to_excel(writer, sheet_name='Interaction Counts')
+    interaction_amounts_df.to_excel(writer, sheet_name='Interaction Amounts')
+    combined_interaction_df.to_excel(writer, sheet_name='Combined Interaction')
+    sector_similarity_df.to_excel(writer, sheet_name='Sector Similarity')
+
+print("Exported all data to 'recommendations_and_matrices.xlsx'.")
+
+
+
+
+
+
+
+
+
+
+
+
 # Example to split and export the first two chunks of the user similarity matrix to separate sheets
 with pd.ExcelWriter('user_similarity_matrix.xlsx', engine='openpyxl') as writer:
     user_similarity_df.iloc[:50000, :].to_excel(writer, sheet_name='Sheet1')  # Adjust numbers based on your needs
