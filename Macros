@@ -1,4 +1,36 @@
 import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load the dataset
+df_demo = pd.read_csv('main6.csv')
+
+# Create the interaction matrix
+interaction_matrix = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc=lambda x: len(x), fill_value=0)
+
+# Normalize the interaction matrix
+scaler = MinMaxScaler()
+interaction_matrix_normalized = scaler.fit_transform(interaction_matrix)
+
+# Calculate sector-to-sector similarity
+sector_similarity = cosine_similarity(interaction_matrix_normalized.T)
+
+# Convert to DataFrame
+sectors = interaction_matrix.columns
+sector_similarity_df = pd.DataFrame(sector_similarity, index=sectors, columns=sectors)
+
+# Export to Excel
+sector_similarity_df.to_excel('sector_similarity_matrix.xlsx', engine='openpyxl')
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import MinMaxScaler
