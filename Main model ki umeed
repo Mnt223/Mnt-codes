@@ -1,3 +1,81 @@
+newwwww
+import pandas as pd
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import MinMaxScaler
+from scipy.sparse import csr_matrix
+
+# Load the dataset
+df_demo = pd.read_csv('main6.csv')
+
+# Ensure 'DATE' is in datetime format and create 'Day_Type'
+df_demo['DATE'] = pd.to_datetime(df_demo['DATE'])
+df_demo['Day_Type'] = df_demo['DATE'].dt.dayofweek.apply(lambda x: 'Weekend' if x >= 5 else 'Weekday')
+
+# Creating Interaction Matrices for Counts and Amounts
+interaction_matrix_counts = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_matrix_amounts = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+# Normalize the matrices using MinMaxScaler
+scaler = MinMaxScaler()
+interaction_matrix_counts_scaled = scaler.fit_transform(interaction_matrix_counts)
+interaction_matrix_amounts_scaled = scaler.fit_transform(interaction_matrix_amounts)
+
+# Combine the scaled matrices to create a unified interaction matrix
+combined_matrix_scaled = (interaction_matrix_counts_scaled + interaction_matrix_amounts_scaled) / 2
+combined_matrix_sparse = csr_matrix(combined_matrix_scaled)  # Convert to sparse matrix for efficiency
+
+# Calculate similarity matrix (Sector-Sector for Item-Based Collaborative Filtering)
+similarity_matrix = cosine_similarity(combined_matrix_sparse.transpose(), dense_output=False)
+
+# Function to recommend sectors based on enhanced aggregation of preferences
+def recommend_sectors_enhanced(account_id, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, n_recommendations=5):
+    if account_id not in interaction_matrix_counts.index:
+        return "Account not found."
+    
+    # Aggregate sector preferences from the account
+    aggregated_counts = interaction_matrix_counts.loc[account_id] * 0.6  # Weight for counts
+    aggregated_amounts = interaction_matrix_amounts.loc[account_id] * 0.4  # Weight for amounts
+    aggregated_preferences = aggregated_counts + aggregated_amounts
+    
+    # Rank sectors based on aggregated preferences
+    preferred_sectors = aggregated_preferences.sort_values(ascending=False).index[:n_recommendations]
+    
+    recommended_sectors = []
+    already_recommended = set()  # Track already recommended sectors
+    
+    for sector in preferred_sectors:
+        sector_idx = list(interaction_matrix_counts.columns).index(sector)
+        sector_similarities = similarity_matrix[sector_idx].toarray().flatten()
+        
+        # Iterate through similarities to find the next most similar, non-repetitive sector
+        for idx in sector_similarities.argsort()[-2::-1]:  # Start from the second last, move backwards
+            most_similar_sector = interaction_matrix_counts.columns[idx]
+            if most_similar_sector not in already_recommended and most_similar_sector != sector:
+                recommended_sectors.append(most_similar_sector)
+                already_recommended.add(most_similar_sector)
+                break  # Break after finding the next suitable sector
+        
+        if len(recommended_sectors) >= n_recommendations:  # Stop if enough recommendations are made
+            break
+    
+    return recommended_sectors[:n_recommendations]  # Ensure only the top N recommendations are returned
+
+# Example usage
+account_id_example = 'ACCT_1'  # Replace with an actual account ID from your dataset
+recommended_sectors = recommend_sectors_enhanced(account_id_example, interaction_matrix_counts, interaction_matrix_amounts, similarity_matrix, n_recommendations=5)
+print(f"Enhanced Recommended Sectors for {account_id_example}: {recommended_sectors}")
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
