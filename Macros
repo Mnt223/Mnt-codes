@@ -5,6 +5,42 @@ from sklearn.metrics.pairwise import cosine_similarity
 # Load the dataset
 df_demo = pd.read_csv('main6.csv')
 
+# Create the interaction matrix (counts or amounts)
+interaction_matrix = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+
+# Normalize the interaction matrix
+scaler = MinMaxScaler()
+interaction_matrix_normalized = scaler.fit_transform(interaction_matrix)
+
+# Calculate user-to-user similarity
+user_similarity = cosine_similarity(interaction_matrix_normalized)
+
+# Convert matrices to DataFrame
+accounts = interaction_matrix.index
+sectors = interaction_matrix.columns
+interaction_matrix_df = pd.DataFrame(interaction_matrix_normalized, index=accounts, columns=sectors)
+user_similarity_df = pd.DataFrame(user_similarity, index=accounts, columns=accounts)
+
+# Export matrices to Excel
+interaction_matrix_df.to_excel('account_to_sector_matrix.xlsx', engine='openpyxl')
+user_similarity_df.to_excel('user_similarity_matrix.xlsx', engine='openpyxl')
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load the dataset
+df_demo = pd.read_csv('main6.csv')
+
 # Create the interaction matrix
 interaction_matrix = df_demo.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc=lambda x: len(x), fill_value=0)
 
