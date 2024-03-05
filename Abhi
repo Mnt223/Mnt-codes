@@ -1,6 +1,96 @@
 mmnt
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+from datetime import datetime
+
+# Load and preprocess the dataset
+def load_and_preprocess_data(filepath):
+    try:
+        df = pd.read_csv(filepath)
+        df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+        df.dropna(inplace=True)
+        return df
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+# Generate full recommendation ranks
+def generate_full_ranks(interaction_matrix, sector_similarity_matrix, sectors):
+    sector_ranks = pd.DataFrame(index=interaction_matrix.index, columns=sectors)
+    for account in interaction_matrix.index:
+        user_vector = interaction_matrix.loc[account].values.reshape(1, -1)
+        user_sector_similarity = np.dot(user_vector, sector_similarity_matrix)
+        
+        # Determine ranks based on similarity scores
+        sorted_indices = np.argsort(-user_sector_similarity).flatten()
+        ranks = np.arange(1, len(sectors) + 1)[sorted_indices]
+        
+        for i, sector in enumerate(sectors):
+            sector_ranks.at[account, sector] = ranks[i]
+    
+    return sector_ranks.astype(int)  # Ensure ranks are integers for correct `nsmallest` operation
+
+# Evaluate recommendations
+def evaluate_recommendations(test_df, all_sector_ranks):
+    hits, total_recommendations = 0, 0
+    for account in all_sector_ranks.index:
+        # Ensure we're only evaluating accounts present in both training and test sets
+        if account not in test_df['ACCT'].values:
+            continue
+
+        recommended_sectors = all_sector_ranks.loc[account].nsmallest(5).index.tolist()
+        actual_sectors = test_df[test_df['ACCT'] == account]['Sector'].unique()
+        hits += len(set(recommended_sectors) & set(actual_sectors))
+        total_recommendations += len(recommended_sectors)
+    
+    hit_rate = hits / total_recommendations if total_recommendations else 0
+    print(f"Hit Rate: {hit_rate:.2f}" if total_recommendations else "No recommendations were made.")
+
+def main():
+    df = load_and_preprocess_data('main6.csv')
+    if df is None: return
+
+    # Temporal split based on a specified date
+    split_date = datetime(2023, 1, 1)
+    train_df = df[df['DATE'] < split_date]
+    test_df = df[df['DATE'] >= split_date]
+
+    # Aggregate transaction counts by account and sector
+    interaction_counts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+    scaler = MinMaxScaler()
+    interaction_counts_normalized_train = scaler.fit_transform(interaction_counts_train)
+    
+    sectors = interaction_counts_train.columns.tolist()
+    sector_similarity = cosine_similarity(interaction_counts_normalized_train)
+    
+    combined_interaction_df_train = pd.DataFrame(interaction_counts_normalized_train, index=interaction_counts_train.index, columns=sectors)
+    all_sector_ranks = generate_full_ranks(combined_interaction_df_train, sector_similarity, sectors)
+
+    # Exporting the results
+    try:
+        with pd.ExcelWriter('sector_recommendations_and_matrices.xlsx', engine='openpyxl') as writer:
+            all_sector_ranks.to_excel(writer, sheet_name='Sector-wise Recommendation Ranks')
+        print("Exported all data and recommendation ranks to 'sector_recommendations_and_matrices.xlsx'.")
+    except Exception as e:
+        print(f"Failed to export data: {e}")
+    
+    # Evaluate the model's predictive performance using the test dataset
+    evaluate_recommendations(test_df, all_sector_ranks)
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
