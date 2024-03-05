@@ -1,3 +1,25 @@
+def calculate_accuracy(recommendations, test_data):
+    correct_predictions = 0
+    for account, recommended_sectors in recommendations.items():
+        # Extract the sectors where the customer actually made transactions in the test period
+        actual_sectors = test_data.loc[test_data['ACCT'] == account, 'Sector'].unique()
+        # Check if any recommended sector matches the actual sectors
+        if any(sector in actual_sectors for sector in recommended_sectors):
+            correct_predictions += 1
+    # Calculate accuracy as the ratio of correct predictions to total predictions
+    accuracy = correct_predictions / len(recommendations) if recommendations else 0
+    return accuracy
+
+# Calculate the accuracy for the recommendations based on the test data
+accuracy_score = calculate_accuracy(all_recommendations, test_df)
+print(f"Accuracy Score: {accuracy_score:.4f}")
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
