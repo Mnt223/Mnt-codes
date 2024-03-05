@@ -2,6 +2,88 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
+import openpyxl  # Ensure openpyxl is installed for Excel export
+
+# Load the dataset
+df = pd.read_csv('main6.csv')
+df['DATE'] = pd.to_datetime(df['DATE'])  # Convert 'DATE' to datetime format
+
+# Time-based split for training and testing
+split_date = pd.Timestamp('2023-01-01')  # Adjust based on your dataset
+train_df = df[df['DATE'] < split_date]
+test_df = df[df['DATE'] >= split_date]
+
+# Creating Interaction Matrices for Training Data (Counts and Amounts)
+interaction_counts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_amounts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+# Normalize the interaction matrices
+scaler = MinMaxScaler()
+interaction_counts_normalized = scaler.fit_transform(interaction_counts_train)
+interaction_amounts_normalized = scaler.fit_transform(interaction_amounts_train)
+
+# Combine normalized matrices with equal weight for demonstration purposes
+combined_interaction = (interaction_counts_normalized + interaction_amounts_normalized) / 2
+
+# Calculate sector-to-sector similarity matrix from the combined interaction matrix
+sector_similarity = cosine_similarity(combined_interaction.T)
+sector_similarity_df = pd.DataFrame(sector_similarity, index=interaction_counts_train.columns, columns=interaction_counts_train.columns)
+
+# Function to generate recommendations for all customers based on sector similarity
+def generate_recommendations_for_all(interaction_matrix, sector_similarity_matrix, sectors, top_n=5):
+    recommendations = {}
+    for account in interaction_matrix.index:
+        user_vector = interaction_matrix.loc[[account]].values
+        user_sector_similarity = np.dot(user_vector, sector_similarity_matrix)[0]
+        top_sector_indices = np.argsort(-user_sector_similarity)[:top_n]
+        recommended_sectors = sectors[top_sector_indices].tolist()
+        recommendations[account] = recommended_sectors
+    return recommendations
+
+# Generate recommendations for all customers
+interaction_matrix_df = pd.DataFrame(combined_interaction, index=interaction_counts_train.index, columns=interaction_counts_train.columns)
+all_recommendations = generate_recommendations_for_all(interaction_matrix_df, sector_similarity, interaction_counts_train.columns)
+
+# Prepare summary of actual amounts spent by each customer in each sector during the test period
+actual_spending_test_period = test_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+# Initialize a DataFrame to store the comparison of actual spending in recommended sectors
+comparison_df = pd.DataFrame(columns=['ACCT', 'Recommended Sectors', 'Actual Spending in Recommended Sectors'])
+
+for acct, recommended_sectors in all_recommendations.items():
+    if acct in actual_spending_test_period.index:
+        actual_spending = actual_spending_test_period.loc[acct, recommended_sectors].sum()
+    else:
+        actual_spending = 0
+    comparison_df = comparison_df.append({
+        'ACCT': acct,
+        'Recommended Sectors': ', '.join(recommended_sectors),
+        'Actual Spending in Recommended Sectors': actual_spending
+    }, ignore_index=True)
+
+# Export to Excel with separate sheets
+with pd.ExcelWriter('recommendations_and_matrices.xlsx', engine='openpyxl') as writer:
+    recommendations_df.to_excel(writer, sheet_name='Customer Recommendations')
+    interaction_counts_train.to_excel(writer, sheet_name='Interaction Counts Train')
+    interaction_amounts_train.to_excel(writer, sheet_name='Interaction Amounts Train')
+    sector_similarity_df.to_excel(writer, sheet_name='Sector Similarity')
+    comparison_df.to_excel(writer, sheet_name='Spending Comparison')
+
+print("Exported all data to 'recommendations_and_matrices.xlsx'.")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
 import openpyxl
 
 # Ensure this package is installed for Excel export
