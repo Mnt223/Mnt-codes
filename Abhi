@@ -1,4 +1,60 @@
-mmnt
+mmnty
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+
+def load_and_preprocess_data(filepath):
+    try:
+        df = pd.read_csv(filepath)
+        df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+        df.dropna(inplace=True)
+        return df
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+def generate_hot_encoding(df, sectors):
+    hot_encoded = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc=lambda x: 1, fill_value=0)
+    for sector in sectors:
+        if sector not in hot_encoded.columns:
+            hot_encoded[sector] = 0
+    return hot_encoded[sectors]  # Ensure consistent column order
+
+def generate_ranks(df, sectors):
+    interaction_counts = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+    ranks = interaction_counts.rank(axis=1, method='max', ascending=False).astype(int)
+    return ranks
+
+def main():
+    df = load_and_preprocess_data('main6.csv')
+    if df is None:
+        return
+
+    split_date = pd.to_datetime("2023-01-01")
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+    sectors = sorted(df['Sector'].unique())
+
+    # Hot encoding for training and test data
+    train_hot_encoded = generate_hot_encoding(train_df, sectors)
+    test_hot_encoded = generate_hot_encoding(test_df, sectors)
+
+    # Generate ranks for training data
+    train_ranks = generate_ranks(train_df, sectors)
+
+    with pd.ExcelWriter('outputs.xlsx', engine='openpyxl') as writer:
+        train_hot_encoded.to_excel(writer, sheet_name='Train Data Hot Encoding')
+        test_hot_encoded.to_excel(writer, sheet_name='Test Data Hot Encoding')
+        train_ranks.to_excel(writer, sheet_name='Training Data Ranks')
+
+    print("Exported all data to 'outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
