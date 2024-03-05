@@ -3,6 +3,73 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
+import openpyxl  # Ensure openpyxl is installed for Excel export
+
+# Load the dataset
+df = pd.read_csv('main6.csv')
+df['DATE'] = pd.to_datetime(df['DATE'])
+
+# Splitting the dataset into training and testing sets
+train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+
+# Creating and normalizing interaction matrices
+interaction_counts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_amounts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+scaler = MinMaxScaler()
+interaction_counts_normalized = scaler.fit_transform(interaction_counts_train)
+interaction_amounts_normalized = scaler.fit_transform(interaction_amounts_train)
+
+combined_interaction = (interaction_counts_normalized + interaction_amounts_normalized) / 2
+sectors = interaction_counts_train.columns.tolist()
+
+# Calculate the sector-to-sector similarity matrix
+sector_similarity = cosine_similarity(combined_interaction.T)
+
+# Generate recommendations
+def generate_recommendations(interaction_matrix, sector_similarity, sectors, top_n=5):
+    recommendations = {}
+    for account, interactions in interaction_matrix.iterrows():
+        user_sector_similarity = np.dot(interactions.values, sector_similarity)
+        top_sector_indices = np.argsort(-user_sector_similarity)[:top_n]
+        recommendations[account] = [sectors[i] for i in top_sector_indices]
+    return recommendations
+
+recommendations = generate_recommendations(pd.DataFrame(combined_interaction, index=interaction_counts_train.index, columns=sectors), sector_similarity, sectors)
+
+# Custom functions for calculating precision, recall, coverage, and NDCG are assumed to be defined here as shown in previous guidance
+
+# Calculating metrics
+precision_at_5, recall_at_5 = calculate_precision_recall(recommendations, test_df, k=5)
+coverage = calculate_coverage(recommendations, sectors)
+ndcg_at_5 = calculate_ndcg(recommendations, test_df, k=5)
+
+# Exporting the results
+with pd.ExcelWriter('recommendation_results.xlsx', engine='openpyxl') as writer:
+    # Recommendations
+    pd.DataFrame.from_dict(recommendations, orient='index').to_excel(writer, sheet_name='Recommendations')
+    # Metrics
+    metrics_df = pd.DataFrame({
+        'Metric': ['Precision@5', 'Recall@5', 'Coverage', 'NDCG@5'],
+        'Value': [precision_at_5, recall_at_5, coverage, ndcg_at_5]
+    })
+    metrics_df.to_excel(writer, sheet_name='Evaluation Metrics')
+    # Additional exports like interaction matrices can be added here
+
+print("Analysis and recommendations exported to recommendation_results.xlsx")
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Load and preprocess the dataset
 df = pd.read_csv('main6.csv')
