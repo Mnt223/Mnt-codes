@@ -1,4 +1,94 @@
-mmntymn
+isko try kro
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_and_preprocess_data(filepath):
+    try:
+        df = pd.read_csv(filepath)
+        df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+        df.dropna(inplace=True)
+        return df
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+def generate_interaction_matrix(df):
+    interaction_matrix = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    return interaction_matrix
+
+def generate_sector_similarity(interaction_matrix):
+    scaler = MinMaxScaler()
+    scaled_matrix = scaler.fit_transform(interaction_matrix)  # Scale interaction matrix without transposing
+    sector_similarity = cosine_similarity(scaled_matrix.T)  # Calculate cosine similarity between sectors
+    return pd.DataFrame(sector_similarity, index=interaction_matrix.columns, columns=interaction_matrix.columns)
+
+def generate_hot_encoding(df, sectors):
+    hot_encoded = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc=lambda x: 1, fill_value=0)
+    hot_encoded = hot_encoded.reindex(columns=sectors, fill_value=0)  # Ensure all sectors are included
+    return hot_encoded
+
+def get_recommendation_ranks(test_interaction_matrix, sector_similarity):
+    # Dot product between test interactions and sector similarity to get a score matrix
+    scores = np.dot(test_interaction_matrix, sector_similarity)
+    # Convert scores to DataFrame for easier handling
+    scores_df = pd.DataFrame(scores, index=test_interaction_matrix.index, columns=sector_similarity.columns)
+    # Rank the sectors based on scores
+    ranks = scores_df.apply(lambda x: (-x).argsort().argsort() + 1, axis=1)
+    return ranks
+
+def calculate_hit_rate(test_interaction_matrix, test_recommendations):
+    hits = 0
+    possible_hits = 0
+    for acct in test_interaction_matrix.index:
+        actual_sectors = test_interaction_matrix.loc[acct].loc[test_interaction_matrix.loc[acct] > 0].index
+        recommended_sectors = test_recommendations.loc[acct].nsmallest(5).index
+        hits += len(set(actual_sectors) & set(recommended_sectors))
+        possible_hits += len(recommended_sectors)
+    hit_rate = hits / possible_hits if possible_hits > 0 else 0
+    return hit_rate
+
+def main():
+    df = load_and_preprocess_data('main6.csv')
+    if df is None:
+        return
+    
+    sectors = sorted(df['Sector'].unique())
+    split_date = pd.to_datetime("2023-01-01")
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    train_interaction_matrix = generate_interaction_matrix(train_df)
+    test_interaction_matrix = generate_interaction_matrix(test_df)
+    
+    sector_similarity = generate_sector_similarity(train_interaction_matrix)
+    
+    train_hot_encoding = generate_hot_encoding(train_df, sectors)
+    test_hot_encoding = generate_hot_encoding(test_df, sectors)
+    
+    test_recommended_ranks = get_recommendation_ranks(test_interaction_matrix, sector_similarity)
+
+    hit_rate = calculate_hit_rate(test_interaction_matrix, test_recommended_ranks)
+    print(f"Hit Rate: {hit_rate:.2f}")
+
+    with pd.ExcelWriter('complete_outputs.xlsx', engine='openpyxl') as writer:
+        train_hot_encoding.to_excel(writer, sheet_name='Train Hot Encoding')
+        test_hot_encoding.to_excel(writer, sheet_name='Test Hot Encoding')
+        test_recommended_ranks.to_excel(writer, sheet_name='Test Recommended Ranks')
+
+    print("All requested outputs have been exported to 'complete_outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
