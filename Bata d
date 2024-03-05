@@ -1,4 +1,83 @@
 import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+import openpyxl
+
+# Ensure this package is installed for Excel export
+# pip install openpyxl
+
+# Load the dataset
+df = pd.read_csv('main6.csv')
+df['DATE'] = pd.to_datetime(df['DATE'])
+
+# Define your split date
+split_date = pd.Timestamp('2023-01-01')
+train_df = df[df['DATE'] < split_date]
+test_df = df[df['DATE'] >= split_date]
+
+# Function to create and normalize interaction matrices
+def create_normalized_matrices(dataframe):
+    interaction_counts = dataframe.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+    interaction_amounts = dataframe.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    scaler = MinMaxScaler()
+    counts_normalized = scaler.fit_transform(interaction_counts)
+    amounts_normalized = scaler.fit_transform(interaction_amounts)
+    combined_normalized = (counts_normalized + amounts_normalized) / 2
+    return pd.DataFrame(combined_normalized, index=interaction_counts.index, columns=interaction_counts.columns), interaction_counts.columns
+
+# Calculate sector-to-sector similarity matrix
+def calculate_similarity_matrix(interaction_matrix):
+    return cosine_similarity(interaction_matrix.T)
+
+# Generate recommendations based on sector similarity
+def generate_recommendations_for_all(interaction_matrix, sector_similarity, sectors, top_n=5):
+    recommendations = {}
+    for account in interaction_matrix.index:
+        user_vector = interaction_matrix.loc[account].values.reshape(1, -1)
+        similarity_scores = np.dot(user_vector, sector_similarity)[0]
+        top_indices = np.argsort(-similarity_scores)[:top_n]
+        recommendations[account] = sectors[top_indices].tolist()
+    return recommendations
+
+# Evaluate recommendations against the test set
+def evaluate_recommendations(recommendations, test_data, sectors):
+    hits = 0
+    total = 0
+    for account, recommended_sectors in recommendations.items():
+        actual_sectors = test_data[test_data['ACCT'] == account]['Sector'].unique()
+        hit = set(recommended_sectors) & set(actual_sectors)
+        hits += len(hit)
+        total += len(recommended_sectors)
+    average_precision = hits / total if total else 0
+    return average_precision
+
+# Preparing matrices and similarity calculation
+interaction_matrix_train, sectors = create_normalized_matrices(train_df)
+sector_similarity_matrix = calculate_similarity_matrix(interaction_matrix_train)
+
+# Generate recommendations for all customers based on training data
+all_recommendations = generate_recommendations_for_all(interaction_matrix_train, sector_similarity_matrix, sectors)
+
+# Evaluate the recommendations using the test dataset
+avg_precision = evaluate_recommendations(all_recommendations, test_df, sectors)
+
+# Export to Excel with separate sheets
+with pd.ExcelWriter('recommendations_evaluation.xlsx', engine='openpyxl') as writer:
+    pd.DataFrame(all_recommendations).to_excel(writer, sheet_name='Recommendations')
+    pd.DataFrame(interaction_matrix_train, index=interaction_matrix_train.index, columns=sectors).to_excel(writer, sheet_name='Interaction Matrix')
+    pd.DataFrame(sector_similarity_matrix, index=sectors, columns=sectors).to_excel(writer, sheet_name='Sector Similarity')
+    pd.DataFrame({'Average Precision': [avg_precision]}).to_excel(writer, sheet_name='Evaluation Metrics')
+
+print(f"Exported all data to 'recommendations_evaluation.xlsx'. Average Precision: {avg_precision}")
+
+
+
+
+
+
+
+import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
 import numpy as np
