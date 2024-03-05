@@ -1,5 +1,85 @@
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load and preprocess the dataset
+df = pd.read_csv('main6.csv')
+df['DATE'] = pd.to_datetime(df['DATE'])
+
+# Identify unique accounts
+unique_accounts = df['ACCT'].unique()
+
+# Split unique accounts into training and testing sets
+train_accounts, test_accounts = train_test_split(unique_accounts, test_size=0.2, random_state=42)
+
+# Filter the original dataset to create training and testing datasets based on the split accounts
+train_df = df[df['ACCT'].isin(train_accounts)]
+test_df = df[df['ACCT'].isin(test_accounts)]
+
+# Creating and normalizing interaction matrices for counts and amounts
+interaction_counts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_amounts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+scaler = MinMaxScaler()
+interaction_counts_normalized_train = scaler.fit_transform(interaction_counts_train)
+interaction_amounts_normalized_train = scaler.fit_transform(interaction_amounts_train)
+
+# Hot encoding sectors for training data
+hot_encoded_sectors_train = (interaction_counts_train > 0).astype(int)
+
+# Combine normalized matrices with equal weight for each factor
+combined_interaction_train = (interaction_counts_normalized_train + interaction_amounts_normalized_train) / 2
+sectors = interaction_counts_train.columns
+
+# Calculate the sector-to-sector similarity matrix from the combined interaction matrix
+sector_similarity = cosine_similarity(combined_interaction_train.T)
+
+# Generate recommendations and rank for all customers
+def generate_recommendations_and_ranks(interaction_matrix, sector_similarity_matrix, sectors, top_n=5):
+    recommendations = {}
+    ranks = {}
+    sector_names = sectors.tolist()
+    for account in interaction_matrix.index:
+        user_vector = interaction_matrix.loc[account].values.reshape(1, -1)
+        user_sector_similarity = np.dot(user_vector, sector_similarity_matrix)[0]
+        top_sector_indices = np.argsort(-user_sector_similarity)[:top_n]
+        recommended_sectors = [sector_names[i] for i in top_sector_indices]
+        recommendations[account] = recommended_sectors
+        ranks[account] = np.sort(-user_sector_similarity)[:top_n] * -1
+    return recommendations, ranks
+
+combined_interaction_df_train = pd.DataFrame(combined_interaction_train, index=interaction_counts_train.index, columns=sectors)
+all_recommendations, all_ranks = generate_recommendations_and_ranks(combined_interaction_df_train, sector_similarity, sectors)
+
+# Hot encoding sectors for testing data
+interaction_counts_test = test_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+hot_encoded_sectors_test = (interaction_counts_test > 0).astype(int)
+
+# Exporting results, sector-wise analysis, and additional outputs
+with pd.ExcelWriter('enhanced_sector_recommendations_and_matrices.xlsx', engine='openpyxl') as writer:
+    # Original outputs
+    # [Export code for Recommendations, Interaction Counts, etc., as before]
+
+    # Additional outputs
+    hot_encoded_sectors_train.to_excel(writer, sheet_name='Hot Encoded Sectors Train')
+    hot_encoded_sectors_test.to_excel(writer, sheet_name='Hot Encoded Sectors Test')
+    
+    # Sector-wise recommendation rank for each customer
+    pd.DataFrame.from_dict(all_ranks, orient='index', columns=[f'Rank {i+1}' for i in range(5)]).to_excel(writer, sheet_name='Recommendation Ranks')
+
+print("Exported all data, recommendations, sector-wise analysis, and additional outputs to 'enhanced_sector_recommendations_and_matrices.xlsx'.")
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
 import openpyxl  # Ensure openpyxl is installed for Excel export
