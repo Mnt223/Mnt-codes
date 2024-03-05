@@ -8,6 +8,64 @@ from sklearn.metrics.pairwise import cosine_similarity
 df = pd.read_csv('main6.csv')
 df['DATE'] = pd.to_datetime(df['DATE'])
 
+# Identify unique accounts and split into training and testing sets
+unique_accounts = df['ACCT'].unique()
+train_accounts, test_accounts = train_test_split(unique_accounts, test_size=0.2, random_state=42)
+
+# Filter the dataset for training and testing
+train_df = df[df['ACCT'].isin(train_accounts)]
+test_df = df[df['ACCT'].isin(test_accounts)]
+
+# Pivot to get interaction matrices and normalize
+interaction_counts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_amounts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+scaler = MinMaxScaler()
+interaction_counts_normalized_train = scaler.fit_transform(interaction_counts_train)
+interaction_amounts_normalized_train = scaler.fit_transform(interaction_amounts_train)
+
+# Combine and calculate sector similarity
+combined_interaction_train = (interaction_counts_normalized_train + interaction_amounts_normalized_train) / 2
+sectors = interaction_counts_train.columns
+sector_similarity = cosine_similarity(combined_interaction_train.T)
+
+# Define a function to calculate ranks for all sectors for each customer
+def calculate_sector_ranks(interaction_matrix, sector_similarity_matrix):
+    sector_ranks = pd.DataFrame(index=interaction_matrix.index, columns=interaction_matrix.columns)
+    for account in interaction_matrix.index:
+        user_vector = interaction_matrix.loc[account].values.reshape(1, -1)
+        user_sector_similarity = np.dot(user_vector, sector_similarity_matrix)[0]
+        sorted_indices = np.argsort(-user_sector_similarity)
+        ranks = np.empty_like(sorted_indices)
+        ranks[sorted_indices] = np.arange(len(user_sector_similarity))
+        sector_ranks.loc[account] = ranks + 1  # +1 to start ranking from 1 instead of 0
+    return sector_ranks
+
+# Calculate sector ranks for each customer
+combined_interaction_df_train = pd.DataFrame(combined_interaction_train, index=interaction_counts_train.index, columns=sectors)
+sector_ranks_df = calculate_sector_ranks(combined_interaction_df_train, sector_similarity)
+
+# Exporting sector ranks
+sector_ranks_df.to_csv('sector_ranks_per_customer.csv')
+
+print("Exported sector ranks for each customer to 'sector_ranks_per_customer.csv'.")
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load and preprocess the dataset
+df = pd.read_csv('main6.csv')
+df['DATE'] = pd.to_datetime(df['DATE'])
+
 # Identify unique accounts
 unique_accounts = df['ACCT'].unique()
 
