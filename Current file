@@ -1,4 +1,95 @@
 import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load the dataset
+df = pd.read_csv('main6.csv')
+df['DATE'] = pd.to_datetime(df['DATE'])
+
+# Splitting dataset into training and testing
+train_df, test_df = train_test_split(df, test_size=0.2, random_state=42, shuffle=True)
+
+# Creating Interaction Matrices for Counts and Amounts (Training Data)
+interaction_counts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_amounts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+# Normalize the interaction matrices
+scaler = MinMaxScaler()
+interaction_counts_normalized_train = scaler.fit_transform(interaction_counts_train)
+interaction_amounts_normalized_train = scaler.fit_transform(interaction_amounts_train)
+
+# Combine normalized matrices with equal weight
+combined_interaction_train = (interaction_counts_normalized_train + interaction_amounts_normalized_train) / 2
+sectors = interaction_counts_train.columns
+
+# Calculate sector-to-sector similarity matrix from the combined interaction matrix
+sector_similarity = cosine_similarity(combined_interaction_train.T)
+sector_similarity_df = pd.DataFrame(sector_similarity, index=sectors, columns=sectors)
+
+# Generate recommendations for all customers based on sector similarity
+def generate_recommendations_for_all(interaction_matrix, sector_similarity_matrix, top_n=5):
+    recommendations = {}
+    sector_names = sectors.tolist()
+    for account in interaction_matrix.index:
+        user_vector = interaction_matrix.loc[[account]].values
+        user_sector_similarity = np.dot(user_vector, sector_similarity_matrix)[0]
+        top_sector_indices = np.argsort(-user_sector_similarity)[:top_n]
+        recommended_sectors = [sector_names[i] for i in top_sector_indices]
+        recommendations[account] = recommended_sectors
+    return recommendations
+
+interaction_matrix_df_train = pd.DataFrame(combined_interaction_train, index=interaction_counts_train.index, columns=sectors)
+all_recommendations = generate_recommendations_for_all(interaction_matrix_df_train, sector_similarity, sectors)
+
+# Function to calculate average precision
+def calculate_average_precision(recommendations, test_data):
+    hits = 0
+    total_recommendations = 0
+    for account, recommended_sectors in recommendations.items():
+        actual_sectors = test_data.loc[test_data['ACCT'] == account, 'Sector'].unique()
+        hits += len(set(recommended_sectors) & set(actual_sectors))
+        total_recommendations += len(recommended_sectors)
+    return hits / total_recommendations if total_recommendations else 0
+
+average_precision = calculate_average_precision(all_recommendations, test_df)
+print(f"Average Precision Score: {average_precision:.4f}")
+
+# Calculate and export total and recommended sector spending during the test period
+total_spent_test = test_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+amounts_spent_in_recommended_sectors = pd.DataFrame(columns=['ACCT', 'Sector', 'Amount Spent'])
+
+for acct, recommended_sectors in all_recommendations.items():
+    for sector in recommended_sectors:
+        amount_spent = total_spent_test.loc[acct, sector] if acct in total_spent_test.index and sector in total_spent_test.columns else 0
+        amounts_spent_in_recommended_sectors = amounts_spent_in_recommended_sectors.append({
+            'ACCT': acct, 
+            'Sector': sector, 
+            'Amount Spent': amount_spent
+        }, ignore_index=True)
+
+# Exporting DataFrames to CSV files
+interaction_counts_train.to_csv('interaction_counts_train.csv')
+interaction_amounts_train.to_csv('interaction_amounts_train.csv')
+pd.DataFrame(combined_interaction_train, index=interaction_counts_train.index, columns=sectors).to_csv('combined_interaction_train.csv')
+sector_similarity_df.to_csv('sector_similarity.csv')
+pd.DataFrame.from_dict(all_recommendations, orient='index').to_csv('all_recommendations.csv')
+total_spent_test.to_csv('total_spent_test.csv')
+amounts_spent_in_recommended_sectors.to_csv('amounts_spent_in_recommended_sectors.csv')
+
+print("Exported all data to CSV files including detailed spending analysis.")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 from implicit.als import AlternatingLeastSquares
 import numpy as np 
 
