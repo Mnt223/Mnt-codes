@@ -1,4 +1,72 @@
-mmnty
+mmntymn
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_and_preprocess_data(filepath):
+    try:
+        df = pd.read_csv(filepath)
+        df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+        df.dropna(inplace=True)
+        return df
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+def generate_interaction_matrix(df):
+    return df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+
+def generate_sector_similarity(interaction_matrix):
+    scaler = MinMaxScaler()
+    scaled_matrix = scaler.fit_transform(interaction_matrix.T)
+    sector_similarity = cosine_similarity(scaled_matrix)
+    return pd.DataFrame(sector_similarity, index=interaction_matrix.columns, columns=interaction_matrix.columns)
+
+def generate_hot_encoding(df):
+    hot_encoded = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc=lambda x: 1, fill_value=0)
+    return hot_encoded
+
+def recommend_sectors(interaction_matrix, sector_similarity):
+    scores = interaction_matrix.dot(sector_similarity)
+    recommendations = scores.apply(lambda x: pd.Series(x.nlargest(5).index), axis=1)
+    return recommendations
+
+def main():
+    df = load_and_preprocess_data('main6.csv')
+    if df is None: return
+
+    split_date = pd.to_datetime("2023-01-01")
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    # Generate sector-sector cosine similarity matrix from training data
+    train_interaction_matrix = generate_interaction_matrix(train_df)
+    sector_similarity = generate_sector_similarity(train_interaction_matrix)
+
+    # Generate and export hot encoding for training and testing data
+    train_hot_encoding = generate_hot_encoding(train_df)
+    test_hot_encoding = generate_hot_encoding(test_df)
+
+    # Generate sector recommendations for accounts in the test dataset
+    test_interaction_matrix = generate_interaction_matrix(test_df)
+    test_recommendations = recommend_sectors(test_interaction_matrix, sector_similarity)
+
+    # Save outputs to Excel
+    with pd.ExcelWriter('sector_analysis_outputs.xlsx', engine='openpyxl') as writer:
+        train_hot_encoding.to_excel(writer, sheet_name='Train Hot Encoding')
+        test_hot_encoding.to_excel(writer, sheet_name='Test Hot Encoding')
+        test_recommendations.to_excel(writer, sheet_name='Test Recommendations')
+
+    print("All outputs have been saved to 'sector_analysis_outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
