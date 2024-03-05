@@ -44,6 +44,91 @@ def generate_recommendations_for_all(interaction_matrix, sector_similarity_matri
 combined_interaction_df_train = pd.DataFrame(combined_interaction_train, index=interaction_counts_train.index, columns=sectors)
 all_recommendations = generate_recommendations_for_all(combined_interaction_df_train, sector_similarity, sectors)
 
+# Sector-wise analysis for recommendation accuracy
+def sector_wise_analysis(recommendations, test_transactions, sectors):
+    sector_analysis = {sector: {'total_recommendations': 0, 'successful_matches': 0} for sector in sectors}
+    
+    for account, recommended_sectors in recommendations.items():
+        actual_sectors = test_transactions[test_transactions['ACCT'] == account]['Sector'].tolist()
+        for recommended_sector in recommended_sectors:
+            sector_analysis[recommended_sector]['total_recommendations'] += 1
+            if recommended_sector in actual_sectors:
+                sector_analysis[recommended_sector]['successful_matches'] += 1
+
+    return sector_analysis
+
+sector_analysis_results = sector_wise_analysis(all_recommendations, test_df, sectors)
+
+# Exporting results and sector-wise analysis
+with pd.ExcelWriter('sector_recommendations_and_matrices.xlsx', engine='openpyxl') as writer:
+    pd.DataFrame.from_dict(all_recommendations, orient='index', 
+                           columns=[f'Recommendation {i+1}' for i in range(5)]).to_excel(writer, sheet_name='Recommendations')
+    pd.DataFrame(interaction_counts_normalized_train, index=interaction_counts_train.index, 
+                 columns=sectors).to_excel(writer, sheet_name='Interaction Counts')
+    pd.DataFrame(interaction_amounts_normalized_train, index=interaction_amounts_train.index, 
+                 columns=sectors).to_excel(writer, sheet_name='Interaction Amounts')
+    pd.DataFrame(combined_interaction_train, index=interaction_counts_train.index, 
+                 columns=sectors).to_excel(writer, sheet_name='Combined Interaction')
+    pd.DataFrame(sector_similarity, index=sectors, columns=sectors).to_excel(writer, sheet_name='Sector Similarity')
+    # Adding sector-wise analysis sheet
+    sector_analysis_df = pd.DataFrame(sector_analysis_results).transpose()
+    sector_analysis_df.to_excel(writer, sheet_name='Sector-wise Analysis')
+
+print("Exported all data and recommendations, including sector-wise analysis, to 'sector_recommendations_and_matrices.xlsx'.")
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load and preprocess the dataset
+df = pd.read_csv('main6.csv')
+df['DATE'] = pd.to_datetime(df['DATE'])
+
+# Splitting dataset into training and testing sets
+train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+
+# Export train and test datasets
+train_df.to_csv('train_data.csv', index=False)
+test_df.to_csv('test_data.csv', index=False)
+
+# Creating and normalizing interaction matrices for counts and amounts
+interaction_counts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+interaction_amounts_train = train_df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+scaler = MinMaxScaler()
+interaction_counts_normalized_train = scaler.fit_transform(interaction_counts_train)
+interaction_amounts_normalized_train = scaler.fit_transform(interaction_amounts_train)
+
+# Combine normalized matrices with equal weight for each factor
+combined_interaction_train = (interaction_counts_normalized_train + interaction_amounts_normalized_train) / 2
+sectors = interaction_counts_train.columns
+
+# Calculate the sector-to-sector similarity matrix from the combined interaction matrix
+sector_similarity = cosine_similarity(combined_interaction_train.T)
+
+# Generate recommendations for all customers
+def generate_recommendations_for_all(interaction_matrix, sector_similarity_matrix, sectors, top_n=5):
+    recommendations = {}
+    sector_names = sectors.tolist()  # Convert sector names to a list for direct indexing
+    for account in interaction_matrix.index:
+        user_vector = interaction_matrix.loc[account].values.reshape(1, -1)
+        user_sector_similarity = np.dot(user_vector, sector_similarity_matrix)[0]
+        top_sector_indices = np.argsort(-user_sector_similarity)[:top_n]
+        recommended_sectors = [sector_names[i] for i in top_sector_indices]
+        recommendations[account] = recommended_sectors
+    return recommendations
+
+combined_interaction_df_train = pd.DataFrame(combined_interaction_train, index=interaction_counts_train.index, columns=sectors)
+all_recommendations = generate_recommendations_for_all(combined_interaction_df_train, sector_similarity, sectors)
+
 # Define the custom rank-based accuracy function
 def custom_rank_based_accuracy(recommendations, test_transactions):
     scores = []
