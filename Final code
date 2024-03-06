@@ -1,0 +1,89 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_and_preprocess_data(filepath):
+    df = pd.read_csv(filepath)
+    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+    df.dropna(inplace=True)
+    return df
+
+def generate_interaction_matrices(df, sectors):
+    count_matrix = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count', fill_value=0)
+    amount_matrix = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    # Ensure all sectors are represented
+    for sector in sectors:
+        if sector not in count_matrix.columns:
+            count_matrix[sector] = 0
+            amount_matrix[sector] = 0
+    return count_matrix[sorted(sectors)], amount_matrix[sorted(sectors)]
+
+def scale_and_combine_matrices(count_matrix, amount_matrix):
+    scaler = MinMaxScaler()
+    scaled_count_matrix = scaler.fit_transform(count_matrix)
+    scaled_amount_matrix = scaler.fit_transform(amount_matrix)
+    # Combine by averaging the scaled matrices
+    combined_matrix = (scaled_count_matrix + scaled_amount_matrix) / 2
+    return pd.DataFrame(combined_matrix, index=count_matrix.index, columns=count_matrix.columns)
+
+def calculate_cosine_similarity(combined_matrix):
+    similarity = cosine_similarity(combined_matrix.T)
+    return pd.DataFrame(similarity, index=combined_matrix.columns, columns=combined_matrix.columns)
+
+def generate_hot_encoding(df, sectors):
+    hot_encoded = pd.get_dummies(df[['ACCT', 'Sector']], columns=['Sector'], prefix='', prefix_sep='').groupby('ACCT').max()
+    for sector in sectors:
+        if sector not in hot_encoded.columns:
+            hot_encoded[sector] = 0
+    return hot_encoded[sorted(sectors)]
+
+def get_recommendation_ranks(combined_matrix, sector_similarity_matrix):
+    scores = np.dot(combined_matrix, sector_similarity_matrix)
+    ranks = pd.DataFrame((-scores).argsort(axis=1), index=combined_matrix.index)
+    # Replace numerical indexes with sector names
+    sector_names = sector_similarity_matrix.columns
+    ranked_sector_names = ranks.applymap(lambda x: sector_names[x])
+    return ranked_sector_names.iloc[:, :5]  # Limit to top 5 recommendations
+
+def calculate_hit_rate_enhanced(recommendations, test_transaction_ranks):
+    hits = 0
+    for acct in recommendations.index:
+        top_recommended_sectors = recommendations.loc[acct]
+        top_actual_sectors = test_transaction_ranks.loc[acct].nsmallest(len(top_recommended_sectors)).index
+        hits += sum(sector in top_actual_sectors for sector in top_recommended_sectors)
+    total_possible_hits = len(recommendations) * 5
+    hit_rate = hits / total_possible_hits
+    return hit_rate
+
+def main():
+    df = load_and_preprocess_data('main6.csv')
+    split_date = pd.to_datetime("2023-01-01")
+    sectors = sorted(df['Sector'].unique())
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    train_count_matrix, train_amount_matrix = generate_interaction_matrices(train_df, sectors)
+    test_count_matrix, test_amount_matrix = generate_interaction_matrices(test_df, sectors)
+    combined_matrix = scale_and_combine_matrices(train_count_matrix, train_amount_matrix)
+    test_combined_matrix = scale_and_combine_matrices(test_count_matrix, test_amount_matrix)
+
+    sector_similarity_matrix = calculate_cosine_similarity(combined_matrix)
+    
+    recommendations = get_recommendation_ranks(test_combined_matrix, sector_similarity_matrix)
+    test_transaction_ranks = test_amount_matrix.rank(axis=1, method='max', ascending=True)
+    
+    hit_rate = calculate_hit_rate_enhanced(recommendations, test_transaction_ranks)
+    print(f"Enhanced Hit Rate: {hit_rate:.2%}")
+
+    with pd.ExcelWriter('analysis_outputs.xlsx', engine='openpyxl') as writer:
+        train_count_matrix.to_excel(writer, sheet_name='Train Count Matrix')
+        train_amount_matrix.to_excel(writer, sheet_name='Train Amount Matrix')
+        combined_matrix.to_excel(writer, sheet_name='Combined Interaction Matrix')
+        sector_similarity_matrix.to_excel(writer, sheet_name='Sector-Sector Matrix')
+        recommendations.to_excel(writer, sheet_name='Recommendations')
+        test_transaction_ranks.to_excel(writer, sheet_name='Test Transaction Ranks')
+
+    print("All requested outputs have been exported to 'analysis_outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
