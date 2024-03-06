@@ -1,4 +1,106 @@
-# Assuming `sector_names` contains the correct sector names:
+#
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.optimizers import Adam
+
+# Load your dataset
+df = pd.read_csv('path/to/your/transactions.csv')
+
+# Preprocess and feature engineering
+df['Date'] = pd.to_datetime(df['Date'])
+df['Is_Weekend'] = df['Date'].dt.dayofweek >= 5
+df['Days_Since_Last_Trans'] = (pd.Timestamp.now(tz=None) - df['Date']).dt.days
+sectors = ["Entertainment", "Travel", "Shopping", "Restaurant", "Groceries"]
+
+def aggregate_features(df, sectors):
+    # Pivot table to create features
+    pivot = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', 
+                           aggfunc=['sum', 'count', 'min'], fill_value=0)
+    pivot.columns = ['_'.join([str(func), str(sec)]) for (func, sec) in pivot.columns]
+    return pivot
+
+# Generate features for all transactions
+interaction_matrix_all = aggregate_features(df, sectors)
+
+# Separate data into weekdays and weekends
+interaction_matrix_weekdays = aggregate_features(df[df['Is_Weekend'] == False], sectors)
+interaction_matrix_weekends = aggregate_features(df[df['Is_Weekend'] == True], sectors)
+
+# Normalization
+scaler = MinMaxScaler()
+interaction_matrix_all_scaled = scaler.fit_transform(interaction_matrix_all)
+interaction_matrix_weekdays_scaled = scaler.fit_transform(interaction_matrix_weekdays)
+interaction_matrix_weekends_scaled = scaler.fit_transform(interaction_matrix_weekends)
+
+# Autoencoder model function
+def build_autoencoder(input_dim):
+    input_layer = Input(shape=(input_dim,))
+    encoded = Dense(128, activation='relu')(input_layer)
+    encoded = Dense(64, activation='relu')(encoded)
+    decoded = Dense(64, activation='relu')(encoded)
+    decoded = Dense(input_dim, activation='sigmoid')(decoded)
+    autoencoder = Model(input_layer, decoded)
+    autoencoder.compile(optimizer='adam', loss='mse')
+    return autoencoder
+
+# Train the model
+autoencoder = build_autoencoder(interaction_matrix_all_scaled.shape[1])
+X_train, X_test = train_test_split(interaction_matrix_all_scaled, test_size=0.2, random_state=42)
+history = autoencoder.fit(X_train, X_train, epochs=100, batch_size=256, 
+                          validation_data=(X_test, X_test), verbose=1)
+
+# Plot training and validation loss
+plt.plot(history.history['loss'], label='Training loss')
+plt.plot(history.history['val_loss'], label='Validation loss')
+plt.title('Training and validation loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend()
+plt.show()
+
+# Define a function to map sector indices to sector names
+def map_indices_to_sectors(indices, sector_names):
+    return [sector_names[idx] for idx in indices]
+
+# Predict and extract the top sectors
+def get_top_sectors(interaction_matrix_scaled, sector_names, top_n=3):
+    predicted = autoencoder.predict(interaction_matrix_scaled)
+    top_indices = predicted.argsort(axis=1)[:, -top_n:][:, ::-1]
+    top_sectors = np.array(list(map(lambda idx: map_indices_to_sectors(idx, sector_names), top_indices)))
+    return top_sectors
+
+# Sector names for mapping
+sector_names_all = [col.split('_')[1] for col in interaction_matrix_all.columns if 'sum' in col]
+sector_names_weekdays = [col.split('_')[1] for col in interaction_matrix_weekdays.columns if 'sum' in col]
+sector_names_weekends = [col.split('_')[1] for col in interaction_matrix_weekends.columns if 'sum' in col]
+
+# Get top 3 sectors overall
+top_3_sectors_overall = get_top_sectors(interaction_matrix_all_scaled, sector_names_all, top_n=3)
+# Get top sector for weekdays
+top_sector_weekdays = get_top_sectors(interaction_matrix_weekdays_scaled, sector_names_weekdays, top_n=1)
+# Get top sector for weekends
+top_sector_weekends = get_top_sectors(interaction_matrix_weekends_scaled, sector_names_weekends, top_n=1)
+
+print("Top 3 Sectors Overall:\n", top_3_sectors_overall)
+print("Top Sector for Weekdays:\n", top_sector_weekdays)
+print("Top Sector for Weekends:\n", top_sector_weekends)
+
+
+
+
+
+
+
+
+
+
+
+Assuming `sector_names` contains the correct sector names:
 sector_names = ["Entertainment", "Travel", "Shopping", "Restaurant", "Groceries"]
 
 # Make sure that `top_sector_indices` is generated properly:
