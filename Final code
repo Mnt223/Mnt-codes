@@ -1,3 +1,70 @@
+random for
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, accuracy_score
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+# Load and preprocess the data
+df = pd.read_csv('main5.csv')
+df['Date'] = pd.to_datetime(df['Date'])
+df.dropna(inplace=True)
+
+# Feature engineering
+# Temporal features
+df['Month'] = df['Date'].dt.month
+df['DayOfWeek'] = df['Date'].dt.dayofweek
+
+# Age binning
+df['AgeGroup'] = pd.cut(df['AGE_NUM'], bins=[0, 18, 30, 45, 60, 100], labels=False)
+
+# Aggregated transaction features
+# For simplicity, let's create an example feature: mean transaction amount per account
+mean_trans_amt = df.groupby('ACCT')['TRAN_AMT'].transform('mean')
+df['MeanTransAmt'] = mean_trans_amt
+
+# Encode categorical variables
+le_sector = LabelEncoder()
+df['Sector'] = le_sector.fit_transform(df['Sector'])
+
+# Assume engagement is whether a transaction amount is above the mean transaction amount of the user
+df['Engaged'] = (df['TRAN_AMT'] > df['MeanTransAmt']).astype(int)
+
+# Splitting dataset into features and target
+X = df[['Month', 'DayOfWeek', 'AgeGroup', 'MeanTransAmt', 'Sector']]
+y = df['Engaged']
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Feature scaling
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Initialize the RandomForestClassifier
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train_scaled, y_train)
+
+# Predicting
+predictions = model.predict(X_test_scaled)
+
+# Evaluating the model
+print(f"Accuracy Score: {accuracy_score(y_test, predictions)}")
+print(classification_report(y_test, predictions))
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
