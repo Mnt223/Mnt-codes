@@ -10,6 +10,211 @@ def load_and_preprocess_data(filepath):
     return df
 
 def generate_interaction_matrix(df, sectors):
+    interaction_matrix = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    # Ensure all sectors are represented
+    missing_sectors = set(sectors) - set(interaction_matrix.columns)
+    for sector in missing_sectors:
+        interaction_matrix[sector] = 0
+    return interaction_matrix[sorted(sectors)]
+
+def scale_interaction_matrix(interaction_matrix):
+    scaler = MinMaxScaler()
+    scaled_matrix = scaler.fit_transform(interaction_matrix)
+    return pd.DataFrame(scaled_matrix, index=interaction_matrix.index, columns=interaction_matrix.columns)
+
+def calculate_cosine_similarity(matrix):
+    similarity = cosine_similarity(matrix.T)
+    return pd.DataFrame(similarity, index=matrix.columns, columns=matrix.columns)
+
+def generate_hot_encoding(df, sectors):
+    hot_encoded = pd.get_dummies(df[['ACCT', 'Sector']], columns=['Sector'], prefix='', prefix_sep='').groupby('ACCT').max()
+    for sector in sectors:
+        if sector not in hot_encoded.columns:
+            hot_encoded[sector] = 0
+    return hot_encoded[sorted(sectors)]
+
+def get_recommendation_ranks(test_interaction_matrix, sector_similarity_matrix):
+    scores = np.dot(test_interaction_matrix, sector_similarity_matrix)
+    ranks = (-scores).argsort(axis=1).argsort(axis=1) + 1
+    return pd.DataFrame(ranks, index=test_interaction_matrix.index, columns=test_interaction_matrix.columns)
+
+def generate_transaction_ranks(df, sectors):
+    interaction_matrix = generate_interaction_matrix(df, sectors)
+    transaction_ranks = interaction_matrix.rank(axis=1, method='max', ascending=False).astype(int)
+    return transaction_ranks
+
+def calculate_hit_rate(test_interaction_matrix, test_recommendations):
+    hits = 0
+    total = len(test_interaction_matrix)
+    
+    for acct in test_interaction_matrix.index:
+        actual_sectors = test_interaction_matrix.loc[acct][test_interaction_matrix.loc[acct] > 0].index
+        recommended_sectors = test_recommendations.loc[acct].nsmallest(5).index
+        hits += len(set(actual_sectors) & set(recommended_sectors))
+        
+    hit_rate = hits / total if total > 0 else 0
+    return hit_rate
+
+def main():
+    df = load_and_preprocess_data('main6.csv')
+    split_date = pd.to_datetime("2023-01-01")
+    sectors = sorted(df['Sector'].unique())
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    train_interaction_matrix = generate_interaction_matrix(train_df, sectors)
+    test_interaction_matrix = generate_interaction_matrix(test_df, sectors)
+    
+    train_scaled = scale_interaction_matrix(train_interaction_matrix)
+    test_scaled = scale_interaction_matrix(test_interaction_matrix)
+    
+    sector_similarity_matrix = calculate_cosine_similarity(train_scaled)
+    
+    train_hot_encoding = generate_hot_encoding(train_df, sectors)
+    test_hot_encoding = generate_hot_encoding(test_df, sectors)
+    test_recommendations = get_recommendation_ranks(test_scaled, sector_similarity_matrix)
+    test_transaction_ranks = generate_transaction_ranks(test_df, sectors)
+    
+    hit_rate = calculate_hit_rate(test_interaction_matrix, test_recommendations)
+    print(f"Hit Rate: {hit_rate:.2f}")
+
+    with pd.ExcelWriter('analysis_outputs.xlsx', engine='openpyxl') as writer:
+        train_hot_encoding.to_excel(writer, sheet_name='Train Hot Encoding')
+        test_hot_encoding.to_excel(writer, sheet_name='Test Hot Encoding')
+        test_recommendations.to_excel(writer, sheet_name='Test Recommendations')
+        test_transaction_ranks.to_excel(writer, sheet_name='Test Transaction Ranks')
+        train_scaled.to_excel(writer, sheet_name='Combined Interactions Matrix')
+        sector_similarity_matrix.to_excel(writer, sheet_name='Sector-Sector Matrix')
+
+    print("All requested outputs have been exported to 'analysis_outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+tr
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_and_preprocess_data(filepath):
+    df = pd.read_csv(filepath)
+    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+    df.dropna(inplace=True)
+    return df
+
+def generate_interaction_matrix(df, sectors):
+    interaction_matrix = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    # Ensure all sectors are represented
+    missing_sectors = set(sectors) - set(interaction_matrix.columns)
+    for sector in missing_sectors:
+        interaction_matrix[sector] = 0
+    return interaction_matrix[sorted(sectors)]
+
+def scale_interaction_matrix(interaction_matrix):
+    scaler = MinMaxScaler()
+    scaled_matrix = scaler.fit_transform(interaction_matrix)
+    return pd.DataFrame(scaled_matrix, index=interaction_matrix.index, columns=interaction_matrix.columns)
+
+def calculate_cosine_similarity(matrix):
+    return cosine_similarity(matrix.T)
+
+def generate_hot_encoding(df, sectors):
+    hot_encoded = pd.get_dummies(df[['ACCT', 'Sector']], columns=['Sector'], prefix='', prefix_sep='').groupby('ACCT').max()
+    for sector in sectors:
+        if sector not in hot_encoded.columns:
+            hot_encoded[sector] = 0
+    return hot_encoded[sorted(sectors)]
+
+def get_recommendation_ranks(test_interaction_matrix, sector_similarity):
+    scores = np.dot(test_interaction_matrix, sector_similarity)
+    ranks = (-scores).argsort(axis=1).argsort(axis=1) + 1
+    return pd.DataFrame(ranks, index=test_interaction_matrix.index, columns=test_interaction_matrix.columns)
+
+def generate_transaction_ranks(df, sectors):
+    interaction_matrix = generate_interaction_matrix(df, sectors)
+    transaction_ranks = interaction_matrix.rank(axis=1, method='max', ascending=False).astype(int)
+    return transaction_ranks
+
+def calculate_hit_rate(test_interaction_matrix, test_recommendations):
+    hits = 0
+    total = len(test_interaction_matrix)
+    
+    for acct in test_interaction_matrix.index:
+        actual_sectors = test_interaction_matrix.loc[acct].loc[test_interaction_matrix.loc[acct] > 0].index
+        recommended_sectors = test_recommendations.loc[acct].nsmallest(5).index
+        hits += len(set(actual_sectors) & set(recommended_sectors))
+        
+    hit_rate = hits / total if total > 0 else 0
+    return hit_rate
+
+def main():
+    df = load_and_preprocess_data('main6.csv')
+    split_date = pd.to_datetime("2023-01-01")
+    sectors = sorted(df['Sector'].unique())
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    train_interaction_matrix = generate_interaction_matrix(train_df, sectors)
+    test_interaction_matrix = generate_interaction_matrix(test_df, sectors)
+    
+    train_scaled = scale_interaction_matrix(train_interaction_matrix)
+    test_scaled = scale_interaction_matrix(test_interaction_matrix)
+    
+    sector_similarity_matrix = pd.DataFrame(calculate_cosine_similarity(train_scaled), index=sectors, columns=sectors)
+    
+    train_hot_encoding = generate_hot_encoding(train_df, sectors)
+    test_hot_encoding = generate_hot_encoding(test_df, sectors)
+    test_recommendations = get_recommendation_ranks(test_scaled, sector_similarity_matrix)
+    test_transaction_ranks = generate_transaction_ranks(test_df, sectors)
+    
+    hit_rate = calculate_hit_rate(test_interaction_matrix, test_recommendations)
+    print(f"Hit Rate: {hit_rate:.2f}")
+
+    with pd.ExcelWriter('analysis_outputs.xlsx', engine='openpyxl') as writer:
+        train_hot_encoding.to_excel(writer, sheet_name='Train Hot Encoding')
+        test_hot_encoding.to_excel(writer, sheet_name='Test Hot Encoding')
+        test_recommendations.to_excel(writer, sheet_name='Test Recommendations')
+        test_transaction_ranks.to_excel(writer, sheet_name='Test Transaction Ranks')
+        train_scaled.to_excel(writer, sheet_name='Combined Interactions Matrix')
+        sector_similarity_matrix.to_excel(writer, sheet_name='Sector-Sector Matrix')
+
+    print("All requested outputs have been exported to 'analysis_outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+ubf
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_and_preprocess_data(filepath):
+    df = pd.read_csv(filepath)
+    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+    df.dropna(inplace=True)
+    return df
+
+def generate_interaction_matrix(df, sectors):
     # Ensure all sectors are present, even if no transactions occurred for some
     interaction_matrix = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
     for sector in sectors:
