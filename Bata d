@@ -1,5 +1,90 @@
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_and_preprocess_data(filepath):
+    try:
+        df = pd.read_csv(filepath)
+        df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+        df.dropna(inplace=True)
+        return df
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+def generate_interaction_matrix(df, value='TRAN_AMT', aggfunc='sum'):
+    return df.pivot_table(index='ACCT', columns='Sector', values=value, aggfunc=aggfunc, fill_value=0)
+
+def scale_interaction_matrix(interaction_matrix, axis=0):
+    scaler = MinMaxScaler()
+    scaled_matrix = scaler.fit_transform(interaction_matrix) if axis == 0 else scaler.fit_transform(interaction_matrix.T).T
+    return pd.DataFrame(scaled_matrix, index=interaction_matrix.index, columns=interaction_matrix.columns)
+
+def calculate_cosine_similarity(matrix):
+    return cosine_similarity(matrix), cosine_similarity(matrix.T)
+
+def generate_hot_encoding(df, columns=None):
+    hot_encoded = pd.get_dummies(df, columns=columns, prefix='', prefix_sep='')
+    hot_encoded = hot_encoded.groupby('ACCT').max()
+    return hot_encoded
+
+def recommend_sectors(account_sector_matrix, sector_similarity):
+    scores = np.dot(account_sector_matrix, sector_similarity)
+    ranks = (-scores).argsort(axis=1).argsort(axis=1) + 1
+    return pd.DataFrame(ranks, index=account_sector_matrix.index, columns=account_sector_matrix.columns)
+
+def calculate_hit_rate(recommended_ranks, actual_interactions):
+    hits = sum((recommended_ranks.iloc[:, :5] <= actual_interactions).any(axis=1))
+    total = len(recommended_ranks)
+    return hits / total if total > 0 else 0
+
+def main():
+    df = load_and_preprocess_data('main6.csv')
+    split_date = pd.to_datetime("2023-01-01")
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    train_matrix = generate_interaction_matrix(train_df)
+    test_matrix = generate_interaction_matrix(test_df)
+
+    # Scale along the customer axis for both training and testing datasets
+    train_scaled = scale_interaction_matrix(train_matrix, axis=0)
+    test_scaled = scale_interaction_matrix(test_matrix, axis=0)
+
+    # Calculate cosine similarity based on scaled training data
+    sector_similarity, _ = calculate_cosine_similarity(train_scaled)
+
+    # Hot encoding not directly used in this refactor but could be included for exploratory data analysis
+    train_hot_encoding = generate_hot_encoding(train_df, ['Sector'])
+    test_hot_encoding = generate_hot_encoding(test_df, ['Sector'])
+
+    test_recommendations = recommend_sectors(test_scaled, sector_similarity)
+
+    hit_rate = calculate_hit_rate(test_recommendations, test_hot_encoding)
+    print(f"Hit Rate: {hit_rate:.2f}")
+
+    with pd.ExcelWriter('analysis_outputs.xlsx', engine='openpyxl') as writer:
+        train_hot_encoding.to_excel(writer, sheet_name='Train Hot Encoding')
+        test_hot_encoding.to_excel(writer, sheet_name='Test Hot Encoding')
+        test_recommendations.to_excel(writer, sheet_name='Test Recommendations')
+
+    print("Exported to 'analysis_outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
