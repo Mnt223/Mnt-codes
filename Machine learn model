@@ -1,3 +1,30 @@
+# Assuming `sector_names` contains the correct sector names:
+sector_names = ["Entertainment", "Travel", "Shopping", "Restaurant", "Groceries"]
+
+# Make sure that `top_sector_indices` is generated properly:
+# For example, if using `np.argsort` to get top indices, ensure that the array being sorted is the correct one,
+# and you are not exceeding the number of sectors in `sector_names`.
+
+# Corrected mapping function using list comprehension instead of np.vectorize for better error handling:
+def map_indices_to_names(indices, sector_names):
+    # Ensure indices are within the range of sector_names
+    if np.max(indices) >= len(sector_names):
+        raise ValueError("Sector index out of range. Check the 'top_sector_indices' values.")
+    
+    # Map indices to sector names using list comprehension
+    top_sectors = [[sector_names[i] for i in user_indices] for user_indices in indices]
+    return top_sectors
+
+# Assuming `top_sector_indices` is a 2D numpy array with shape (num_users, top_n_sectors):
+top_sectors = map_indices_to_names(top_sector_indices, sector_names)
+
+# The rest of your code...
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from datetime import datetime
