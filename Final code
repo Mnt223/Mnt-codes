@@ -1,6 +1,82 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from xgboost import XGBClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Load dataset
+df = pd.read_csv('main5.csv')
+df['Date'] = pd.to_datetime(df['Date'])
+df['Year'] = df['Date'].dt.year
+df['Month'] = df['Date'].dt.month
+df['DayOfWeek'] = df['Date'].dt.weekday
+df['AgeGroup'] = pd.cut(df['AGE_NUM'], bins=[0, 18, 30, 45, 60, 100], labels=False)
+
+# Creating transaction count and average amount features per sector
+trans_count = df.groupby(['ACCT', 'Sector'])['TRAN_AMT'].count().reset_index(name='TransCount')
+avg_trans_amt = df.groupby(['ACCT', 'Sector'])['TRAN_AMT'].mean().reset_index(name='AvgTransAmt')
+features_df = pd.merge(trans_count, avg_trans_amt, on=['ACCT', 'Sector'])
+
+# Normalize features for merging with the main DataFrame
+features_norm = features_df.pivot_table(index='ACCT', columns='Sector', values=['TransCount', 'AvgTransAmt'], fill_value=0)
+features_norm.columns = ['_'.join(col).strip() for col in features_norm.columns.values]  # Flatten MultiIndex
+
+# Merge normalized features back to the main DataFrame
+df = df.merge(features_norm, on='ACCT')
+
+# Assuming 'Sector' is what we want to predict, label encode the sector
+le = LabelEncoder()
+df['SectorEncoded'] = le.fit_transform(df['Sector'])
+
+# Define features and target
+X = df.drop(['ACCT', 'Date', 'Sector', 'TRAN_AMT', 'AGE_NUM', 'SectorEncoded'], axis=1)
+y = df['SectorEncoded']
+
+# Split the dataset
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Feature Scaling
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Initialize and train XGBClassifier
+model = XGBClassifier(use_label_encoder=False, eval_metric='mlogloss')
+model.fit(X_train_scaled, y_train)
+
+# Make predictions
+predictions = model.predict(X_test_scaled)
+
+# Model Evaluation
+print(f"Accuracy: {accuracy_score(y_test, predictions):.2f}")
+print("\nClassification Report:")
+print(classification_report(y_test, predictions, target_names=le.classes_))
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, predictions)
+plt.figure(figsize=(10, 8))
+sns.heatmap(cm, annot=True, fmt="d", cmap='viridis', xticklabels=le.classes_, yticklabels=le.classes_)
+plt.title('Confusion Matrix')
+plt.xlabel('Predicted')
+plt.ylabel('True')
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.preprocessing import StandardScaler, LabelEncoder
