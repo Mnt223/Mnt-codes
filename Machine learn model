@@ -1,3 +1,108 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.optimizers import Adam
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+
+# Load dataset (adjust the path to your actual dataset)
+df = pd.read_csv('path/to/your/transactions.csv')
+
+# Data preprocessing
+df['Date'] = pd.to_datetime(df['Date'])
+df['Is_Weekend'] = df['Date'].dt.dayofweek >= 5
+df['Days_Since_Last_Trans'] = (pd.Timestamp.now(tz=None) - df['Date']).dt.days
+sectors = ["Entertainment", "Travel", "Shopping", "Restaurant", "Groceries"]
+
+# Feature Engineering
+def aggregate_features(df, sectors):
+    total_spend = df.groupby(['ACCT', 'Sector'])['TRAN_AMT'].sum().unstack(fill_value=0)
+    total_spend = total_spend.reindex(columns=sectors, fill_value=0)
+    scaler = MinMaxScaler()
+    total_spend_scaled = scaler.fit_transform(total_spend)
+    return total_spend_scaled, total_spend.columns.tolist()
+
+# Prepare data for overall, weekday, and weekend
+interaction_matrix, sector_names = aggregate_features(df, sectors)
+interaction_matrix_weekday, _ = aggregate_features(df[df['Is_Weekend'] == False], sectors)
+interaction_matrix_weekend, _ = aggregate_features(df[df['Is_Weekend'] == True], sectors)
+
+# Autoencoder Model Definition
+def build_autoencoder(input_dim):
+    input_layer = Input(shape=(input_dim,))
+    x = Dense(128, activation='relu')(input_layer)
+    x = Dense(64, activation='relu')(x)
+    x = Dense(32, activation='relu')(x)
+    x = Dense(64, activation='relu')(x)
+    x = Dense(128, activation='relu')(x)
+    output_layer = Dense(input_dim, activation='sigmoid')(x)
+    model = Model(inputs=input_layer, outputs=output_layer)
+    model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
+    return model
+
+# Training
+autoencoder = build_autoencoder(interaction_matrix.shape[1])
+X_train, X_test = train_test_split(interaction_matrix, test_size=0.2, random_state=42)
+history = autoencoder.fit(X_train, X_train, epochs=50, batch_size=256, shuffle=True, validation_data=(X_test, X_test))
+
+# Loss Plot
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+plt.show()
+
+# Predictions
+predicted_matrix = autoencoder.predict(interaction_matrix)
+predicted_matrix_weekday = autoencoder.predict(interaction_matrix_weekday)
+predicted_matrix_weekend = autoencoder.predict(interaction_matrix_weekend)
+
+# Top Sector Calculation
+def map_indices_to_names(indices, names):
+    return [names[i] for i in indices]
+
+top_sectors_overall = [map_indices_to_names(indices, sector_names) for indices in np.argsort(-predicted_matrix)[:, :3]]
+top_sectors_weekday = [map_indices_to_names([indices], sector_names)[0] for indices in np.argsort(-predicted_matrix_weekday)[:, 0]]
+top_sectors_weekend = [map_indices_to_names([indices], sector_names)[0] for indices in np.argsort(-predicted_matrix_weekend)[:, 0]]
+
+# Output Top Sectors
+print("Top 3 Sectors for each Customer:\n", top_sectors_overall)
+print("Top Weekday Sector for each Customer:\n", top_sectors_weekday)
+print("Top Weekend Sector for each Customer:\n", top_sectors_weekend)
+
+# Assuming the sectors are encoded as categorical data in 'df'
+# Convert 'Sector' to numerical categories for visualization
+df['Sector_Num'] = pd.Categorical(df['Sector'], categories=sectors).codes
+
+# Latent Space Exploration with TSNE
+encoder = Model(inputs=autoencoder.input, outputs=autoencoder.layers[-2].output)  # Adjust to correct encoder layer
+encoded_data = encoder.predict(interaction_matrix)
+
+tsne = TSNE(n_components=2, random_state=42)
+encoded_data_tsne = tsne.fit_transform(encoded_data)
+
+plt.figure(figsize=(10, 8))
+plt.scatter(encoded_data_tsne[:, 0], encoded_data_tsne[:, 1], c=df['Sector_Num'], cmap='viridis')
+plt.colorbar()
+plt.title('t-SNE Visualization of Encoded Customer Spending')
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
 #
 import pandas as pd
 import numpy as np
