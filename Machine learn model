@@ -2,6 +2,96 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
+from scipy.sparse.linalg import svds
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load dataset
+df = pd.read_csv('path/to/your/transactions.csv')
+df['Date'] = pd.to_datetime(df['Date'])
+
+# Temporal split
+split_date = pd.Timestamp(year=2023, month=1, day=1)  # Adjust as needed
+train_df = df[df['Date'] < split_date]
+test_df = df[df['Date'] >= split_date]
+
+# Prepare interaction matrix for both train and test sets
+def prepare_interaction_matrix(df):
+    grouped = df.groupby(['ACCT', 'Sector']).agg(Total_Spend=('TRAN_AMT', 'sum'),
+                                                  Frequency=('TRAN_AMT', 'count'),
+                                                  Avg_Trans_Amount=('TRAN_AMT', 'mean'))
+    interaction_matrix = grouped.pivot_table(index='ACCT', columns='Sector', fill_value=0)
+    return interaction_matrix
+
+interaction_matrix_train = prepare_interaction_matrix(train_df)
+interaction_matrix_test = prepare_interaction_matrix(test_df)
+
+# Normalize the interaction matrix
+scaler = MinMaxScaler()
+interaction_matrix_train_scaled = scaler.fit_transform(interaction_matrix_train)
+
+# Apply SVD for dimensionality reduction
+U, sigma, Vt = svds(interaction_matrix_train_scaled, k=min(interaction_matrix_train_scaled.shape)-1)
+svd_features = np.dot(U, np.diag(sigma))
+
+# Compute cosine similarity among users based on SVD features
+user_similarity = cosine_similarity(svd_features)
+
+# Sector popularity
+sector_popularity = train_df.groupby('Sector')['TRAN_AMT'].sum().sort_values(ascending=False)
+popular_sectors = sector_popularity.index.tolist()
+
+# Enhanced recommendation function
+def enhanced_recommendations(user_similarity_matrix, interaction_matrix_df, top_n=3):
+    recommendations = []
+    sectors = interaction_matrix_df.columns.get_level_values(1)  # Assuming MultiIndex after pivot
+    for user_index in range(user_similarity_matrix.shape[0]):
+        # Find most similar users
+        top_similar_indices = np.argsort(-user_similarity_matrix[user_index])[:top_n+1][1:]
+        # Aggregate their preferences
+        top_sectors = sectors[np.argsort(-interaction_matrix_df.values[top_similar_indices].sum(axis=0))][:top_n]
+        recommendations.append((interaction_matrix_df.index[user_index], top_sectors.tolist()))
+    return recommendations
+
+# Generate recommendations
+recs = enhanced_recommendations(user_similarity, interaction_matrix_train, top_n=3)
+
+# Convert recommendations to DataFrame for export
+recs_df = pd.DataFrame(recs, columns=['ACCT', 'Recommended_Sectors'])
+
+# Export recommendations to Excel
+recs_df.to_excel('recommendations.xlsx', index=False)
+
+# Evaluation (simple precision calculation based on test data)
+def evaluate_precision(recommendations_df, test_interaction_matrix):
+    hit = 0
+    total = 0
+    for index, row in recommendations_df.iterrows():
+        acct = row['ACCT']
+        recommended_sectors = set(row['Recommended_Sectors'])
+        if acct in test_interaction_matrix.index:
+            actual_sectors = set(test_interaction_matrix.loc[acct].columns[test_interaction_matrix.loc[acct].nonzero()])
+            hit += len(recommended_sectors.intersection(actual_sectors))
+            total += len(recommended_sectors)
+    return hit / total if total > 0 else 0
+
+# Calculate precision
+precision = evaluate_precision(recs_df, interaction_matrix_test)
+print(f"Precision: {precision}")
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense
