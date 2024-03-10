@@ -351,3 +351,88 @@ rmse = np.sqrt(mean_squared_error(y_test, predictions))
 print(f'RMSE: {rmse}')
 
 # The model is now trained and can be used to make predictions on new data.
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.decomposition import TruncatedSVD
+from sklearn.preprocessing import RobustScaler, OneHotEncoder
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split
+from scipy.sparse import csr_matrix
+
+# Load your data into a DataFrame
+df = pd.read_csv('credit.csv')
+
+# Ensure correct data types
+df['Date'] = pd.to_datetime(df['Date'])
+df['ACCT'] = df['ACCT'].astype(str)
+df['TRAN_AMT'] = pd.to_numeric(df['TRAN_AMT'], errors='coerce')
+
+# Temporal Features
+df['Month'] = df['Date'].dt.month
+df['DayOfWeek'] = df['Date'].dt.dayofweek
+df['IsWeekend'] = df['DayOfWeek'] >= 5
+
+# Create customer profiles
+customer_profiles = df.groupby(['ACCT', 'Sector'])['TRAN_AMT'].agg(['mean', 'median', 'count']).reset_index()
+customer_profiles.columns = ['ACCT', 'Sector', 'Avg_Transaction', 'Median_Transaction', 'Total_Transactions']
+
+# Normalization and Scaling
+scaler = RobustScaler()
+customer_profiles[['Avg_Transaction', 'Median_Transaction']] = scaler.fit_transform(
+    customer_profiles[['Avg_Transaction', 'Median_Transaction']]
+)
+
+# One-Hot Encoding for 'Sector'
+encoder = OneHotEncoder()
+sectors_encoded = encoder.fit_transform(customer_profiles[['Sector']])
+sectors_encoded_df = pd.DataFrame(sectors_encoded.toarray(), columns=encoder.get_feature_names(['Sector']))
+customer_profiles = pd.concat([customer_profiles, sectors_encoded_df], axis=1)
+customer_profiles.drop('Sector', axis=1, inplace=True)
+
+# Prepare user-item interaction matrix for TruncatedSVD
+interaction_matrix = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', fill_value=0)
+user_item_matrix = csr_matrix(interaction_matrix.values)
+
+# Apply Truncated SVD to obtain latent features
+svd = TruncatedSVD(n_components=min(interaction_matrix.shape[1] - 1, 20), random_state=42)
+latent_matrix = svd.fit_transform(user_item_matrix)
+
+# Append latent features to customer profiles
+latent_features_df = pd.DataFrame(latent_matrix, index=interaction_matrix.index).reset_index()
+merged_profiles = pd.merge(customer_profiles, latent_features_df, on='ACCT', how='left')
+
+# Prepare the dataset for the Gradient Boosting Regressor
+X = merged_profiles.drop(['ACCT', 'Avg_Transaction'], axis=1)
+y = merged_profiles['Avg_Transaction']
+
+# Check for NaN values and handle them
+X = X.fillna(X.median())
+y = y.fillna(y.median())
+
+# Replace infinite values if they are present
+X.replace([np.inf, -np.inf], np.nan, inplace=True)
+X.fillna(X.median(), inplace=True)
+y.replace([np.inf, -np.inf], np.nan, inplace=True)
+y.fillna(y.median(), inplace=True)
+
+# Ensure that the data types are appropriate and there are no NaNs or infs
+X = X.astype(np.float64)
+y = y.astype(np.float64)
+
+# Split the dataset into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+
+# Fit the Gradient Boosting Regressor
+gbr = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42)
+gbr.fit(X_train, y_train)
+
+# Make predictions and evaluate the model
+predictions = gbr.predict(X_test)
+rmse = np.sqrt(mean_squared_error(y_test, predictions))
+print(f'RMSE: {rmse}')
+
+# The model is now trained and can be used to make predictions on new data.
