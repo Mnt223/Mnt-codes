@@ -1,0 +1,95 @@
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Distribution of transaction amounts
+plt.figure(figsize=(10, 6))
+sns.histplot(data=df, x='TRAN_AMT', bins=50, kde=True)
+plt.title('Distribution of Transaction Amounts')
+plt.xlabel('Transaction Amount')
+plt.ylabel('Frequency')
+plt.show()
+
+# Boxplot to check transaction amounts across different sectors
+plt.figure(figsize=(12, 8))
+sns.boxplot(data=df, x='Sector', y='TRAN_AMT')
+plt.title('Transaction Amounts by Sector')
+plt.xticks(rotation=45)
+plt.show()
+
+
+
+# Trend of transactions over time for different sectors
+df['Date'] = pd.to_datetime(df['Date'])  # Ensure 'Date' is datetime type
+df.sort_values('Date', inplace=True)
+
+plt.figure(figsize=(14, 8))
+sns.lineplot(data=df, x='Date', y='TRAN_AMT', hue='Sector')
+plt.title('Transaction Amounts Over Time by Sector')
+plt.xlabel('Date')
+plt.ylabel('Transaction Amount')
+plt.legend(title='Sector')
+plt.show()
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from surprise import SVD, Dataset, Reader
+from surprise.model_selection import train_test_split, GridSearchCV
+from surprise.accuracy import rmse
+
+# Load dataset
+df = pd.read_csv('credit.csv')
+df['Date'] = pd.to_datetime(df['Date'])
+
+# Ensure that the dataset only contains the 5 specific sectors
+sectors = ['Entertainment', 'Travel', 'Shopping', 'Restaurant', 'Groceries']
+df = df[df['Sector'].isin(sectors)]
+
+# Preprocessing and feature engineering
+# Aggregating transaction amounts by customer and sector
+agg_df = df.groupby(['ACCT', 'Sector'])['TRAN_AMT'].agg(['sum', 'mean', 'count']).reset_index().rename(columns={'sum': 'total_amount', 'mean': 'avg_amount', 'count': 'transaction_count'})
+
+# Normalizing total_amount for each customer
+agg_df['normalized_total_amount'] = (agg_df['total_amount'] - agg_df['total_amount'].min()) / (agg_df['total_amount'].max() - agg_df['total_amount'].min())
+
+# Convert to Surprise data format
+reader = Reader(rating_scale=(0, 1))  # Assuming normalized ratings
+data = Dataset.load_from_df(agg_df[['ACCT', 'Sector', 'normalized_total_amount']], reader)
+
+# Train/Test Split
+trainset, testset = train_test_split(data, test_size=0.25)
+
+# Algorithm Selection: Using SVD
+model = SVD()
+
+# Train the model
+model.fit(trainset)
+
+# Predictions
+predictions = model.test(testset)
+
+# Calculate RMSE
+accuracy_rmse = rmse(predictions)
+
+# Hyperparameter Tuning
+param_grid = {
+    'n_factors': [50, 100, 150],
+    'n_epochs': [20, 30], 
+    'lr_all': [0.005, 0.01],
+    'reg_all': [0.02, 0.1]
+}
+gs = GridSearchCV(SVD, param_grid, measures=['rmse'], cv=3)
+gs.fit(data)
+
+# Best parameters and results
+best_params = gs.best_params['rmse']
+best_score = gs.best_score['rmse']
+
+print(f"Best RMSE: {best_score}, Best params: {best_params}")
+
+# Re-train with best parameters
+final_model = SVD(**best_params)
+trainset = data.build_full_trainset()  # Using the full dataset for training
+final_model.fit(trainset)
+
+# Final model is now tuned and ready for predictions, specifically adapted to handle the five sectors.
