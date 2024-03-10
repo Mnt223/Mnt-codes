@@ -93,3 +93,18 @@ trainset = data.build_full_trainset()  # Using the full dataset for training
 final_model.fit(trainset)
 
 # Final model is now tuned and ready for predictions, specifically adapted to handle the five sectors.
+
+# Histogram with a log scale
+plt.figure(figsize=(10, 6))
+sns.histplot(data=df, x='TRAN_AMT', bins=50, kde=True, log_scale=True)
+plt.title('Log-Scaled Distribution of Transaction Amounts')
+plt.xlabel('Transaction Amount (log scale)')
+plt.ylabel('Frequency')
+plt.show()
+
+# Boxplot with outliers
+plt.figure(figsize=(12, 8))
+sns.boxplot(data=df, x='Sector', y='TRAN_AMT', showfliers=False)
+plt.title('Transaction Amounts by Sector without Outliers')
+plt.xticks(rotation=45)
+plt.show()
