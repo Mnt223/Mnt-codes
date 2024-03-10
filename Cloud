@@ -433,6 +433,87 @@ gbr.fit(X_train, y_train)
 # Make predictions and evaluate the model
 predictions = gbr.predict(X_test)
 rmse = np.sqrt(mean_squared_error(y_test, predictions))
-print(f'RMSE: {rmse}')
+print(f'RMSE: {rmse}'
 
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.decomposition import TruncatedSVD
+from sklearn.preprocessing import RobustScaler, OneHotEncoder
+from sklearn.ensemble import GradientBoostingRegressor, StackingRegressor
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from scipy.sparse import csr_matrix
+
+# Load the data
+df = pd.read_csv('credit.csv')
+
+# Preprocessing and feature engineering
+df['Date'] = pd.to_datetime(df['Date'])
+df['ACCT'] = df['ACCT'].astype(str)
+df['TRAN_AMT'] = pd.to_numeric(df['TRAN_AMT'], errors='coerce')
+
+df['Month'] = df['Date'].dt.month
+df['DayOfWeek'] = df['Date'].dt.dayofweek
+df['IsWeekend'] = df['DayOfWeek'] >= 5
+df['DaysSinceFirst'] = (df['Date'] - df.groupby('ACCT')['Date'].transform('min')).dt.days
+df['TransactionFrequency'] = df.groupby('ACCT')['Date'].transform(lambda x: 1 / x.diff().dt.days.replace(0, 1))
+
+customer_profiles = df.groupby(['ACCT', 'Sector'])['TRAN_AMT'].agg(['mean', 'median', 'sum', 'count']).reset_index()
+customer_profiles.columns = ['ACCT', 'Sector', 'Avg_Transaction', 'Median_Transaction', 'Total_Transactions', 'DaysSinceFirst', 'TransactionFrequency']
+
+scaler = RobustScaler()
+customer_profiles[['Avg_Transaction', 'Median_Transaction', 'Total_Transactions', 'DaysSinceFirst', 'TransactionFrequency']] = scaler.fit_transform(customer_profiles[['Avg_Transaction', 'Median_Transaction', 'Total_Transactions', 'DaysSinceFirst', 'TransactionFrequency']])
+
+encoder = OneHotEncoder()
+sectors_encoded = encoder.fit_transform(customer_profiles[['Sector']])
+sectors_encoded_df = pd.DataFrame(sectors_encoded.toarray(), columns=encoder.get_feature_names(['Sector']))
+customer_profiles = pd.concat([customer_profiles, sectors_encoded_df], axis=1)
+customer_profiles.drop(['Sector'], axis=1, inplace=True)
+
+interaction_matrix = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', fill_value=0)
+user_item_matrix = csr_matrix(interaction_matrix.values)
+svd = TruncatedSVD(n_components=min(user_item_matrix.shape[1] - 1, 20), random_state=42)
+latent_features = svd.fit_transform(user_item_matrix)
+
+merged_profiles = customer_profiles.merge(pd.DataFrame(latent_features, index=interaction_matrix.index), left_on='ACCT', right_index=True)
+X = merged_profiles.drop(['ACCT', 'Avg_Transaction'], axis=1)
+y = merged_profiles['Avg_Transaction']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+
+# Hyperparameter tuning with GridSearchCV
+gbr = GradientBoostingRegressor(random_state=42)
+param_grid = {
+    'n_estimators': [100, 200],
+    'max_depth': [3, 5],
+    'learning_rate': [0.05, 0.1]
+}
+grid_search = GridSearchCV(gbr, param_grid, cv=5, scoring='neg_mean_squared_error')
+grid_search.fit(X_train, y_train)
+
+# Ensemble model using Stacking
+estimators = [
+    ('ridge', Ridge()),
+    ('gbr', grid_search.best_estimator_)
+]
+stacking_regressor = StackingRegressor(estimators=estimators, final_estimator=Ridge(), cv=5)
+stacking_regressor.fit(X_train, y_train)
+
+# Cross-validation and evaluation
+cv_scores = cross_val_score(stacking_regressor, X_train, y_train, cv=5, scoring='neg_root_mean_squared_error')
+stacked_predictions = stacking_regressor.predict(X_test)
+rmse = np.sqrt(mean_squared_error(y_test, stacked_predictions))
+mae = mean_absolute_error(y_test, stacked_predictions)
+r2 = r2_score(y_test, stacked_predictions)
+
+# Print evaluation metrics
+print(f'Cross-Validated RMSE: {-cv_scores.mean()}')
+print(f'Cross-Validated RMSE Std: {cv_scores.std()}')
+print(f'Test RMSE: {rmse}')
+print(f'Test MAE: {mae}')
+print(f'Test R^2: {r2}')
 # The model is now trained and can be used to make predictions on new data.
