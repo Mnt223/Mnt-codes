@@ -5,6 +5,88 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import TruncatedSVD
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, cosine_similarity
+from sklearn.pipeline import Pipeline
+
+# Load and preprocess the dataset
+df = pd.read_csv('transactions.csv')
+df['DATE'] = pd.to_datetime(df['DATE'])
+label_encoder = LabelEncoder()
+df['SectorID'] = label_encoder.fit_transform(df['Sector'])
+df['Frequency'] = df.groupby(['ACCT', 'SectorID'])['DATE'].transform('count')
+df['Total_Amount'] = df.groupby(['ACCT', 'SectorID'])['TRAN_AMT'].transform('sum')
+df = df.drop_duplicates(subset=['ACCT', 'SectorID'])
+
+# Normalize continuous features
+scaler = StandardScaler()
+df[['AGE', 'Frequency', 'Total_Amount']] = scaler.fit_transform(df[['AGE', 'Frequency', 'Total_Amount']])
+
+# Create user-sector interaction matrix
+interaction_matrix = df.pivot_table(index='ACCT', columns='SectorID', values='Frequency', fill_value=0)
+
+# Apply SVD for collaborative filtering
+svd = TruncatedSVD(n_components=20, random_state=42)
+latent_user_features = svd.fit_transform(interaction_matrix)
+
+# Prepare features and targets for sector models
+X = df[['AGE', 'Frequency', 'Total_Amount']]
+y_dict = {sector: (df['SectorID'] == sector).astype(int) for sector in df['SectorID'].unique()}
+
+# Train a RandomForest model for each sector
+sector_models = {}
+param_grid = {'clf__n_estimators': [100], 'clf__max_depth': [10, None]}
+
+for sector_id in df['SectorID'].unique():
+    y = y_dict[sector_id]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+    
+    pipeline = Pipeline([
+        ('clf', RandomForestClassifier(random_state=42))
+    ])
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='f1', n_jobs=-1)
+    grid_search.fit(X_train, y_train)
+    
+    sector_models[sector_id] = grid_search.best_estimator_
+
+# Generate refined recommendations using collaborative filtering and sector models
+def generate_refined_recommendations(user_id, sector_models, latent_user_features, interaction_matrix):
+    user_index = interaction_matrix.index.get_loc(user_id)
+    user_similarity = cosine_similarity([latent_user_features[user_index]], latent_user_features).flatten()
+    similar_users_indices = np.argsort(user_similarity)[-10:]  # Top 10 similar users
+    
+    initial_prefs = interaction_matrix.iloc[similar_users_indices].mean(axis=0)
+    top_initial_sectors = np.argsort(-initial_prefs.values)[:5]  # Top 5 sectors
+    
+    refined_scores = {}
+    user_features = X.iloc[user_index].values.reshape(1, -1)
+    for sector_id in top_initial_sectors:
+        model = sector_models[sector_id]
+        proba = model.predict_proba(user_features)[0][1]  # Probability of engagement
+        refined_scores[sector_id] = proba
+    
+    ranked_sector_ids = sorted(refined_scores, key=refined_scores.get, reverse=True)
+    ranked_sectors = label_encoder.inverse_transform(ranked_sector_ids)
+    
+    return ranked_sectors[:5]  # Return top 5 sector recommendations
+
+# Example usage
+user_id = df['ACCT'].iloc[0]  # Assuming using the first user as an example
+refined_recommendations = generate_refined_recommendations(user_id, sector_models, latent_user_features, interaction_matrix)
+print("Refined recommendations:", refined_recommendations)
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.decomposition import TruncatedSVD
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, cosine_similarity
 
 # Load and preprocess the dataset
 df = pd.read_csv('transactions.csv')
