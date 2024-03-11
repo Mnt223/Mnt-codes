@@ -1,0 +1,75 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.decomposition import TruncatedSVD
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import cosine_similarity
+
+# Assuming 'transactions.csv' contains columns: 'ACCT', 'Sector', 'AGE', 'TRAN_AMT', 'DATE', 'Frequency'
+df = pd.read_csv('transactions.csv')
+
+# Preprocess and feature engineering
+df['DATE'] = pd.to_datetime(df['DATE'])
+df['Frequency'] = df.groupby(['ACCT', 'Sector'])['DATE'].transform('count')
+df['Total_Amount'] = df.groupby(['ACCT', 'Sector'])['TRAN_AMT'].transform('sum')
+df.drop_duplicates(subset=['ACCT', 'Sector'], inplace=True)
+
+# Encode categorical variables
+label_encoder = LabelEncoder()
+df['SectorID'] = label_encoder.fit_transform(df['Sector'])
+
+# Normalize features
+scaler = StandardScaler()
+df[['AGE', 'Frequency', 'Total_Amount']] = scaler.fit_transform(df[['AGE', 'Frequency', 'Total_Amount']])
+
+# Prepare interaction matrix for SVD (Collaborative Filtering)
+interaction_matrix = df.pivot(index='ACCT', columns='SectorID', values='Frequency').fillna(0)
+
+# Apply SVD
+svd = TruncatedSVD(n_components=20, random_state=42)
+latent_features = svd.fit_transform(interaction_matrix)
+
+# Split features for individual sector models
+X = df[['AGE', 'Frequency', 'Total_Amount']]
+y_dict = {sector: (df['Sector'] == sector).astype(int) for sector in df['Sector'].unique()}
+
+# Train a RandomForestClassifier for each sector
+sector_models = {}
+for sector, y in y_dict.items():
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    sector_models[sector] = model
+
+# Function to generate recommendations
+def generate_recommendations(user_id, interaction_matrix, latent_features, sector_models, label_encoder):
+    user_index = interaction_matrix.index.get_loc(user_id)
+    user_latent = latent_features[user_index].reshape(1, -1)
+    
+    # Calculate similarity with all users
+    similarity_scores = cosine_similarity(user_latent, latent_features)[0]
+    
+    # Aggregate preferences of top 10 similar users
+    top_users_indices = similarity_scores.argsort()[-11:-1]  # Exclude the user itself
+    top_sectors_preference = interaction_matrix.iloc[top_users_indices].mean().sort_values(ascending=False)
+    
+    # Select top 5 sectors based on preference
+    top_sectors = top_sectors_preference.head(5).index
+    top_sectors_names = label_encoder.inverse_transform(top_sectors)
+    
+    refined_recommendations = {}
+    for sector in top_sectors_names:
+        sector_id = label_encoder.transform([sector])[0]
+        features = df[df['SectorID'] == sector_id][['AGE', 'Frequency', 'Total_Amount']].mean().values.reshape(1, -1)
+        prob = sector_models[sector].predict_proba(features)[0, 1]
+        refined_recommendations[sector] = prob
+    
+    # Rank sectors by predicted probability of engagement
+    sorted_sectors = sorted(refined_recommendations, key=refined_recommendations.get, reverse=True)
+    return sorted_sectors[:5]  # Return top-5 recommendations
+
+# Example usage
+user_id = interaction_matrix.index[0]  # Example user
+recommendations = generate_recommendations(user_id, interaction_matrix, latent_features, sector_models, label_encoder)
+print("Top 5 recommended sectors:", recommendations)
