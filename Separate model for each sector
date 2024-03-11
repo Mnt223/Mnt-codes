@@ -1,4 +1,87 @@
 import pandas as pd
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.decomposition import TruncatedSVD
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import cosine_similarity
+import numpy as np
+
+# Load your dataset
+df = pd.read_csv('path_to_your_data.csv')
+
+# Ensure 'Date' column is in datetime format and encode 'Sector'
+df['Date'] = pd.to_datetime(df['Date'])
+df['Sector_encoded'] = LabelEncoder().fit_transform(df['Sector'])
+
+# Aggregate transaction frequency and amount for each account and sector
+agg_df = df.groupby(['ACCT', 'Sector_encoded']).agg(Transaction_Frequency=('TRAN_AMT', 'count'),
+                                                     Total_Amount=('TRAN_AMT', 'sum')).reset_index()
+
+# Join aggregated data with AGE_NUM (assuming AGE_NUM is constant per ACCT)
+agg_df = agg_df.merge(df[['ACCT', 'AGE_NUM']].drop_duplicates(), on='ACCT', how='left')
+
+# Normalize features
+scaler = StandardScaler()
+agg_df[['AGE_NUM', 'Transaction_Frequency', 'Total_Amount']] = scaler.fit_transform(agg_df[['AGE_NUM', 'Transaction_Frequency', 'Total_Amount']])
+
+# Creating interaction matrix for SVD
+interaction_matrix = agg_df.pivot(index='ACCT', columns='Sector_encoded', values='Total_Amount').fillna(0)
+
+# Applying SVD
+svd = TruncatedSVD(n_components=20, random_state=42)
+latent_features = svd.fit_transform(interaction_matrix)
+
+# Preparing for RandomForestClassifier
+X = agg_df[['AGE_NUM', 'Transaction_Frequency', 'Total_Amount']]
+y = (agg_df['Transaction_Frequency'] > 0).astype(int)  # Binary target based on frequency
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# RandomForestClassifier to predict engagement
+rf = RandomForestClassifier(n_estimators=100, random_state=42)
+rf.fit(X_train, y_train)
+
+# Define a function to generate recommendations
+def generate_recommendations(acct_id, interaction_matrix, latent_features, rf_model, agg_df, label_encoder):
+    if acct_id not in agg_df['ACCT'].values:
+        return "Account ID not found."
+
+    acct_index = agg_df[agg_df['ACCT'] == acct_id].index.tolist()[0]  # Fetching index for latent features
+    user_similarity = cosine_similarity(latent_features[acct_index:acct_index+1], latent_features).flatten()
+
+    # Identify top sectors based on similarity
+    top_indices = user_similarity.argsort()[-11:-1]  # Excluding the account itself
+    sector_scores = interaction_matrix.iloc[top_indices].mean(axis=0).nlargest(5)
+    top_sectors = sector_scores.index.values
+
+    # Predicting engagement for top sectors (example uses simplified engagement)
+    X_pred = agg_df[agg_df['Sector_encoded'].isin(top_sectors)]
+    predictions = rf_model.predict_proba(X_pred[['AGE_NUM', 'Transaction_Frequency', 'Total_Amount']])[:, 1]
+    
+    # Sorting sectors based on engagement predictions
+    recommended_sectors = top_sectors[np.argsort(-predictions)[:5]]
+    
+    # Decode sector names
+    recommended_sectors_names = label_encoder.inverse_transform(recommended_sectors)
+    
+    return recommended_sectors_names
+
+# Example usage
+acct_id = agg_df['ACCT'].iloc[0]  # Example using the first account ID
+recommendations = generate_recommendations(acct_id, interaction_matrix, latent_features, rf, agg_df, LabelEncoder().fit(df['Sector']))
+print("Top recommended sectors for account", acct_id, ":", recommendations)
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
