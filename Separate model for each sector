@@ -1,6 +1,84 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import TruncatedSVD
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import cosine_similarity
+
+# Simulated data preprocessing steps (replace this with actual data loading and preprocessing)
+data = {
+    'user_id': [1, 2, 3, 4, 5],
+    'sector': ['A', 'B', 'A', 'C', 'B'],
+    'age': [25, 30, 35, 40, 45],
+    'transaction_frequency': [10, 20, 15, 10, 5],
+    'transaction_amount': [100, 200, 150, 100, 50],
+    'engagement': [1, 0, 1, 0, 1]  # Example binary engagement
+}
+df = pd.DataFrame(data)
+
+# Encode 'sector' as categorical
+df['sector_encoded'] = pd.factorize(df['sector'])[0]
+
+# Feature scaling
+scaler = StandardScaler()
+df[['age', 'transaction_frequency', 'transaction_amount']] = scaler.fit_transform(df[['age', 'transaction_frequency', 'transaction_amount']])
+
+# Preparing the interaction matrix for SVD
+interaction_matrix = df.pivot_table(index='user_id', columns='sector_encoded', values='engagement', fill_value=0)
+
+# Apply SVD for Collaborative Filtering
+svd = TruncatedSVD(n_components=2, random_state=42)
+latent_features = svd.fit_transform(interaction_matrix)
+
+# Train a Random Forest Classifier for predicting engagement
+# Splitting the dataset for demonstration; in practice, you'd split based on sectors
+X = df[['age', 'transaction_frequency', 'transaction_amount']]
+y = df['engagement']  # This is a simplification, adjust according to your actual engagement definition
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+rf = RandomForestClassifier(n_estimators=100, random_state=42)
+rf.fit(X_train, y_train)
+
+# Function to generate sector recommendations based on user similarity and RandomForest predictions
+def generate_recommendations(user_id, latent_features, rf_model, X, interaction_matrix):
+    # Finding the index of the user in the latent feature space
+    user_index = interaction_matrix.index.get_loc(user_id)
+    
+    # Calculate similarity with all users
+    similarity_scores = cosine_similarity(latent_features[user_index:user_index+1], latent_features).flatten()
+    
+    # Identifying top 3 sectors from similar users based on their interactions
+    top_sectors_indices = np.argsort(similarity_scores)[-4:-1]  # Exclude the user itself and get the top 3
+    top_sectors = interaction_matrix.columns[top_sectors_indices].tolist()
+    
+    # Using RandomForest model to predict engagement probabilities for these top sectors
+    predicted_engagements = [rf_model.predict_proba(X.iloc[[user_index]])[0][1] for sector in top_sectors]
+    
+    # Combine sectors and their predicted engagements
+    sector_engagements = dict(zip(top_sectors, predicted_engagements))
+    
+    # Sort sectors by predicted engagement probabilities
+    recommended_sectors = sorted(sector_engagements, key=sector_engagements.get, reverse=True)
+    
+    return recommended_sectors
+
+# Example: Generate recommendations for a given user
+user_id = 1  # Example user_id
+recommendations = generate_recommendations(user_id, latent_features, rf, X, interaction_matrix)
+print("Recommended sectors:", recommendations)
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import TruncatedSVD
 from sklearn.ensemble import RandomForestClassifier
