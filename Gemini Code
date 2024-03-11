@@ -1,0 +1,209 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor 
+from sklearn.metrics import mean_squared_error, mean_absolute_error 
+
+# *******************
+# Step 1: Data Loading and Preprocessing
+# *******************
+
+file_path = 'persona.csv'
+data = pd.read_csv(file_path) 
+
+# Handle missing values 
+data.fillna(data.mean(), inplace=True)  
+
+# Preprocessing for categorical features, outliers, etc. (if needed)
+# ...
+
+# *******************
+# Step 2: Modeling Sectors with Evaluation
+# *******************
+
+def build_sector_model(sector, data):
+    X = data.drop([sector, 'ACCT', 'Date'], axis=1) 
+    y = data[sector]
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42) 
+
+    model = DecisionTreeRegressor(max_depth=4) 
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test) 
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+
+    print(f'Sector: {sector}, MSE: {mse:.2f}, MAE: {mae:.2f}') 
+    return model
+
+models = {}  
+for sector in ['Entertainment', 'Shopping', 'Restaurant', 'Groceries', 'Travel']: 
+    models[sector] = build_sector_model(sector, data.copy())
+
+# *******************
+# Step 3: Content-Based Filtering 
+# *******************
+
+# (Assuming 'Age' column contains numeric ages, not age groups)
+def calculate_age_group_preferences(data):
+    age_group_stats = data.groupby('Age')  # Group by numeric age
+    pref_sectors = age_group_stats.agg({'TRAN_AMT': ['mean', 'sum'],
+                                        'Sector': lambda x: x.value_counts().index[0]})
+    pref_sectors.rename(columns={'TRAN_AMT': ['avg_spending', 'total_spend'], 'Sector': 'top_sector'}, inplace=True)
+    pref_sectors['transaction_count'] = age_group_stats['Sector'].count()
+    pref_sectors['pct_spend_top'] = (age_group_stats.groupby('Sector')['TRAN_AMT'].sum().reset_index()
+                                     .merge(pref_sectors, on='Sector')['TRAN_AMT_x'] / pref_sectors['total_spend'])
+    return pref_sectors 
+
+def get_content_based_recs(customer_age, age_group_stats):
+    recs = age_group_stats.loc[customer_age] 
+    recs = recs.sort_values(by=['avg_spending', 'transaction_count', 'pct_spend_top'], ascending=False).index.to_list() 
+    return recs[:3] 
+
+age_group_stats = calculate_age_group_preferences(data.copy())
+
+# *******************
+# Step 4: Hybrid Recommendations
+# *******************
+
+def get_recommendations(customer_data, models, weights, age_group_stats):
+    # ... (Your existing logic for hybrid recommendations) 
+
+
+# Example usage  
+new_customer = data.loc[data['ACCT'] == 12345]  
+weights = {'sector_models': 0.6, 'content_based': 0.4} 
+recommendations = get_recommendations(new_customer.copy(), models, weights, age_group_stats) 
+print(recommendations) 
+
+
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor 
+from sklearn.metrics import mean_squared_error, mean_absolute_error 
+
+# *******************
+# Step 1: Data Loading and Preprocessing
+# *******************
+
+file_path = 'persona.csv'
+data = pd.read_csv(file_path) 
+
+# Handle missing values 
+data.fillna(data.mean(), inplace=True)  
+
+# Preprocessing for categorical features, outliers, etc. (if needed)
+# ...
+
+# *******************
+# Step 2: Modeling Sectors with Evaluation
+# *******************
+
+def build_sector_model(sector, data):
+    # ... (Your code remains the same)
+
+# *******************
+# Step 3: Content-Based Filtering 
+# *******************
+
+# (Assuming 'Age' column contains numeric ages, not age groups)
+def calculate_age_group_preferences(data):
+    # ... (Your code remains the same)
+
+def get_content_based_recs(customer_age, age_group_stats):
+    # ... (Your code remains the same)
+
+age_group_stats = calculate_age_group_preferences(data.copy())
+
+# *******************
+# Step 4: Hybrid Recommendations
+# *******************
+
+def get_recommendations(customer_data, models, weights, age_group_stats):
+    sector_preds = {}
+    for sector, model in models.items():
+        prediction = model.predict(customer_data.drop(['ACCT', 'Date'], axis=1)) 
+        sector_preds[sector] = prediction[0] * weights['sector_models'] 
+
+    customer_age = customer_data['Age']  
+    content_recs = get_content_based_recs(customer_age, age_group_stats)
+
+    for sector in content_recs:
+        if sector in sector_preds:  
+            sector_preds[sector] += weights['content_based']  
+        else:
+            sector_preds[sector] = weights['content_based']
+
+    top_sectors = sorted(sector_preds, key=sector_preds.get, reverse=True)[:3] 
+    return top_sectors
+
+# Example usage  
+new_customer = data.loc[data['ACCT'] == 12345]  
+weights = {'sector_models': 0.6, 'content_based': 0.4} 
+recommendations = get_recommendations(new_customer.copy(), models, weights, age_group_stats) 
+print(recommendations) 
+
+
+def calculate_age_group_preferences(data):
+    age_group_stats = data.groupby('Age') 
+    pref_sectors = age_group_stats.agg({'TRAN_AMT': ['mean', 'sum'],
+                                        'Sector': lambda x: x.value_counts().index[0]})
+    pref_sectors.rename(columns={'TRAN_AMT': ['avg_spending', 'total_spend'], 'Sector': 'top_sector'}, inplace=True)
+    pref_sectors['transaction_count'] = age_group_stats['Sector'].count()
+    pref_sectors['pct_spend_top'] = (age_group_stats.groupby('Sector')['TRAN_AMT'].sum().reset_index()
+                                     .merge(pref_sectors, on='Sector')['TRAN_AMT_x'] / pref_sectors['total_spend'])
+
+    # Weighted Metrics (Example)
+    pref_sectors['weighted_score'] = (pref_sectors['avg_spending'] * 0.5 + 
+                                      pref_sectors['transaction_count'] * 0.3 + 
+                                      pref_sectors['pct_spend_top'] * 0.2)
+
+    # Recency (Illustrative - adjust the date)
+    recent_data = data[data['Date'] > '2023-12-01']  
+    recent_stats = calculate_age_group_preferences(recent_data) 
+    pref_sectors['recent_avg_spend'] = recent_stats['avg_spending'] 
+
+    return pref_sectors 
+
+
+# ... (Import statements etc., as before)
+
+# *******************
+# Step 1: Data Loading and Preprocessing
+# *******************
+
+# ... (Your data loading and preprocessing)
+
+# *******************
+# Step 2: Modeling Sectors with Evaluation
+# *******************
+
+# ...  (Your build_sector_model function)
+
+# *******************
+# Step 3: Content-Based Filtering 
+# *******************
+
+def calculate_age_group_preferences(data):  # Updated function
+    # ... (Code provided above)
+
+def get_content_based_recs(customer_age, age_group_stats):
+    recs = age_group_stats.loc[customer_age] 
+    # Prioritize by 'weighted_score', then other factors
+    recs = recs.sort_values(by=['weighted_score', 'avg_spending', 'transaction_count', 'pct_spend_top'], ascending=False).index.to_list() 
+    return recs[:3] 
+
+age_group_stats = calculate_age_group_preferences(data.copy())
+
+# *******************
+# Step 4: Hybrid Recommendations
+# *******************
+
+# ... (Your get_recommendations  function)
+
+# Example usage  
+new_customer = data.loc[data['ACCT'] == 12345]  
+weights = {'sector_models': 0.6, 'content_based': 0.4} 
+recommendations = get_recommendations(new_customer.copy(), models, weights, age_group_stats) 
+print(recommendations) 
