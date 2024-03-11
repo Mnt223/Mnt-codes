@@ -1,3 +1,94 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.decomposition import TruncatedSVD
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, cosine_similarity
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+
+# Load dataset
+df = pd.read_csv('transactions.csv')
+
+# Basic preprocessing
+df['DATE'] = pd.to_datetime(df['DATE'])
+df['SectorID'] = LabelEncoder().fit_transform(df['Sector'])
+df['Frequency'] = df.groupby(['ACCT', 'Sector'])['DATE'].transform('count')
+df['Total_Amount'] = df.groupby(['ACCT', 'Sector'])['TRAN_AMT'].transform('sum')
+df = df.drop_duplicates(subset=['ACCT', 'SectorID'])
+
+# Normalize continuous features
+features_to_scale = ['AGE', 'Frequency', 'Total_Amount']
+scaler = StandardScaler()
+df[features_to_scale] = scaler.fit_transform(df[features_to_scale])
+
+# Create a user-sector interaction matrix for collaborative filtering
+interaction_matrix = df.pivot_table(index='ACCT', columns='SectorID', values='Frequency', fill_value=0)
+
+# Apply SVD for dimensionality reduction
+svd = TruncatedSVD(n_components=100, random_state=42)  # Increased components for better capturing of latent features
+latent_features = svd.fit_transform(interaction_matrix)
+
+# Prepare a pipeline for sector models
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),  # Ensure features are scaled within the pipeline
+    ('clf', RandomForestClassifier(random_state=42))  # Switched to a more complex model for potentially better performance
+])
+
+# Enhanced sector-specific model training with grid search for hyperparameter tuning
+sector_models = {}
+X = df[['AGE', 'Frequency', 'Total_Amount']]  # Feature set
+
+param_grid = {
+    'clf__n_estimators': [100, 200],
+    'clf__max_depth': [10, 20, None]
+}
+
+for sector in df['SectorID'].unique():
+    y = (df['SectorID'] == sector).astype(int)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+    
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='f1')
+    grid_search.fit(X_train, y_train)
+    
+    print(f"Best parameters for sector {sector}: {grid_search.best_params_}")
+    print(f"Classification report for sector {sector}:\n{classification_report(y_test, grid_search.predict(X_test))}")
+    
+    sector_models[sector] = grid_search.best_estimator_
+
+# Define a function to refine recommendations using model probabilities
+def generate_refined_recommendations(user_id, user_features, sector_models):
+    predictions = {}
+    for sector, model in sector_models.items():
+        proba = model.predict_proba(user_features.reshape(1, -1))[0][1]  # Predict engagement probability
+        predictions[sector] = proba
+
+    # Rank sectors by engagement probability
+    ranked_sectors = sorted(predictions, key=predictions.get, reverse=True)
+    return ranked_sectors[:5]  # Return top 5 sector recommendations
+
+# Example: Generating recommendations
+user_id = 'example_user_id'
+user_index = interaction_matrix.index.get_loc(user_id)  # Locate user index in interaction matrix
+user_features = latent_features[user_index]  # Get user's latent features from SVD
+
+# Convert user's latent features back to original feature space for prediction
+# Note: This step might need adjustments based on your actual feature set and models
+refined_recommendations = generate_refined_recommendations(user_id, user_features, sector_models)
+
+# Translate sector IDs back to sector names (if needed)
+sector_names = label_encoder.inverse_transform(refined_recommendations)
+print("Top 5 refined sector recommendations:", sector_names)
+
+
+
+
+
+
+
+
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
