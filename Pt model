@@ -1,5 +1,108 @@
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import RobustScaler
+from sklearn.neighbors import NearestNeighbors
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+from scipy.sparse import csr_matrix
+
+# Load dataset
+df = pd.read_csv('main.csv')
+df['Date'] = pd.to_datetime(df['Date'])
+
+# Aggregate transaction data
+agg_amount = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum').fillna(0)
+agg_freq = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='count').fillna(0)
+customer_age = df.groupby('ACCT')['AGE_NUM'].first()
+
+# Scaling
+scaler = RobustScaler()
+agg_amount_scaled = scaler.fit_transform(agg_amount)
+agg_freq_scaled = scaler.fit_transform(agg_freq)
+customer_age_scaled = scaler.fit_transform(customer_age.values.reshape(-1, 1))
+
+# Convert to sparse matrices
+agg_amount_sparse = csr_matrix(agg_amount_scaled)
+agg_freq_sparse = csr_matrix(agg_freq_scaled)
+
+# Popularity-Based Recommendations
+def get_popular_sectors(top_n=5):
+    sector_popularity_amount = pd.DataFrame(agg_amount.sum(axis=0), columns=['popularity']).sort_values(by='popularity', ascending=False)
+    return sector_popularity_amount.head(top_n).index.tolist()
+
+# Memory-Based CF
+neighbors_model = NearestNeighbors(n_neighbors=5, metric='cosine')
+neighbors_model.fit(agg_amount_sparse)
+
+def get_memory_based_recommendations(acct_index, top_n=5):
+    distances, indices = neighbors_model.kneighbors(agg_amount_sparse[acct_index], n_neighbors=top_n)
+    sectors = agg_amount.columns[agg_amount.iloc[indices.flatten()].values.argmax(axis=1)]
+    return list(dict.fromkeys(sectors))[:top_n]  # Unique sectors
+
+# Model-Based CF
+sectors = agg_amount.columns
+models = {}
+for sector in sectors:
+    X = agg_amount_scaled.drop(sector, axis=1)
+    y = agg_amount_scaled[sector]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    models[sector] = model
+
+def get_model_based_recommendations(acct_index, top_n=5):
+    acct_data = agg_amount_scaled[acct_index:acct_index+1]
+    predictions = {sector: model.predict(acct_data.drop(sector, axis=1))[0] for sector, model in models.items()}
+    top_sectors = sorted(predictions, key=predictions.get, reverse=True)[:top_n]
+    return top_sectors
+
+# Weighted Hybrid Recommendations
+def weighted_hybrid_recommendations(acct_index, top_n=5):
+    scores = {}
+    popular_sectors = get_popular_sectors(top_n)
+    memory_based_sectors = get_memory_based_recommendations(acct_index, top_n)
+    model_based_sectors = get_model_based_recommendations(acct_index, top_n)
+    
+    for sector in popular_sectors:
+        scores[sector] = scores.get(sector, 0) + 1
+    for sector in memory_based_sectors:
+        scores[sector] = scores.get(sector, 0) + 2
+    for sector in model_based_sectors:
+        scores[sector] = scores.get(sector, 0) + 3
+    
+    top_sectors = sorted(scores, key=scores.get, reverse=True)[:top_n]
+    return top_sectors
+
+# Evaluation (Precision and Recall)
+def evaluate_recommendations(true_sectors, recommended_sectors):
+    true_set = set(true_sectors)
+    recommended_set = set(recommended_sectors)
+    intersection = true_set.intersection(recommended_set)
+    precision = len(intersection) / len(recommended_set) if recommended_set else 0
+    recall = len(intersection) / len(true_set) if true_set else 0
+    return precision, recall
+
+# Example Usage
+acct_index = 0  # Replace with actual index from your dataset
+true_sectors = ['Sector1', 'Sector3']  # Replace with actual sectors for evaluation
+recommended_sectors = weighted_hybrid_recommendations(acct_index, top_n=5)
+precision, recall = evaluate_recommendations(true_sectors, recommended_sectors)
+print(f"Recommended Sectors: {recommended_sectors}")
+print(f"Precision: {precision}, Recall: {recall}")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
