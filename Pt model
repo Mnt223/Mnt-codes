@@ -109,3 +109,20 @@ for sector in sectors:
     
     print(f"Finished {sector}: MSE Amount - {mse_amount}, MSE Frequency - {mse_freq}")
 # - Evaluating and tuning the models based on performance metrics relevant to recommendation systems
+
+
+# Calculate cosine similarity based on transaction amounts
+cosine_sim_amount = cosine_similarity(agg_amount_scaled)
+
+# Calculate cosine similarity based on transaction frequencies
+cosine_sim_freq = cosine_similarity(agg_freq_scaled)
+
+# Average the similarity scores from amount and frequency for an overall similarity score
+cosine_sim_overall = (cosine_sim_amount + cosine_sim_freq) / 2
+
+# Convert to DataFrame for easier handling
+cosine_sim_overall_df = pd.DataFrame(cosine_sim_overall, index=agg_amount_scaled.index, columns=agg_amount_scaled.index)
+
+# Display similarity scores for the first customer as an example
+print("Overall Similarity Scores for the First Customer:")
+print(cosine_sim_overall_df.iloc[0].sort_values(ascending=False).head())
