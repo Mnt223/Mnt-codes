@@ -1,0 +1,54 @@
+import pandas as pd
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+
+# Load the dataset
+df = pd.read_csv('main.csv')
+
+# Data Preparation
+# Convert sectors to one-hot encoding and multiply by transaction amount for weighted interactions
+df_one_hot = pd.get_dummies(df['Sector'])
+df_weighted = df_one_hot.multiply(df['TRAN_AMT'], axis="index")
+
+# Aggregate this data by ACCT to get a profile for each customer's interactions with sectors
+customer_profiles = df_weighted.groupby(df['ACCT']).sum()
+
+# Standardize the customer profiles
+scaler = StandardScaler()
+customer_profiles_scaled = scaler.fit_transform(customer_profiles)
+customer_profiles_scaled = pd.DataFrame(customer_profiles_scaled, index=customer_profiles.index, columns=customer_profiles.columns)
+
+# 1. Popularity-Based Model
+sector_popularity = customer_profiles.sum().sort_values(ascending=False)
+
+# 2. Memory-Based Collaborative Filtering (CF)
+# Calculate cosine similarity among users
+user_similarity = cosine_similarity(customer_profiles_scaled)
+user_similarity_df = pd.DataFrame(user_similarity, index=customer_profiles.index, columns=customer_profiles.index)
+
+# 3. Model-Based Collaborative Filtering (CF)
+# Using Random Forest as an example to predict customer interaction for a specific sector based on their profile
+# Let's choose a target sector for demonstration, e.g., 'Entertainment'
+target_sector = 'Entertainment'
+X = customer_profiles_scaled.drop(target_sector, axis=1)
+y = customer_profiles_scaled[target_sector]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+predictions = model.predict(X_test)
+
+mse = mean_squared_error(y_test, predictions)
+print(f'MSE for predicting {target_sector}: {mse}')
+
+# Note: This code focuses on demonstrating the integration of all three models.
+# In practice, further steps are needed for a complete recommendation system, such as:
+# - Transforming predictions from model-based CF into actionable recommendations
+# - Combining recommendations from all three models into a final recommendation list per user
+# - Evaluating and tuning the models based on performance metrics relevant to recommendation systems
