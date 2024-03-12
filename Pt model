@@ -51,4 +51,61 @@ print(f'MSE for predicting {target_sector}: {mse}')
 # In practice, further steps are needed for a complete recommendation system, such as:
 # - Transforming predictions from model-based CF into actionable recommendations
 # - Combining recommendations from all three models into a final recommendation list per user
+
+
+# Calculate the popularity based on total transaction amount
+sector_popularity_amount = agg_amount_scaled.sum().sort_values(ascending=False)
+
+# Calculate the popularity based on transaction frequency
+sector_popularity_freq = agg_freq_scaled.sum().sort_values(ascending=False)
+
+print("Top 5 Popular Sectors by Amount:")
+print(sector_popularity_amount.head(5))
+print("\nTop 5 Popular Sectors by Frequency:")
+print(sector_popularity_freq.head(5))
+
+
+from sklearn.model_selection import train_test_split
+
+# Placeholder dictionaries to store models and their metrics
+models_amount = {}
+models_freq = {}
+mse_scores_amount = {}
+mse_scores_freq = {}
+
+sectors = agg_amount_scaled.columns
+
+for sector in sectors:
+    print(f"Training models for sector: {sector}")
+    
+    # Prepare features and labels for amount and frequency
+    X_amount = agg_amount_scaled.drop(sector, axis=1)
+    y_amount = agg_amount_scaled[sector]
+    
+    X_freq = agg_freq_scaled.drop(sector + '_freq', axis=1, errors='ignore')  # Using errors='ignore' in case '_freq' suffix was not added
+    y_freq = agg_freq_scaled.get(sector + '_freq', pd.Series(index=X_freq.index, data=0))  # Default to 0 if not present
+    
+    # Splitting the dataset (demonstration purposes, consider cross-validation in practice)
+    X_train_amount, X_test_amount, y_train_amount, y_test_amount = train_test_split(X_amount, y_amount, test_size=0.2, random_state=42)
+    X_train_freq, X_test_freq, y_train_freq, y_test_freq = train_test_split(X_freq, y_freq, test_size=0.2, random_state=42)
+    
+    # Model training for transaction amount
+    model_amount = RandomForestRegressor(n_estimators=100, random_state=42)
+    model_amount.fit(X_train_amount, y_train_amount)
+    predictions_amount = model_amount.predict(X_test_amount)
+    mse_amount = mean_squared_error(y_test_amount, predictions_amount)
+    
+    # Model training for transaction frequency
+    model_freq = RandomForestRegressor(n_estimators=100, random_state=42)
+    model_freq.fit(X_train_freq, y_train_freq)
+    predictions_freq = model_freq.predict(X_test_freq)
+    mse_freq = mean_squared_error(y_test_freq, predictions_freq)
+    
+    # Store models and their metrics
+    models_amount[sector] = model_amount
+    mse_scores_amount[sector] = mse_amount
+    models_freq[sector] = model_freq
+    mse_scores_freq[sector] = mse_freq
+    
+    print(f"Finished {sector}: MSE Amount - {mse_amount}, MSE Frequency - {mse_freq}")
 # - Evaluating and tuning the models based on performance metrics relevant to recommendation systems
