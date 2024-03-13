@@ -3,6 +3,84 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Load and preprocess data
+df = pd.read_csv('main6.csv')  # Make sure to update the path to your actual file
+df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+df.dropna(inplace=True)
+print("Preprocessed Data Head:")
+print(df.head())
+
+# Define sectors
+sectors = sorted(df['Sector'].unique())
+
+# Split data into training and testing based on a date
+split_date = pd.to_datetime("2023-01-01")
+train_df = df[df['DATE'] < split_date]
+test_df = df[df['DATE'] >= split_date]
+
+# Function to generate interaction matrix
+def generate_interaction_matrix(data):
+    interaction_matrix = data.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    for sector in sectors:
+        if sector not in interaction_matrix.columns:
+            interaction_matrix[sector] = 0
+    return interaction_matrix[sorted(sectors)]
+
+# Generate interaction matrices for training and testing data
+train_interaction_matrix = generate_interaction_matrix(train_df)
+test_interaction_matrix = generate_interaction_matrix(test_df)
+
+# Scale the interaction matrices
+scaler = MinMaxScaler()
+train_scaled = pd.DataFrame(scaler.fit_transform(train_interaction_matrix), index=train_interaction_matrix.index, columns=train_interaction_matrix.columns)
+test_scaled = pd.DataFrame(scaler.transform(test_interaction_matrix), index=test_interaction_matrix.index, columns=test_interaction_matrix.columns)
+
+# Calculate Cosine Similarity
+sector_similarity = cosine_similarity(train_scaled.T)
+
+# Function to calculate recommendation ranks
+def get_recommendation_ranks(matrix, similarity):
+    scores = np.dot(matrix, similarity)
+    ranks = (-scores).argsort(axis=1).argsort(axis=1) + 1
+    return pd.DataFrame(ranks, index=matrix.index, columns=matrix.columns)
+
+# Generate recommendation ranks for the test set
+test_recommendations = get_recommendation_ranks(test_scaled, sector_similarity)
+
+# Print samples of the outputs
+print("Train Scaled Sample:")
+print(train_scaled.head())
+print("\nTest Scaled Sample:")
+print(test_scaled.head())
+print("\nSector Similarity Sample:")
+print(sector_similarity[:5, :5])
+print("\nTest Recommendations Sample:")
+print(test_recommendations.head())
+
+# Save outputs to an Excel file
+with pd.ExcelWriter('analysis_outputs.xlsx') as writer:
+    train_interaction_matrix.to_excel(writer, sheet_name='Train Interaction Matrix')
+    test_interaction_matrix.to_excel(writer, sheet_name='Test Interaction Matrix')
+    train_scaled.to_excel(writer, sheet_name='Train Scaled')
+    test_scaled.to_excel(writer, sheet_name='Test Scaled')
+    test_recommendations.to_excel(writer, sheet_name='Test Recommendations')
+
+print("All requested outputs have been exported to 'analysis_outputs.xlsx'.")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
 def load_and_preprocess_data(filepath):
     # Load the data from a CSV file
     df = pd.read_csv(filepath)
