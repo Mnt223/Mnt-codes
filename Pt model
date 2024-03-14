@@ -1,3 +1,97 @@
+2nd code
+import pandas as pd
+from scipy.sparse import csr_matrix
+from sklearn.preprocessing import RobustScaler
+import numpy as np
+import implicit
+import os
+
+# Create output directory
+output_dir = 'complete_model_outputs'
+os.makedirs(output_dir, exist_ok=True)
+
+# Load data
+data = pd.read_csv('Main.csv')
+data['Date'] = pd.to_datetime(data['Date'])
+data.sort_values(by='Date', inplace=True)
+
+# Temporal split
+split_date = data['Date'].quantile(0.8)
+train_data = data[data['Date'] <= split_date]
+test_data = data[data['Date'] > split_date]
+
+# Export train and test data
+train_data.to_csv(os.path.join(output_dir, 'train_data.csv'), index=False)
+test_data.to_csv(os.path.join(output_dir, 'test_data.csv'), index=False)
+
+# Prepare interaction matrices for counts and amounts
+def prepare_matrices(df):
+    interaction_counts = df.groupby(['ACCT', 'Sector']).size().unstack(fill_value=0)
+    interaction_amounts = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    return interaction_counts, interaction_amounts
+
+train_counts, train_amounts = prepare_matrices(train_data)
+test_counts, test_amounts = prepare_matrices(test_data)
+
+# Scale and combine counts and amounts
+scaler_counts = RobustScaler()
+scaler_amounts = RobustScaler()
+counts_scaled = scaler_counts.fit_transform(np.log1p(train_counts)) # Log transform to handle skewness in counts
+amounts_scaled = scaler_amounts.fit_transform(np.log1p(train_amounts)) # Log transform to handle skewness in amounts
+
+# Combine counts and amounts into a single interaction strength matrix
+combined_strength = (counts_scaled + amounts_scaled) / 2
+sparse_matrix = csr_matrix(combined_strength)
+
+# Train the ALS model
+model = implicit.als.AlternatingLeastSquares(factors=50, regularization=0.1, iterations=20, use_gpu=False)
+model.fit(sparse_matrix.T * 40) # Transpose for item-user format
+
+# Export combined matrix for analysis
+pd.DataFrame(combined_strength, index=train_counts.index, columns=train_counts.columns).to_csv(os.path.join(output_dir, 'combined_strength.csv'))
+
+# Function to calculate and save Precision@K
+def calculate_precision_at_k(model, train_sparse, test_counts, k=5):
+    hits = 0
+    total = 0
+    for acct, row in test_counts.iterrows():
+        if acct not in train_counts.index:
+            continue
+        user_id = train_counts.index.get_loc(acct)
+        test_items = set(row[row > 0].index)
+        if not test_items:
+            continue
+        recommended, _ = zip(*model.recommend(user_id, train_sparse, N=k))
+        hits += len(set(recommended) & test_items)
+        total += k
+    precision_at_k = hits / total if total > 0 else 0
+    return precision_at_k
+
+# Evaluate the model
+precision = calculate_precision_at_k(model, sparse_matrix, test_counts, k=5)
+print(f"Precision@K: {precision}")
+with open(os.path.join(output_dir, 'precision_at_k.txt'), 'w') as f:
+    f.write(f"Precision@K: {precision}")
+
+# Generate and export recommendations for each user
+def export_recommendations(model, sparse_matrix, acct_index, sectors, filename):
+    recommendations = {}
+    for user_id, acct in enumerate(acct_index):
+        recommended_items = model.recommend(user_id, sparse_matrix, N=5)
+        recommendations[acct] = [sectors[item_id] for item_id, _ in recommended_items]
+    recommendations_df = pd.DataFrame.from_dict(recommendations, orient='index')
+    recommendations_df.to_csv(filename)
+
+export_recommendations(model, sparse_matrix, train_counts.index.tolist(), train_counts.columns.tolist(), os.path.join(output_dir, 'user_recommendations.csv'))
+
+
+
+
+
+
+
+
+1st code 
 import pandas as pd
 import numpy as np
 from scipy.sparse import csr_matrix
