@@ -1,3 +1,43 @@
+import pandas as pd
+
+def rank_and_encode_transactions(data_file, output_rank_file, output_encoded_file):
+  """
+  Ranks transactions per sector and generates hot encoding for sectors with amounts.
+
+  Args:
+      data_file: Path to the CSV data file.
+      output_rank_file: Path to save the ranked transactions CSV file.
+      output_encoded_file: Path to save the hot-encoded sectors CSV file.
+  """
+
+  # Read data
+  data = pd.read_csv(data_file)
+
+  # Rank transactions per sector
+  sector_totals = data.groupby('Sector')['TRAN_AMT'].sum().reset_index()
+  sector_totals = sector_totals.sort_values(by='TRAN_AMT', ascending=False)
+  sector_totals.to_csv(output_rank_file, index=False)
+
+  # Hot encoding for sectors with amounts
+  transactions_with_amount = data[data['TRAN_AMT'] > 0]
+  sector_dummies = pd.get_dummies(transactions_with_amount['Sector'], prefix='Sector')
+  sector_dummies.to_csv(output_encoded_file, index=False)
+
+# Example usage:
+data_file = 'Main.csv'  # Replace with your data file path
+output_rank_file = 'ranked_transactions.csv'
+output_encoded_file = 'sector_encoding.csv'
+
+rank_and_encode_transactions(data_file, output_rank_file, output_encoded_file)
+
+print("Transaction rankings and sector encoding completed. Check the output CSV files.")
+
+
+
+
+
+
+
 new
 import os
 import pandas as pd
