@@ -1,4 +1,94 @@
 import pandas as pd
+import numpy as np
+from scipy.sparse import csr_matrix
+from sklearn.preprocessing import RobustScaler
+import implicit
+import os
+
+# Ensure the output directory exists
+output_dir = 'full_model_evaluation_outputs'
+os.makedirs(output_dir, exist_ok=True)
+
+# Load the data
+data = pd.read_csv('Main.csv')
+data['Date'] = pd.to_datetime(data['Date'])
+data.sort_values('Date', inplace=True)
+
+# Temporal split for train and test datasets
+split_date = data['Date'].quantile(0.8)
+train_data = data[data['Date'] <= split_date]
+test_data = data[data['Date'] > split_date]
+
+# Function to create interaction matrix
+def create_interaction_matrix(df, acct_col, sector_col, value_col):
+    interactions = df.pivot_table(index=acct_col, columns=sector_col, values=value_col, aggfunc='size', fill_value=0)
+    return interactions
+
+# Create interaction matrices for counts and amounts
+interaction_counts_train = create_interaction_matrix(train_data, 'ACCT', 'Sector', 'TRAN_AMT')
+interaction_counts_test = create_interaction_matrix(test_data, 'ACCT', 'Sector', 'TRAN_AMT')
+
+# Apply scaling and combine
+scaler = RobustScaler()
+counts_scaled = scaler.fit_transform(interaction_counts_train)
+sparse_matrix_train = csr_matrix(counts_scaled)
+
+# Initialize and fit the model
+model = implicit.als.AlternatingLeastSquares(factors=50, regularization=0.01, iterations=20, use_gpu=False)
+model.fit(sparse_matrix_train.T)  # Transpose matrix to fit item-user format
+
+# Generating and saving recommendations for each user
+def generate_and_save_recommendations(model, sparse_data, filename):
+    num_users = sparse_data.shape[0]
+    recommendations = []
+    
+    for user_id in range(num_users):
+        recs = model.recommend(user_id, sparse_data, N=5)
+        recommendations.append([rec[0] for rec in recs])
+    
+    rec_df = pd.DataFrame(recommendations, columns=[f'Rec_{i+1}' for i in range(5)])
+    rec_df.to_csv(os.path.join(output_dir, filename), index_label='UserIndex')
+
+generate_and_save_recommendations(model, sparse_matrix_train, 'recommendations.csv')
+
+# Precision@K calculation
+def calculate_precision_at_k(model, train_sparse, test_sparse, k=5):
+    hits = 0
+    total = 0
+    
+    for user_id in range(train_sparse.shape[0]):
+        if user_id >= test_sparse.shape[0]:
+            continue  # User not present in test data
+        test_interactions = test_sparse[user_id].indices
+        if len(test_interactions) == 0:
+            continue  # Skip users with no interactions in test set
+            
+        recommendations = [rec[0] for rec in model.recommend(user_id, train_sparse, N=k)]
+        hits += len(set(recommendations) & set(test_interactions))
+        total += k
+    
+    return hits / total if total > 0 else 0
+
+# Preparing test interaction matrix similarly
+counts_scaled_test = scaler.transform(interaction_counts_test)
+sparse_matrix_test = csr_matrix(counts_scaled_test)
+
+# Compute and print Precision@K
+precision_at_k = calculate_precision_at_k(model, sparse_matrix_train, sparse_matrix_test, k=5)
+print(f"Precision@K for the model: {precision_at_k}")
+
+# Save train and test matrices for reference
+pd.DataFrame(sparse_matrix_train.toarray()).to_csv(os.path.join(output_dir, 'train_matrix.csv'))
+pd.DataFrame(sparse_matrix_test.toarray()).to_csv(os.path.join(output_dir, 'test_matrix.csv'))
+
+
+
+
+
+
+
+
+import pandas as pd
 from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
