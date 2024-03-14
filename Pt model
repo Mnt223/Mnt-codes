@@ -3,6 +3,45 @@ import pandas as pd
 # Load the dataset
 data = pd.read_csv('Main.csv')
 
+# Convert 'TRAN_AMT' to numeric, ensuring no conversion errors are silently ignored
+data['TRAN_AMT'] = pd.to_numeric(data['TRAN_AMT'], errors='coerce')
+data.dropna(subset=['TRAN_AMT'], inplace=True)  # Drop rows with NaN transaction amounts
+
+# Calculate total transaction amount per sector for each customer
+total_amounts = data.groupby(['ACCT', 'Sector'])['TRAN_AMT'].sum().reset_index()
+
+# Rank sectors within each customer based on total transaction amount
+total_amounts['Sector_Rank'] = total_amounts.groupby('ACCT')['TRAN_AMT'].rank(method='dense', ascending=False)
+
+# Pivot this data to have customers as rows, sectors as columns, and ranks as values
+pivot_ranks = total_amounts.pivot(index='ACCT', columns='Sector', values='Sector_Rank')
+
+# Save the sector-wise ranking to CSV
+pivot_ranks.to_csv('Customer_Sector_Rankings.csv')
+
+# One-hot encoding for sector presence for each customer
+# This involves creating a binary matrix showing whether each customer has any transaction in each sector
+sector_presence = pd.get_dummies(data, columns=['Sector'], prefix='', prefix_sep='').groupby('ACCT').max()
+
+# Save the one-hot encoding to CSV
+sector_presence.to_csv('Customer_Sector_Presence.csv')
+
+print("Completed: Sector rankings and presence one-hot encoding saved to CSV files.")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+
+# Load the dataset
+data = pd.read_csv('Main.csv')
+
 # Ensure 'TRAN_AMT' is numeric and handle possible conversion errors
 data['TRAN_AMT'] = pd.to_numeric(data['TRAN_AMT'], errors='coerce')
 data.dropna(subset=['TRAN_AMT'], inplace=True)  # Drop rows where 'TRAN_AMT' could not be converted
