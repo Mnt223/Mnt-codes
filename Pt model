@@ -1,5 +1,45 @@
 import pandas as pd
 
+# Load the dataset
+data = pd.read_csv('Main.csv')
+
+# Ensure 'TRAN_AMT' is numeric and handle possible conversion errors
+data['TRAN_AMT'] = pd.to_numeric(data['TRAN_AMT'], errors='coerce')
+data.dropna(subset=['TRAN_AMT'], inplace=True)  # Drop rows where 'TRAN_AMT' could not be converted
+
+# Rank transactions by amount within each sector for each account
+data['Transaction_Rank'] = data.groupby(['ACCT', 'Sector'])['TRAN_AMT'].rank(method='dense', ascending=False)
+
+# Save the ranked transactions to CSV
+data.to_csv('Ranked_Transactions.csv', index=False)
+
+# Generate a one-hot encoding for sectors based on transaction presence
+one_hot_encoded = pd.get_dummies(data['Sector'])
+
+# Multiply by 'TRAN_AMT' to keep only sectors with transactions, then sum for each account
+sector_presence = one_hot_encoded.multiply(data['TRAN_AMT'], axis="index").groupby(data['ACCT']).sum()
+
+# Convert summed amounts to 1 (presence) or 0 (absence)
+sector_presence[sector_presence > 0] = 1
+
+# Save the one-hot encoded sectors to CSV
+sector_presence.to_csv('Sector_One_Hot_Encoded.csv')
+
+print("Task completed: Ranked transactions and sector one-hot encoding have been saved to CSV files.")
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+
 def rank_and_encode_per_customer(data_file, output_rank_file, output_encoded_file):
   """
   Ranks sectors per customer based on transaction amount and generates hot encoding.
