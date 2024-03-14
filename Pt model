@@ -1,3 +1,84 @@
+final code 
+import os
+import pandas as pd
+from scipy.sparse import csr_matrix
+from sklearn.preprocessing import RobustScaler
+import numpy as np
+import implicit
+
+# Set environment variable for OpenBLAS to use a single thread
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
+# Prepare the output directory
+output_dir = 'complete_model_outputs'
+os.makedirs(output_dir, exist_ok=True)
+
+# Load and prepare the data
+data = pd.read_csv('Main.csv')
+data['Date'] = pd.to_datetime(data['Date'])
+data.sort_values(by='Date', inplace=True)
+
+# Temporal split
+split_date = data['Date'].quantile(0.8, interpolation='nearest')
+train_data = data[data['Date'] <= split_date]
+test_data = data[data['Date'] > split_date]
+
+# Function to prepare interaction matrices
+def prepare_interaction_matrix(df, index=None):
+    counts = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='size', fill_value=0)
+    amounts = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    if index is not None:
+        counts = counts.reindex(index, fill_value=0)
+        amounts = amounts.reindex(index, fill_value=0)
+    scaler = RobustScaler()
+    combined = scaler.fit_transform(np.log1p(counts) + np.log1p(amounts))
+    return csr_matrix(combined), counts.index, counts.columns
+
+train_matrix, train_index, sectors = prepare_interaction_matrix(train_data)
+test_matrix, _, _ = prepare_interaction_matrix(test_data, train_index)
+
+# Initialize and train the ALS model
+model = implicit.als.AlternatingLeastSquares(factors=50, regularization=0.1, iterations=20, use_gpu=False)
+model.fit(train_matrix.T * 40)  # Item-User format
+
+# Function to calculate Precision@K
+def calculate_precision_at_k(model, train_matrix, test_matrix, k=5):
+    hits = 0
+    total = 0
+    for user_id in range(train_matrix.shape[0]):
+        test_interactions = test_matrix[user_id].indices
+        if len(test_interactions) == 0:
+            continue
+        recommendations = [rec[0] for rec in model.recommend(user_id, train_matrix, N=k)]
+        hits += len(set(recommendations) & set(test_interactions))
+        total += len(test_interactions)
+    return hits / (total * k) if total else 0
+
+precision = calculate_precision_at_k(model, train_matrix, test_matrix, k=5)
+print(f"Precision@5: {precision}")
+
+# Exporting the results
+def export_results(matrix, index, columns, filename):
+    df = pd.DataFrame(matrix.toarray(), index=index, columns=columns)
+    df.to_csv(os.path.join(output_dir, filename))
+
+export_results(train_matrix, train_index, sectors, 'train_matrix.csv')
+export_results(test_matrix, train_index, sectors, 'test_matrix.csv')
+
+# Generating and exporting recommendations for all users
+def export_recommendations(model, matrix, user_ids, filename):
+    recs = {user_id: [sectors[rec[0]] for rec in model.recommend(idx, matrix, N=5)] for idx, user_id in enumerate(user_ids)}
+    rec_df = pd.DataFrame.from_dict(recs, orient='index')
+    rec_df.to_csv(os.path.join(output_dir, filename))
+
+export_recommendations(model, train_matrix, train_index, 'user_recommendations.csv')
+
+print("Completed all tasks. Check the 'complete_model_outputs' directory for results.")
+
+
+
+
+
 2nd code
 import pandas as pd
 from scipy.sparse import csr_matrix
