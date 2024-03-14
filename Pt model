@@ -1,3 +1,71 @@
+new
+import os
+import pandas as pd
+from scipy.sparse import csr_matrix
+from sklearn.preprocessing import RobustScaler
+import numpy as np
+import implicit
+
+# Environment setup for OpenBLAS
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
+# Prepare output directory
+output_dir = 'final_model_outputs'
+os.makedirs(output_dir, exist_ok=True)
+
+# Load the dataset
+data = pd.read_csv('Main.csv')
+data['Date'] = pd.to_datetime(data['Date'])
+data.sort_values(by='Date', inplace=True)
+
+# Temporal split
+split_date = data['Date'].quantile(0.8, interpolation='nearest')
+train_data = data[data['Date'] <= split_date]
+test_data = data[data['Date'] > split_date]
+
+# Interaction matrix for training data
+def prepare_interaction_matrix(df):
+    counts = df.groupby(['ACCT', 'Sector']).size().unstack(fill_value=0)
+    amounts = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    combined = np.log1p(counts) + np.log1p(amounts)
+    scaler = RobustScaler()
+    combined_scaled = scaler.fit_transform(combined)
+    return csr_matrix(combined_scaled), counts.index.tolist(), counts.columns.tolist()
+
+train_matrix, train_accts, sectors = prepare_interaction_matrix(train_data)
+
+# Initialize and train the ALS model
+model = implicit.als.AlternatingLeastSquares(factors=50, regularization=0.1, iterations=20, use_gpu=False)
+model.fit(train_matrix.T)  # Item-User matrix
+
+# Popular sectors for fallback recommendations
+def get_fallback_recommendations(df, n=5):
+    popular_sectors = df.groupby('Sector')['TRAN_AMT'].sum().nlargest(n).index.tolist()
+    return popular_sectors
+
+fallback_rec = get_fallback_recommendations(train_data)
+
+# Generate and export recommendations
+def export_recommendations(model, train_matrix, train_accts, sectors, fallback_rec, output_path):
+    all_recs = {}
+    for acct in set(train_accts + test_data['ACCT'].unique().tolist()):
+        if acct in train_accts:
+            user_idx = train_accts.index(acct)
+            recs = [sectors[i] for i, _ in model.recommend(user_idx, train_matrix, N=5)]
+        else:
+            recs = fallback_rec
+        all_recs[acct] = recs
+    rec_df = pd.DataFrame.from_dict(all_recs, orient='index', columns=[f'Rec_{i+1}' for i in range(5)])
+    rec_df.to_csv(output_path)
+
+export_recommendations(model, train_matrix, train_accts, sectors, fallback_rec, os.path.join(output_dir, 'all_user_recommendations.csv'))
+
+print("Recommendations generated for all users. Please check the 'final_model_outputs' directory.")
+
+
+
+
+
 final code 
 import os
 import pandas as pd
