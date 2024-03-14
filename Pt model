@@ -1,5 +1,67 @@
 import pandas as pd
 
+def rank_and_encode_per_customer(data_file, output_rank_file, output_encoded_file):
+  """
+  Ranks sectors per customer based on transaction amount and generates hot encoding.
+
+  Args:
+      data_file: Path to the CSV data file.
+      output_rank_file: Path to save the ranked transactions per customer CSV file.
+      output_encoded_file: Path to save the hot-encoded sectors per customer CSV file.
+  """
+
+  # Read data
+  data = pd.read_csv(data_file)
+
+  # Customerごとのセクターごとの合計トランザクション金額を計算 (Customerごとのセクターごとの合計トランザクション金額を計算)
+  # (Calculate total transaction amount per sector for each customer)
+  customer_sector_totals = data.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum').reset_index()
+
+  # 顧客ごとにセクターごとランキングを作成 (顧客ごとにセクターごとランキングを作成)
+  # (Create sector ranking for each customer)
+  for customer_id in customer_sector_totals['ACCT'].unique():
+    customer_data = customer_sector_totals[customer_sector_totals['ACCT'] == customer_id]
+    customer_data = customer_data.sort_values(by='TRAN_AMT', ascending=False)
+    customer_data['Sector_Rank'] = customer_data['TRAN_AMT'].rank(ascending=False)
+    customer_sector_totals.update(customer_data)
+
+  customer_sector_totals.drop('TRAN_AMT', axis=1, inplace=True)  # Remove temporary column
+
+  # 金額の存在に基づくセクターホットエンコーディング (金額の存在に基づくセクターホットエンコーディング)
+  # (Hot encoding for sectors based on presence of amount)
+  sector_dummies = pd.get_dummies(customer_sector_totals['Sector'], prefix='Sector')
+  customer_sector_totals = pd.concat([customer_sector_totals, sector_dummies], axis=1)
+  customer_sector_totals.fillna(0, inplace=True)  # Fill NaN with 0 for absent sectors
+
+  # 出力ファイルに保存 (出力ファイルに保存)
+  # (Save to output files)
+  customer_sector_totals.to_csv(output_rank_file, index=False)
+  sector_dummies.to_csv(output_encoded_file, index=False)
+
+  print("Customer-based transaction rankings and sector encoding completed. Check the output CSV files.")
+
+# Example usage:
+data_file = 'Main.csv'  # Replace with your data file path
+output_rank_file = 'customer_ranked_transactions.csv'
+output_encoded_file = 'customer_sector_encoding.csv'
+
+rank_and_encode_per_customer(data_file, output_rank_file, output_encoded_file)
+
+print("Customer rankings and sector encoding completed. Check the output CSV files.")
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+
 def rank_and_encode_transactions(data_file, output_rank_file, output_encoded_file):
   """
   Ranks transactions per sector and generates hot encoding for sectors with amounts.
