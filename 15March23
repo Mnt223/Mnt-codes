@@ -1,0 +1,209 @@
+# amount & freq model #
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import RobustScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_and_preprocess_data(filepath):
+    df = pd.read_csv(filepath)
+    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+    df.dropna(inplace=True)
+    # Initialize a count for each transaction
+    df['TRAN_COUNT'] = 1
+    return df
+
+def generate_interaction_matrix(df, sectors, value_column):
+    interaction_matrix = df.pivot_table(index='ACCT', columns='Sector', values=value_column, aggfunc='sum', fill_value=0)
+    for sector in sectors:
+        if sector not in interaction_matrix.columns:
+            interaction_matrix[sector] = 0
+    return interaction_matrix[sorted(sectors)]
+
+def scale_and_combine_matrices(amount_matrix, frequency_matrix):
+    scaler = RobustScaler()
+    scaled_amount_matrix = scaler.fit_transform(amount_matrix)
+    scaled_frequency_matrix = scaler.fit_transform(frequency_matrix)
+    combined_matrix = (scaled_amount_matrix + scaled_frequency_matrix) / 2
+    return pd.DataFrame(combined_matrix, index=amount_matrix.index, columns=amount_matrix.columns)
+
+def calculate_cosine_similarity(matrix):
+    return cosine_similarity(matrix)
+
+def generate_hot_encoding(df, sectors):
+    hot_encoded = pd.get_dummies(df[['ACCT', 'Sector']], columns=['Sector'], prefix='', prefix_sep='').groupby('ACCT').max()
+    for sector in sectors:
+        if sector not in hot_encoded.columns:
+            hot_encoded[sector] = 0
+    return hot_encoded[sorted(sectors)]
+
+def get_recommendation_ranks(interaction_matrix, sector_similarity):
+    scores = np.dot(interaction_matrix, sector_similarity)
+    ranks = (-scores).argsort(axis=1).argsort(axis=1) + 1
+    return pd.DataFrame(ranks, index=interaction_matrix.index, columns=interaction_matrix.columns)
+
+def generate_transaction_ranks(df, sectors):
+    interaction_matrix = generate_interaction_matrix(df, sectors, 'TRAN_AMT')  # Using 'TRAN_AMT' for transaction value
+    transaction_ranks = interaction_matrix.rank(axis=1, method='max', ascending=False).astype(int)
+    return transaction_ranks
+
+def main():
+    df = load_and_preprocess_data('data.csv')  # Ensure to replace 'data.csv' with your actual file name
+    split_date = pd.to_datetime("2023-01-01")
+    sectors = sorted(df['Sector'].unique())
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    # Generate interaction matrices for amounts and frequencies
+    train_amount_matrix = generate_interaction_matrix(train_df, sectors, 'TRAN_AMT')
+    train_frequency_matrix = generate_interaction_matrix(train_df, sectors, 'TRAN_COUNT')
+    test_amount_matrix = generate_interaction_matrix(test_df, sectors, 'TRAN_AMT')
+    test_frequency_matrix = generate_interaction_matrix(test_df, sectors, 'TRAN_COUNT')
+
+    # Scale and combine matrices
+    train_combined_matrix = scale_and_combine_matrices(train_amount_matrix, train_frequency_matrix)
+    test_combined_matrix = scale_and_combine_matrices(test_amount_matrix, test_frequency_matrix)
+    
+    # Calculate cosine similarity based on the combined matrix
+    sector_similarity = calculate_cosine_similarity(train_combined_matrix)
+    
+    # Generate hot encoding and transaction ranks
+    train_hot_encoding = generate_hot_encoding(train_df, sectors)
+    test_hot_encoding = generate_hot_encoding(test_df, sectors)
+    test_transaction_ranks = generate_transaction_ranks(test_df, sectors)
+    
+    # Generate recommendations based on the combined matrix
+    test_recommendations = get_recommendation_ranks(test_combined_matrix, sector_similarity)
+
+    with pd.ExcelWriter('analysis_outputs.xlsx', engine='openpyxl') as writer:
+        train_hot_encoding.to_excel(writer, sheet_name='Train Hot Encoding')
+        test_hot_encoding.to_excel(writer, sheet_name='Test Hot Encoding')
+        test_recommendations.to_excel(writer, sheet_name='Test Recommendations')
+        test_transaction_ranks.to_excel(writer, sheet_name='Test Transaction Ranks')
+        # Optionally export the combined scaled matrices and sector similarity if needed
+
+    print("All requested outputs have been exported to 'analysis_outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
+
+
+#Use of percentage instead of scaling
+# change sum to count for freq in same code 
+
+import pandas as pd
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+
+def load_and_preprocess_data(filepath):
+    df = pd.read_csv(filepath)
+    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+    df.dropna(inplace=True)
+    # Initialize a count for each transaction
+    df['TRAN_COUNT'] = 1
+    return df
+
+def generate_interaction_matrix(df, sectors, value_column='TRAN_AMT'):
+    interaction_matrix = df.pivot_table(index='ACCT', columns='Sector', values=value_column, aggfunc='sum', fill_value=0)
+    for sector in sectors:
+        if sector not in interaction_matrix.columns:
+            interaction_matrix[sector] = 0
+    # Calculate percentage of each sector from overall amount
+    interaction_matrix_percentage = interaction_matrix.div(interaction_matrix.sum(axis=1), axis=0) * 100
+    return interaction_matrix_percentage[sorted(sectors)]
+
+def calculate_cosine_similarity(matrix):
+    return cosine_similarity(matrix)
+
+def generate_hot_encoding(df, sectors):
+    hot_encoded = pd.get_dummies(df[['ACCT', 'Sector']], columns=['Sector'], prefix='', prefix_sep='').groupby('ACCT').max()
+    for sector in sectors:
+        if sector not in hot_encoded.columns:
+            hot_encoded[sector] = 0
+    return hot_encoded[sorted(sectors)]
+
+def get_recommendation_ranks(interaction_matrix, sector_similarity):
+    scores = np.dot(interaction_matrix, sector_similarity)
+    ranks = (-scores).argsort(axis=1).argsort(axis=1) + 1
+    return pd.DataFrame(ranks, index=interaction_matrix.index, columns=interaction_matrix.columns)
+
+def generate_transaction_ranks(df, sectors):
+    interaction_matrix = generate_interaction_matrix(df, sectors)  # Using 'TRAN_AMT' for transaction value
+    transaction_ranks = interaction_matrix.rank(axis=1, method='max', ascending=False).astype(int)
+    return transaction_ranks
+
+def main():
+    df = load_and_preprocess_data('data.csv')  # Ensure to replace 'data.csv' with your actual file name
+    split_date = pd.to_datetime("2023-01-01")
+    sectors = sorted(df['Sector'].unique())
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    # Generate interaction matrices for amounts (percentage)
+    train_amount_matrix = generate_interaction_matrix(train_df, sectors)
+    test_amount_matrix = generate_interaction_matrix(test_df, sectors)
+    
+    # Calculate cosine similarity based on the percentage matrix
+    sector_similarity = calculate_cosine_similarity(train_amount_matrix)
+    
+    # Generate hot encoding and transaction ranks
+    train_hot_encoding = generate_hot_encoding(train_df, sectors)
+    test_hot_encoding = generate_hot_encoding(test_df, sectors)
+    test_transaction_ranks = generate_transaction_ranks(test_df, sectors)
+    
+    # Generate recommendations based on the percentage matrix
+    test_recommendations = get_recommendation_ranks(test_amount_matrix, sector_similarity)
+
+    with pd.ExcelWriter('analysis_outputs.xlsx', engine='openpyxl') as writer:
+        train_hot_encoding.to_excel(writer, sheet_name='Train Hot Encoding')
+        test_hot_encoding.to_excel(writer, sheet_name='Test Hot Encoding')
+        test_recommendations.to_excel(writer, sheet_name='Test Recommendations')
+        test_transaction_ranks.to_excel(writer, sheet_name='Test Transaction Ranks')
+        # Optionally export the percentage matrices if needed
+
+    print("All requested outputs have been exported to 'analysis_outputs.xlsx'.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+# All output in one file 
+
+def main():
+    df = load_and_preprocess_data('data.csv')  # Make sure this points to your actual data file
+    split_date = pd.to_datetime("2023-01-01")
+    sectors = sorted(df['Sector'].unique())
+    train_df, test_df = df[df['DATE'] < split_date], df[df['DATE'] >= split_date]
+
+    # Assuming these functions are defined and return DataFrames with an 'ACCT' column and sector columns
+    train_hot_encoding = generate_hot_encoding(train_df, sectors)
+    test_hot_encoding = generate_hot_encoding(test_df, sectors)
+    train_combined_matrix = generate_interaction_matrix(train_df, sectors, 'TRAN_AMT', aggfunc='sum') # For recommendations
+    test_transaction_ranks = generate_transaction_ranks(test_df, sectors)
+
+    # Assuming the generation of train recommendations is similar to test recommendations
+    sector_similarity = calculate_cosine_similarity(train_combined_matrix)  # Based on the combined interaction matrix for train
+    train_recommendations = get_recommendation_ranks(train_combined_matrix, sector_similarity)  # Using train data for demonstration
+    
+    # Write to Excel with specified order
+    with pd.ExcelWriter('analysis_outputs.xlsx', engine='openpyxl') as writer:
+        # Calculate start column for each DataFrame based on the widths of the preceding ones + 2 columns for spacing
+        start_col = 0
+        
+        # Train Recommendations
+        train_recommendations.to_excel(writer, sheet_name='Combined Analysis', startrow=0, startcol=start_col, index=True)
+        start_col += train_recommendations.shape[1] + 2
+
+        # Test Transaction Ranks
+        test_transaction_ranks.to_excel(writer, sheet_name='Combined Analysis', startrow=0, startcol=start_col, index=True)
+        start_col += test_transaction_ranks.shape[1] + 2
+
+        # Train Hot Encoding
+        train_hot_encoding.reset_index().to_excel(writer, sheet_name='Combined Analysis', startrow=0, startcol=start_col, index=False)
+        start_col += train_hot_encoding.shape[1] + 3  # +1 for the 'ACCT' column after resetting index
+
+        # Test Hot Encoding
+        test_hot_encoding.reset_index().to_excel(writer, sheet_name='Combined Analysis', startrow=0, startcol=start_col, index=False)
+
+    print("All data exported to 'analysis_outputs.xlsx' in the 'Combined Analysis' sheet.")
+
+if __name__ == "__main__":
+    main()
