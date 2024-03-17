@@ -1,0 +1,23 @@
+data smss;
+    set sms;
+    by 'Message id'n 'Mobile Number'n;
+    retain ASSIGNED_PRIORITY;
+
+    if first.'Message id'n then do;
+        ASSIGNED_PRIORITY = 0;
+        put "Resetting for 'Message id'n=" 'Message id'n;
+    end;
+
+    if Segment = 'GPB' then do;
+        put "GPB Segment for 'Message id'n=" 'Message id'n;
+        if NR_Flag = 1 and ASSIGNED_PRIORITY = 0 then do;
+            ASSIGNED_PRIORITY = 1;
+            put "Assigned Priority 1 for 'Message id'n=" 'Message id'n;
+        end;
+        else if NR_Flag = 0 and ASSIGNED_PRIORITY = 0 then do;
+            ASSIGNED_PRIORITY = 2;
+            put "Assigned Priority 2 for 'Message id'n=" 'Message id'n;
+        end;
+    end;
+    /* Repeat for other segments */
+run;
