@@ -1,3 +1,79 @@
+Given the updated details that the files are in CSV format and the "main" file is essentially the first file from the first folder created, and that you are using SAS Enterprise Guide (SAS EG), the approach will slightly change. Here’s how you can manage this process in SAS EG:
+
+1. **Combine CSV Files Within Each Daily Folder**: Since the files are in CSV format, you will read them into SAS datasets and then combine (append) them if there are more than one.
+
+2. **Merge the Combined Daily Dataset with the Main Dataset**: The main dataset, in this case, would be the first CSV file that was converted into a SAS dataset from the start of this process. Subsequent daily combined datasets will be appended to this main dataset.
+
+For this process, you'll need to slightly adapt the approach to handle CSV files, and also, the identification of the main file will be based on a one-time setup assumption that the first dataset created is your main dataset.
+
+### Example SAS Code
+
+Here’s an illustrative example of how you might automate this process in SAS EG, assuming you are manually identifying the daily folder to process:
+
+```sas
+* Example macro to import CSV files from a folder and append them;
+%macro import_and_append_csvs(folderPath);
+    * Use a filename statement to reference the directory listing;
+    filename dirlist pipe "dir &folderPath\*.csv /b";
+
+    * Create a temporary dataset to store file names;
+    data filenames(keep=filename);
+        length filename $256;
+        infile dirlist length=reclen;
+        input filename $varying256. reclen;
+    run;
+
+    * Import and append CSV files;
+    %let dsid = %sysfunc(open(filenames));
+    %let rc = %sysfunc(fetchobs(&dsid, 1));
+    %let firstFile = 1;
+
+    do while(&rc = 0);
+        filename = "";
+        call symputx('filename', filename);
+        %if &firstFile %then %do;
+            proc import datafile="&folderPath\&filename" 
+                out=mainDataset
+                dbms=csv
+                replace;
+            run;
+            %let firstFile = 0;
+        %end;
+        %else %do;
+            proc import datafile="&folderPath\&filename" 
+                out=tempDataset
+                dbms=csv
+                replace;
+            run;
+            proc append base=mainDataset data=tempDataset force; 
+            run;
+        %end;
+        %let rc = %sysfunc(fetch(&dsid));
+    end;
+    %let rc = %sysfunc(close(&dsid));
+%mend import_and_append_csvs;
+
+* Call the macro for today's folder (update path as necessary);
+%import_and_append_csvs(C:\path\to\topfile\YYYYMMDD);
+```
+
+In this script:
+- The macro `import_and_append_csvs` is designed to handle the importation and combination of CSV files from a specified folder.
+- It uses a temporary dataset `filenames` to store the list of CSV files in the given folder.
+- It processes each CSV file in the folder, importing the first file directly into `mainDataset` (assuming the first call to this macro points to the folder with your initial main file). Subsequent files are imported into a temporary dataset `tempDataset` and then appended to `mainDataset`.
+- Replace `C:\path\to\topfile\YYYYMMDD` with the actual path to today's folder.
+
+Remember to adjust the path to match your actual daily folder structure, potentially using a dynamic way to specify the `YYYYMMDD` part based on the current date or an input parameter if you want to automate or streamline the process further.
+
+
+
+
+
+
+
+
+
+
 data smss;
     set sms;
     by 'Message id'n 'Mobile Number'n;
