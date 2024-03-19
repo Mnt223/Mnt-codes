@@ -1,3 +1,71 @@
+%macro process_daily_reports(basePath, masterFilePath, logFilePath);
+    /* Calculate yesterday's date and format it for the folder name */
+    %let yesterday = %sysfunc(intnx(day, %sysfunc(today()), -1), yymmddn8.);
+    %let folderDate = %sysfunc(putn(&yesterday, yymmddn8.));
+    %let folderName = email_%substr(&folderDate, 7, 2)_%substr(&folderDate, 5, 2)_%substr(&folderDate, 1, 4);
+
+    /* Known file name patterns */
+    %let file1 = 12345_detailed_report.csv;
+    %let file2 = 34567_detailed_report.csv;
+    %let file3 = 56789_detailed_report.csv;
+
+    /* Attempt to import each file */
+    %do i = 1 %to 3;
+        %let currentFile = %scan(&file1 &file2 &file3, &i);
+        %let fullPath = &basePath\&folderName\&currentFile;
+        
+        /* Check if the file exists to avoid unnecessary PROC IMPORT errors */
+        %if %sysfunc(fexist(&fullPath)) %then %do;
+            proc import datafile="&fullPath"
+                out=work.imported&i
+                dbms=csv
+                replace;
+                getnames=yes;
+            run;
+        %end;
+        %else %do;
+            %put File &fullPath does not exist.;
+        %end;
+    %end;
+
+    /* Combine imported datasets if they exist */
+    data work.combined;
+        %do i = 1 %to 3;
+            %if %sysfunc(exist(work.imported&i)) %then %do;
+                set work.imported&i indsname=src;
+                by notsorted;
+                if _n_ = 1 then source = src;
+            %end;
+        %end;
+    run;
+
+    /* Append the combined data to the master dataset */
+    proc append base=&masterFilePath data=work.combined force;
+    run;
+
+    /* Optional: Update a log file with the processed folder name */
+    data _null_;
+        file "&logFilePath" mod;
+        put "&folderName";
+    run;
+
+%mend process_daily_reports;
+
+/* Specify your paths and execute the macro */
+%let basePath = C:\path\to\your\winscp\folder;
+%let masterFilePath = C:\path\to\master\master_dataset.sas7bdat;
+%let logFilePath = C:\path\to\your\log\process_log.txt;
+%process_daily_reports(&basePath, &masterFilePath, &logFilePath);
+
+
+
+
+
+
+
+
+
+
 %macro process_latest_folder(basePath, masterFilePath, logFilePath);
     /* Determine the latest folder based on today's date */
     data _null_;
