@@ -1,3 +1,67 @@
+%macro process_latest_folder(basePath, masterFilePath, logFilePath);
+    /* Determine the latest folder based on today's date */
+    data _null_;
+        day = put(day(today()), z2.);
+        month = put(month(today()), z2.);
+        year = put(year(today()), 4.);
+        folderName = cats('email_', day, '_', month, '_', year);
+        call symputx('latestFolderName', trim(folderName));
+    run;
+
+    /* Check if this folder has already been processed by consulting the log file */
+    %let isProcessed = 0;
+    %if %sysfunc(fileexist(&logFilePath)) %then %do;
+        data _null_;
+            infile "&logFilePath";
+            input lastFolder $100.;
+            if lastFolder = "&latestFolderName" then call symput('isProcessed', '1');
+        run;
+    %end;
+
+    %if &isProcessed = 0 %then %do;
+        /* Process the folder's CSV files */
+        %let folderPath = &basePath\&latestFolderName;
+        filename csvfiles "&folderPath\*.csv";
+        data combined;
+            length filePath $256;
+            infile csvfiles filename=filePath truncover;
+            input;
+            /* Adapt this part to match your CSV structure */
+            /* Example: input Name $ Age Height; */
+        run;
+        
+        /* Append the combined data to the master dataset */
+        proc append base=&masterFilePath data=combined force;
+        run;
+
+        /* Update the log file */
+        data _null_;
+            file "&logFilePath" mod;
+            put "&latestFolderName";
+        run;
+    %end;
+    %else %do;
+        %put NOTE: Folder &latestFolderName has already been processed. Skipping...;
+    %end;
+%mend process_latest_folder;
+
+/* Set your specific paths here */
+%let basePath = C:\path\to\your\source\folder;
+%let masterFilePath = C:\path\to\your\master\master_dataset.sas7bdat;
+%let logFilePath = C:\path\to\your\source\folder\process_log.txt;
+
+/* Execute the macro */
+%process_latest_folder(&basePath, &masterFilePath, &logFilePath);
+
+
+
+
+
+
+
+
+
+
 Given the updated details that the files are in CSV format and the "main" file is essentially the first file from the first folder created, and that you are using SAS Enterprise Guide (SAS EG), the approach will slightly change. Here’s how you can manage this process in SAS EG:
 
 1. **Combine CSV Files Within Each Daily Folder**: Since the files are in CSV format, you will read them into SAS datasets and then combine (append) them if there are more than one.
