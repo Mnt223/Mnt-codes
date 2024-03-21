@@ -1,3 +1,96 @@
+from dash import Dash, html, dcc, Input, Output
+import plotly.graph_objects as go
+import pandas as pd
+
+# Load data from Excel file and preprocess
+df = pd.read_excel('map_d.xlsx', engine='openpyxl')
+# Ensure proper data types
+df['Date'] = pd.to_datetime(df['Date'])  # Converting to datetime
+df['count'] = df['count'].astype(float)  # Ensuring 'count' is float for consistency in plotting
+
+# Sorting DataFrame by Date to ensure consistent slider behavior
+df.sort_values('Date', inplace=True)
+
+app = Dash(__name__)
+
+app.layout = html.Div([
+    html.H1('3D Map Visualization with Time Slider'),
+    dcc.Graph(id='3d-map'),
+    dcc.Slider(
+        id='date-slider',
+        min=0,
+        max=len(df['Date'].dt.date.unique()) - 1,
+        value=0,
+        marks={i: str(date) for i, date in enumerate(df['Date'].dt.date.unique())},
+        step=1
+    ),
+    # Placeholder for dynamic JavaScript
+    html.Div(id='dynamic-js', style={'display': 'none'})
+])
+
+@app.callback(
+    Output('3d-map', 'figure'),
+    [Input('date-slider', 'value')]
+)
+def update_figure(selected_date_index):
+    # Filtering data based on the slider input
+    unique_dates = sorted(df['Date'].dt.date.unique())
+    selected_date = unique_dates[selected_date_index]
+    filtered_df = df[df['Date'].dt.date == selected_date]
+
+    # Creating the 3D scatter plot
+    fig = go.Figure(data=[go.Scatter3d(
+        x=filtered_df['Longitude'],
+        y=filtered_df['Latitude'],
+        z=filtered_df['count'],
+        text=filtered_df['City'],  # Adding city names as hover text
+        mode='markers',
+        marker=dict(
+            size=filtered_df['count'],
+            sizemode='diameter',
+            opacity=0.8,
+            color=filtered_df['count'],
+            colorscale='Viridis',
+            colorbar_title='Transactions'
+        )
+    )])
+    
+    fig.update_layout(
+        margin=dict(l=0, r=0, b=0, t=30),
+        scene=dict(
+            xaxis_title='Longitude',
+            yaxis_title='Latitude',
+            zaxis_title='Transaction Count',
+            # Setting the aspect ratio for better visualization
+            aspectmode='cube'
+        ),
+        title=f'Transactions on {selected_date}'
+    )
+    return fig
+
+@app.callback(
+    Output('dynamic-js', 'children'),
+    Input('date-slider', 'value')
+)
+def inject_js(selected_date_index):
+    # This function dynamically injects JS. It's a simple example, replace or expand as needed.
+    return html.Script('''
+        console.log('Custom JS code injected for enhanced interaction.');
+        // Add your custom JavaScript here for more advanced interactions or visual effects.
+    ''')
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+
+
+
+
+
+
+
+
+
 import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
