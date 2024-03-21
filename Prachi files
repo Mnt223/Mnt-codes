@@ -1,3 +1,72 @@
+from dash import Dash, html, dcc, Input, Output
+from dash.exceptions import PreventUpdate
+import plotly.express as px
+import pandas as pd
+
+# Load data from Excel file and preprocess
+df = pd.read_excel('map_d.xlsx', engine='openpyxl')
+df['Date'] = pd.to_datetime(df['Date'])  # Converting to datetime
+df['count'] = df['count'].astype(float)  # Ensuring 'count' is float
+
+# Sort DataFrame by Date to ensure consistent slider behavior
+df.sort_values('Date', inplace=True)
+unique_dates = df['Date'].dt.strftime('%Y-%m-%d').unique()
+
+app = Dash(__name__)
+
+app.layout = html.Div([
+    html.H1('Map Visualization with Time Slider'),
+    dcc.Graph(id='2d-map'),
+    dcc.Slider(
+        id='date-slider',
+        min=0,
+        max=len(unique_dates) - 1,
+        value=0,
+        marks={i: date for i, date in enumerate(unique_dates)},
+        step=1
+    ),
+])
+
+@app.callback(
+    Output('2d-map', 'figure'),
+    [Input('date-slider', 'value')]
+)
+def update_figure(selected_date_index):
+    selected_date = unique_dates[selected_date_index]
+    filtered_df = df[df['Date'].dt.strftime('%Y-%m-%d') == selected_date]
+    
+    if filtered_df.empty:
+        raise PreventUpdate("No data available for the selected date.")
+    
+    # Create the 2D map with markers
+    fig = px.scatter_mapbox(
+        filtered_df,
+        lat="Latitude",
+        lon="Longitude",
+        size="count",
+        color="count",
+        size_max=15,
+        zoom=5,
+        mapbox_style="carto-positron",
+        hover_name='City',
+        hover_data={'Latitude': False, 'Longitude': False, 'count': True}
+    )
+    
+    fig.update_layout(
+        margin=dict(l=0, r=0, b=0, t=0),
+        title=f'Transactions on {selected_date}'
+    )
+    
+    return fig
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+
+
+
+
+
 n
 from dash import Dash, html, dcc, Input, Output
 from dash.exceptions import PreventUpdate
