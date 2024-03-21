@@ -1,3 +1,89 @@
+n
+from dash import Dash, html, dcc, Input, Output
+from dash.exceptions import PreventUpdate
+import plotly.graph_objects as go
+import pandas as pd
+
+# Load data from Excel file and preprocess
+df = pd.read_excel('map_d.xlsx', engine='openpyxl')
+# Ensure proper data types
+df['Date'] = pd.to_datetime(df['Date'])  # Converting to datetime
+df['count'] = df['count'].astype(float)  # Ensuring 'count' is float for consistency in plotting
+
+# Sort DataFrame by Date to ensure consistent slider behavior
+df.sort_values('Date', inplace=True)
+unique_dates = df['Date'].dt.strftime('%Y-%m-%d').unique()
+
+app = Dash(__name__)
+
+app.layout = html.Div([
+    html.H1('3D Map Visualization with Time Slider'),
+    dcc.Graph(id='3d-map'),
+    dcc.Slider(
+        id='date-slider',
+        min=0,
+        max=len(unique_dates) - 1,
+        value=0,
+        marks={i: date for i, date in enumerate(unique_dates)},
+        step=1
+    ),
+])
+
+@app.callback(
+    Output('3d-map', 'figure'),
+    [Input('date-slider', 'value')]
+)
+def update_figure(selected_date_index):
+    # Ensure index is within range for unique_dates
+    if selected_date_index >= len(unique_dates):
+        raise PreventUpdate("Selected index is out of range.")
+
+    selected_date = unique_dates[selected_date_index]
+    filtered_df = df[df['Date'].dt.strftime('%Y-%m-%d') == selected_date]
+
+    if filtered_df.empty:
+        raise PreventUpdate("No data available for the selected date.")
+
+    # Create the 3D scatter plot
+    fig = go.Figure(data=[go.Scatter3d(
+        x=filtered_df['Longitude'],
+        y=filtered_df['Latitude'],
+        z=filtered_df['count'],
+        text=filtered_df['City'],  # Adding city names as hover text
+        mode='markers',
+        marker=dict(
+            size=filtered_df['count'],
+            sizemode='diameter',
+            opacity=0.8,
+            color=filtered_df['count'],
+            colorscale='Viridis',
+            colorbar_title='Transactions'
+        )
+    )])
+    
+    # Update the layout
+    fig.update_layout(
+        margin=dict(l=0, r=0, b=0, t=0),
+        scene=dict(
+            xaxis_title='Longitude',
+            yaxis_title='Latitude',
+            zaxis_title='Transaction Count',
+            aspectmode='cube'
+        ),
+        title=f'Transactions on {selected_date}'
+    )
+    
+    return fig
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+
+
+
+
+
+
 from dash import Dash, html, dcc, Input, Output
 import plotly.graph_objects as go
 import pandas as pd
