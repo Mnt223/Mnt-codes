@@ -1,3 +1,132 @@
+from dash import Dash, html, dcc, Input, Output, State
+from dash.exceptions import PreventUpdate
+import plotly.express as px
+import pandas as pd
+
+# Load data from Excel file and preprocess
+df = pd.read_excel('map_d.xlsx', engine='openpyxl')
+df['Date'] = pd.to_datetime(df['Date'])  # Convert to datetime
+df['count'] = df['count'].astype(float)  # Ensure 'count' is float for consistency in plotting
+
+# Sort DataFrame by Date for consistent behavior
+df.sort_values('Date', inplace=True)
+unique_dates = df['Date'].dt.strftime('%Y-%m-%d').unique()
+
+# Set up the Dash app layout
+app = Dash(__name__)
+app.layout = html.Div([
+    html.H1('2D Map Visualization with Playable Time Slider'),
+    dcc.Graph(id='2d-map-with-bars'),
+    dcc.Slider(
+        id='date-slider',
+        min=0,
+        max=len(unique_dates) - 1,
+        value=0,
+        marks={i: {'label': date, 'style': {'writing-mode': 'vertical-rl'}} for i, date in enumerate(unique_dates)},
+        step=1
+    ),
+    html.Button("Play", id="play-button"),
+    dcc.Interval(
+        id='interval-component',
+        interval=1000,  # in milliseconds
+        n_intervals=0,
+        disabled=True
+    ),
+])
+
+@app.callback(
+    Output('interval-component', 'disabled'),
+    Input('play-button', 'n_clicks'),
+    State('interval-component', 'disabled')
+)
+def play_pause(n_clicks, disabled):
+    if n_clicks is None or n_clicks % 2 == 0:
+        return True
+    return not disabled
+
+@app.callback(
+    Output('2d-map-with-bars', 'figure'),
+    [Input('date-slider', 'value'), Input('interval-component', 'n_intervals')],
+    State('2d-map-with-bars', 'figure')
+)
+def update_figure(selected_date_index, n_intervals, existing_figure):
+    if n_intervals is None:
+        raise PreventUpdate
+
+    # Avoid updating if the callback was triggered by the interval while it's paused
+    triggered_id = [p['prop_id'] for p in dash.callback_context.triggered][0]
+    if "interval-component" in triggered_id and existing_figure is not None:
+        return existing_figure
+    
+    selected_date = unique_dates[selected_date_index]
+    filtered_df = df[df['Date'].dt.strftime('%Y-%m-%d') == selected_date]
+
+    if filtered_df.empty:
+        raise PreventUpdate
+
+    # Create the 2D map with custom markers
+    fig = px.scatter_mapbox(
+        filtered_df,
+        lat='Latitude',
+        lon='Longitude',
+        size='count',
+        size_max=15,
+        zoom=5,
+        mapbox_style='carto-positron',
+        hover_name='City',
+        hover_data={'Latitude': False, 'Longitude': False, 'count': True}
+    )
+
+    # Custom shapes as bar markers
+    shapes = [
+        {
+            'type': 'rect',
+            'x0': lon,
+            'y0': lat,
+            'x1': lon + 0.1,  # width of the bar, adjust as necessary
+            'y1': lat + (count / max(filtered_df['count']) * 0.1),  # height of the bar relative to max count
+            'xref': 'x',
+            'yref': 'y',
+            'line': {
+                'color': 'blue',
+            },
+            'fillcolor': 'blue'
+        } for lat, lon, count in zip(filtered_df['Latitude'], filtered_df['Longitude'], filtered_df['count'])
+    ]
+    
+    fig.update_layout(shapes=shapes)
+    
+    # Disabling the drag mode and zoom for a more consistent play experience
+    fig.update_layout(dragmode=False)
+    fig.update_geos(fixedrange=True)
+    
+    return fig
+
+@app.callback(
+    Output('date-slider', 'value'),
+    [Input('interval-component', 'n_intervals')],
+    [State('date-slider', 'value'), State('date-slider', 'max')]
+)
+def update_slider(n_intervals, current_value, max_value
+):
+if n_intervals is None or current_value is None:
+raise PreventUpdate
+current_value += 1
+if current_value > max_value:
+current_value = 0
+return current_value
+
+if name == ‘main’:
+app.run_server(debug=True)
+
+
+
+
+
+
+
+
+
 from dash import Dash, html, dcc, Input, Output
 from dash.exceptions import PreventUpdate
 import plotly.express as px
