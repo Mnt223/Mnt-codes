@@ -1,3 +1,144 @@
+import pandas as pd
+import streamlit as st
+from keplergl import KeplerGl
+import time
+
+# Ensure required packages for Excel file reading are installed
+# pip install openpyxl
+
+# Define a function to load and prepare data
+@st.cache(allow_output_mutation=True)
+def load_data(filename):
+    try:
+        # Attempt to load the specified Excel file
+        df = pd.read_excel(filename, engine='openpyxl')
+        # Ensure the 'Date' column is in datetime format and convert to date
+        df['Date'] = pd.to_datetime(df['Date']).dt.date
+        # Check for necessary columns
+        if not all(col in df.columns for col in ['Latitude', 'Longitude', 'Date', 'Count']):
+            st.error('Required columns are missing.')
+            return None
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return None
+
+df = load_data('map_d.xlsx')
+
+# Check if data is loaded correctly
+if df is None:
+    st.stop()
+
+# Prepare the list of unique dates for the slider
+unique_dates = sorted(df['Date'].unique())
+
+# UI elements for date selection and play/pause functionality
+with st.sidebar:
+    date_index = st.select_slider("Select Date", options=range(len(unique_dates)),
+                                  format_func=lambda x: unique_dates[x].strftime('%Y-%m-%d'))
+    selected_date = unique_dates[date_index]
+
+    if st.button("Play/Pause", key='play_pause'):
+        # Toggle play state
+        st.session_state.playing = not st.session_state.get('playing', False)
+
+# Function to display the map for the selected date
+def display_map(selected_date):
+    filtered_df = df[df['Date'] == selected_date]
+    map_1 = KeplerGl(height=600)
+    map_1.add_data(data=filtered_df, name="Data")
+    # Render the Kepler.gl map within Streamlit
+    st.components.v1.html(map_1._repr_html_(), height=600)
+
+display_map(selected_date)
+
+# Function to animate through dates
+def animate():
+    current_index = unique_dates.index(selected_date)
+    for new_index in range(current_index + 1, len(unique_dates)):
+        time.sleep(1)  # Control the speed of the animation
+        display_map(unique_dates[new_index])
+        if new_index == len(unique_dates) - 1:
+            st.session_state.playing = False  # Stop at the last date
+
+if st.session_state.get('playing', False):
+    animate()
+
+
+
+
+
+
+
+2.import pandas as pd
+import streamlit as st
+from keplergl import KeplerGl
+import time
+
+# Step 1: Define the function to load and prepare the data
+@st.cache(allow_output_mutation=True)
+def load_data(filename):
+    try:
+        df = pd.read_excel(filename, engine='openpyxl')
+        df['Date'] = pd.to_datetime(df['Date']).dt.date
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame()
+
+# Load your data
+df = load_data('map_d.xlsx')
+
+# Ensure there's data to work with
+if df.empty:
+    st.stop()
+
+# Prepare the list of unique dates for the slider
+unique_dates = sorted(df['Date'].unique())
+
+# Initialize session states for animation
+if 'current_index' not in st.session_state:
+    st.session_state.current_index = 0
+
+if 'playing' not in st.session_state:
+    st.session_state.playing = False
+
+# Step 2: Display the map based on the selected date
+def display_map(date):
+    filtered_df = df[df['Date'] == date]
+    map_1 = KeplerGl(height=500)
+    map_1.add_data(data=filtered_df, name='data')
+    return map_1._repr_html_()
+
+# UI elements for date selection and play/pause functionality
+date_index = st.sidebar.select_slider("Select Date", options=range(len(unique_dates)),
+                                      format_func=lambda x: unique_dates[x].strftime('%Y-%m-%d'),
+                                      value=st.session_state.current_index)
+selected_date = unique_dates[date_index]
+
+if st.sidebar.button("Play/Pause"):
+    st.session_state.playing = not st.session_state.playing
+
+# Display the selected date's map
+map_html = display_map(selected_date)
+st.components.v1.html(map_html, height=600)
+
+# Animation logic
+def animate():
+    while st.session_state.playing and st.session_state.current_index < len(unique_dates) - 1:
+        time.sleep(1)  # Control the speed of animation here
+        st.session_state.current_index += 1
+        st.experimental_rerun()
+
+if st.session_state.playing:
+    animate()
+
+
+
+
+
+
+
 t
 import streamlit as st
 import pandas as pd
