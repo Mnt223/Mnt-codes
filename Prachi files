@@ -1,3 +1,112 @@
+t
+import streamlit as st
+import pandas as pd
+from keplergl import KeplerGl
+import time
+
+# Function to load and prepare data
+@st.cache(allow_output_mutation=True)
+def load_data():
+    try:
+        df = pd.read_excel('map_d.xlsx', engine='openpyxl')
+        if not {'Latitude', 'Longitude', 'Date', 'Count'}.issubset(df.columns):
+            raise ValueError("Missing required columns in the dataset.")
+        df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
+        df['Count'] = df['Count'].astype(float)  # Ensure the count is float
+        unique_dates = sorted(df['Date'].unique())
+        return df, unique_dates
+    except Exception as e:
+        st.error(f"Failed to load data: {e}")
+        return pd.DataFrame(), []
+
+df, unique_dates = load_data()
+
+# Ensure data is loaded correctly
+if df.empty or not unique_dates:
+    st.stop()
+
+# Initialize or update session state for animation control
+if 'playing' not in st.session_state:
+    st.session_state['playing'] = False
+if 'current_date_index' not in st.session_state:
+    st.session_state['current_date_index'] = 0
+
+# Toggle play/pause animation
+def toggle_play():
+    st.session_state['playing'] = not st.session_state['playing']
+
+# Display the map based on the selected date
+def display_map(selected_date):
+    filtered_df = df[df['Date'] == selected_date]
+
+    map_1 = KeplerGl(height=600)
+    map_1.add_data(data=filtered_df, name="Data")
+    
+    # Define the map configuration for the heatmap layer
+    config = {
+        "version": "v1",
+        "config": {
+            "visState": {
+                "layers": [{
+                    "type": "heatmap",
+                    "config": {
+                        "dataId": "Data",
+                        "columns": {
+                            "latitude": "Latitude",
+                            "longitude": "Longitude"
+                        },
+                        "is_visible": True,
+                        "color_range": {
+                            "name": "Global Warming",
+                            "type": "sequential",
+                            "category": "Uber",
+                            "colors": ['#5A1846', '#900C3F', '#C70039', '#E3611C', '#F1920E', '#FFC300']
+                        },
+                        "radius": 20
+                    },
+                }]
+            }
+        }
+    }
+
+    map_1.config = config
+    st.components.v1.html(map_1._repr_html_(), height=600)
+
+# Layout of the Streamlit app
+st.title("Dynamic Heatmap Visualization")
+selected_date_index = st.sidebar.select_slider("Select Date", options=list(range(len(unique_dates))), format_func=lambda x: unique_dates[x])
+st.sidebar.button("Play/Pause", on_click=toggle_play)
+
+if st.sidebar.button('Animate'):
+    st.session_state['playing'] = True
+
+# Placeholder for the KeplerGl map
+if not st.session_state['playing']:
+    display_map(unique_dates[selected_date_index])
+else:
+    # Function to animate through dates
+    for index in range(selected_date_index, len(unique_dates)):
+        if not st.session_state['playing']:
+            break
+        display_map(unique_dates[index])
+        st.session_state['current_date_index'] = index
+        time.sleep(1)  # Adjust this for desired playback speed
+        if index == len(unique_dates) - 1:  # Loop to the start or stop
+            st.session_state['playing'] = False
+
+# Adjust the conditional to control the animation based on the app's need
+if st.session_state['playing'] and st.session_state['current_date_index'] < len(unique_dates) - 1:
+    st.session_state['current_date_index'] += 1
+    display_map(unique_dates[st.session_state['current_date_index']])
+else:
+    st.session_state['playing'] = False
+
+
+
+
+
+
+
 import streamlit as st
 import pandas as pd
 from keplergl import KeplerGl
