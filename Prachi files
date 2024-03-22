@@ -3,6 +3,114 @@ import pandas as pd
 from keplergl import KeplerGl
 import time
 
+# Load and prepare the data
+@st.experimental_memo
+def load_data():
+    df = pd.read_excel('map_d.xlsx', engine='openpyxl')
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['SimpleDate'] = df['Date'].dt.strftime('%Y-%m-%d')
+    df['Count'] = df['Count'].astype(float)  # Ensure the count is float if it's not already
+    return df
+
+df = load_data()
+unique_dates = df['SimpleDate'].unique()
+
+# Initialize session state for play/pause functionality
+if 'playing' not in st.session_state:
+    st.session_state['playing'] = False
+if 'current_date_index' not in st.session_state:
+    st.session_state['current_date_index'] = 0
+
+# Toggle play/pause state
+def toggle_play():
+    st.session_state['playing'] = not st.session_state['playing']
+
+# Display the map based on the selected date
+def display_map(date_index):
+    selected_date = unique_dates[date_index]
+    filtered_df = df[df['SimpleDate'] == selected_date].copy()
+    
+    # Create a KeplerGl map
+    map_1 = KeplerGl(height=500)
+    map_1.add_data(data=filtered_df, name="transactions")
+    
+    # Config for the heatmap
+    # Customize this based on your data and preferences
+    config = {
+        'version': 'v1',
+        'config': {
+            'visState': {
+                'layers': [
+                    {
+                        'type': 'heatmap',
+                        'config': {
+                            'dataId': 'transactions',
+                            'columns': {
+                                'latitude': 'Latitude',
+                                'longitude': 'Longitude'
+                            },
+                            'is_visible': True,
+                            'color_range': {
+                                'name': 'Global Warming',
+                                'type': 'sequential',
+                                'colors': ['#5A1846', '#900C3F', '#C70039', '#E3611C', '#F1920E', '#FFC300']
+                            },
+                            'radius': 20
+                        },
+                    }
+                ]
+            }
+        }
+    }
+    
+    # Set the configuration
+    map_1.config = config
+    
+    # Render the map
+    return map_1._repr_html_()
+
+# Sidebar UI elements
+st.sidebar.title('Dynamic Heatmap Visualization')
+date_index = st.sidebar.slider('Select Date', 0, len(unique_dates) - 1, st.session_state['current_date_index'])
+st.sidebar.button('Play/Pause', on_click=toggle_play)
+
+# Main section of the app
+st.title('Transaction Heatmap Over Time')
+
+# Placeholder for the KeplerGl map
+st_kepler = st.empty()
+map_html = display_map(date_index)
+st_kepler.html(map_html, height=600)
+
+# Function to animate through dates
+def play_dates():
+    while st.session_state['playing'] and st.session_state['current_date_index'] < len(unique_dates) - 1:
+        time.sleep(1)  # Adjust this for desired playback speed
+        st.session_state['current_date_index'] += 1
+        map_html = display_map(st.session_state['current_date_index'])
+        st_kepler.html(map_html, height=600)
+        if st.session_state['current_date_index'] >= len(unique_dates) - 1:  # Loop or pause at the end
+            st.session_state['playing'] = False
+            st.session_state['current_date_index'] = 0
+            break
+
+# Trigger animation
+if st.session_state['playing']:
+    play_dates()
+
+
+
+
+y
+
+
+
+
+import streamlit as st
+import pandas as pd
+from keplergl import KeplerGl
+import time
+
 # Function to load and prepare data
 @st.experimental_singleton
 def load_data(filepath):
