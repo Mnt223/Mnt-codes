@@ -3,6 +3,127 @@ import pandas as pd
 from keplergl import KeplerGl
 import time
 
+# Function to load and prepare data
+@st.experimental_memo
+def load_data():
+    try:
+        df = pd.read_excel('map_d.xlsx', engine='openpyxl')
+        expected_columns = ['Latitude', 'Longitude', 'Date', 'Count']
+        if not all(col in df.columns for col in expected_columns):
+            raise ValueError(f"DataFrame must contain the following columns: {expected_columns}")
+
+        # Convert the 'Date' column to datetime and format it as a string
+        df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
+
+        # Convert the 'Count' column to float
+        df['Count'] = df['Count'].astype(float)
+
+        return df, df['Date'].unique()
+    except Exception as e:
+        st.error(f"An error occurred while loading the data: {e}")
+        return pd.DataFrame(), []
+
+df, unique_dates = load_data()
+
+# Stop the app if the data couldn't be loaded properly
+if df.empty or not unique_dates:
+    st.stop()
+
+# Initialize session state for the animation
+if 'playing' not in st.session_state:
+    st.session_state.playing = False
+if 'current_date_index' not in st.session_state:
+    st.session_state.current_date_index = 0
+
+# Function to toggle the play/pause state
+def toggle_play():
+    st.session_state.playing = not st.session_state.playing
+
+# Function to animate through dates
+def play_dates():
+    while st.session_state.playing and st.session_state.current_date_index < len(unique_dates):
+        # Increment the current date index
+        st.session_state.current_date_index += 1
+        if st.session_state.current_date_index >= len(unique_dates):
+            st.session_state.current_date_index = 0  # Loop to the start
+            st.session_state.playing = False  # Stop playing at the end
+
+        # Update the map for the new date
+        display_map(unique_dates[st.session_state.current_date_index])
+        time.sleep(1)  # Control the speed of animation
+
+        # Break the loop if the user has pressed the pause button
+        if not st.session_state.playing:
+            break
+
+# Function to display the map for a given date
+def display_map(current_date):
+    with st.spinner('Updating map...'):
+        # Filter the DataFrame for the selected date
+        filtered_df = df[df['Date'] == current_date]
+
+        # Create a Kepler.gl map object and add the filtered data
+        map_1 = KeplerGl(height=500)
+        map_1.add_data(data=filtered_df, name='transactions')
+
+        # Define the map configuration for the heatmap layer
+        # Modify this configuration as per your requirement using Kepler.gl's documentation
+        config = {
+            'version': 'v1',
+            'config': {
+                'visState': {
+                    'layers': [{
+                        'type': 'heatmap',
+                        'config': {
+                            'dataId': 'transactions',
+                            'columns': {
+                                'latitude': 'Latitude',
+                                'longitude': 'Longitude'
+                            },
+                            'is_visible': True,
+                            'color_range': {
+                                'name': 'Global Warming',
+                                'type': 'sequential',
+                                'category': 'Uber',
+                                'colors': ['#5A1846', '#900C3F', '#C70039', '#E3611C', '#F1920E', '#FFC300']
+                            },
+                            'radius': 20
+                        },
+                    }]
+                }
+            }
+        }
+        map_1.config = config
+
+        # Render the map in the Streamlit app
+        map_html = map_1._repr_html_()
+        st.session_state.map_component.html(map_html, height=600)
+
+# Layout of the Streamlit app
+st.title('Dynamic Heatmap Visualization')
+st.sidebar.title('Controls')
+date_index = st.sidebar.slider('Select Date', 0, len(unique_dates) - 1, st.session_state.current_date_index)
+st.sidebar.button('Play/Pause', on_click=toggle_play)
+
+# Placeholder to display the map in the Streamlit app
+st.session_state.map_component = st.empty()
+
+# Display the initial map
+display_map(unique_dates[st.session_state.current_date_index])
+
+# Check if the play button has been pressed and start the animation
+if st.session_state.playing:
+    play_dates()
+
+
+
+
+
+iyimport streamlit as st
+import pandas as pd
+from keplergl import KeplerGl
+import time
+
 # Load and prepare the data
 @st.experimental_memo
 def load_data():
