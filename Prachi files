@@ -1,3 +1,81 @@
+import streamlit as st
+import pandas as pd
+from keplergl import KeplerGl
+import time
+
+# Function to load and prepare data
+@st.cache(allow_output_mutation=True)
+def load_data(filepath):
+    df = pd.read_excel(filepath, engine='openpyxl')
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['SimpleDate'] = df['Date'].dt.strftime('%Y-%m-%d')
+    return df, df['SimpleDate'].unique()
+
+df, unique_dates = load_data('map_d.xlsx')
+
+# Initialize session state
+if 'playing' not in st.session_state:
+    st.session_state['playing'] = False
+if 'current_date_index' not in st.session_state:
+    st.session_state['current_date_index'] = 0
+
+# Function to toggle play/pause state
+def toggle_play():
+    st.session_state.playing = not st.session_state.playing
+
+# Display the map based on the selected date
+def display_map(date_index):
+    selected_date = unique_dates[date_index]
+    filtered_df = df[df['SimpleDate'] == selected_date]
+    
+    map_1 = KeplerGl(height=500)
+    map_1.add_data(data=filtered_df, name="transactions")
+    
+    # Example configuration for the heatmap layer
+    # Visit Kepler.gl documentation or use the Kepler.gl demo to tailor your config
+    map_1.config = {'version': 'v1',
+                    'config': {'visState': {'layers': [{'type': 'heatmap', 'config': {'dataId': 'transactions'}}]}}}
+    
+    # Using components.html to display KeplerGl map
+    st.components.v1.html(map_1._repr_html_(), height=600, scrolling=True)
+
+# Sidebar UI elements
+st.sidebar.title('Dynamic Heatmap Visualization')
+date_index = st.sidebar.slider('Select Date', 0, len(unique_dates) - 1, st.session_state.current_date_index)
+st.sidebar.button('Play/Pause', on_click=toggle_play)
+
+# Main
+st.title('Transaction Heatmap Over Time')
+display_map(date_index)  # Initial map display based on the slider
+
+# Function to animate through dates
+def play_dates():
+    while st.session_state.playing and st.session_state.current_date_index < len(unique_dates) - 1:
+        time.sleep(1)  # Adjust this for desired playback speed
+        st.session_state.current_date_index += 1
+        display_map(st.session_state.current_date_index)
+        
+        # Loop or pause at the end
+        if st.session_state.current_date_index >= len(unique_dates) - 1:
+            st.session_state.playing = False
+            st.session_state.current_date_index = 0
+            break
+
+# Trigger animation
+if st.session_state.playing:
+    play_dates()
+
+
+
+
+
+
+
+
+
+
+
+n
 from dash import Dash, html, dcc, Input, Output, State
 from dash.exceptions import PreventUpdate
 import plotly.express as px
