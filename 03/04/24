@@ -1,3 +1,79 @@
+CREATE OR REPLACE TEMP TABLE AMBS_BASE2 AS
+SELECT 
+  *,
+  CASE
+    WHEN LOGO = 420 THEN "CASHBACK"
+    WHEN LOGO IN (410, 510, 501) THEN "GOLD"
+    WHEN LOGO = 401 AND DATE_OPENED >= '2018-08-01' THEN "SVC"
+    WHEN LOGO = 401 AND DATE_OPENED < '2018-08-01' THEN "GOLD"
+    WHEN LOGO IN (415, 418) THEN "PLATINUM"
+    WHEN LOGO = 515 THEN "PREMIER"
+    ELSE "OTHER"
+  END AS CARD_TYPE1
+FROM AMBS_BASE1
+WHERE aif_ind1 = 1;
+
+
+
+
+
+
+
+
+CREATE OR REPLACE TEMP TABLE AMBS_BASE1 AS
+SELECT
+  *,
+  -- Handle the conversion of BLOCK_CODE_X to dates; assume they're already in a compatible format or need conversion.
+  CASE
+    WHEN TRIM(BLOCK_CODE_1) = '' THEN NULL
+    ELSE DATE_BLOCK_CODE_1
+  END AS DATE_BLOCK_CODE_1_new,
+  CASE
+    WHEN TRIM(BLOCK_CODE_2) = '' THEN NULL
+    ELSE DATE_BLOCK_CODE_2
+  END AS DATE_BLOCK_CODE_2_new,
+  -- Compute the FIRST_BLOCK_DATE as the minimum of the new date fields.
+  LEAST(
+    COALESCE(DATE_BLOCK_CODE_1_new, DATE_BLOCK_CODE_2_new),
+    COALESCE(DATE_BLOCK_CODE_2_new, DATE_BLOCK_CODE_1_new)
+  ) AS FIRST_BLOCK_DATE,
+  -- Set PRIORITY_BLOCK_DATE based on the non-null condition of DATE_BLOCK_CODE_1_new.
+  CASE
+    WHEN DATE_BLOCK_CODE_1_new IS NOT NULL THEN DATE_BLOCK_CODE_1_new
+    ELSE DATE_BLOCK_CODE_2_new
+  END AS PRIORITY_BLOCK_DATE,
+  -- Conditional logic for aif_ind1, considering compression (i.e., removing spaces and comparing).
+  CASE
+    WHEN REGEXP_REPLACE(BLOCK_CODE_1, r'\\s+', '') IN ('', 'A', 'B', 'C', 'D', 'E')
+         AND REGEXP_REPLACE(BLOCK_CODE_2, r'\\s+', '') IN ('', 'A', 'B', 'C', 'D', 'E')
+         AND REGEXP_REPLACE(int_Status, r'\\s+', '') IN ('A', 'D') THEN 1
+    ELSE 0
+  END AS aif_ind1,
+  -- Logic for aif_risk1 with similar use of REGEXP_REPLACE to simulate SAS's compress function.
+  CASE
+    WHEN int_status NOT IN ('f', 'g', 'h', 'u')
+         AND (REGEXP_REPLACE(BLOCK_CODE_1, r'\\s+', '') IN ('A', 'Q', 'H') OR CURR_BAL / 100 > 0)
+         AND CHGOFF_STATUS NOT IN ('5', '6') THEN 1
+    ELSE 0
+  END AS aif_risk1,
+  -- Conditional logic for VAL_INT_STATUS.
+  CASE
+    WHEN REGEXP_REPLACE(int_Status, r'\\s+', '') IN ('A', 'D') THEN 1
+    ELSE 0
+  END AS VAL_INT_STATUS
+FROM
+  `project.dataset.AMBS_BASE`; -- Adjust this to your project and dataset names
+
+
+
+
+
+
+
+
+
+
+
 CREATE TEMP TABLE Temp_AMBS_BASE AS
 WITH AMBS_BASE AS (
   -- Your original dataset query here. This is just a placeholder.
