@@ -1,0 +1,45 @@
+CREATE TEMP TABLE Temp_AMBS_BASE AS
+WITH AMBS_BASE AS (
+  -- Your original dataset query here. This is just a placeholder.
+  SELECT * FROM `your-dataset.your-table`
+)
+
+, PREPARED_DATA AS (
+  SELECT
+    *,
+    CASE
+      WHEN BLOCK_CODE_1 IS NOT NULL AND BLOCK_CODE_1 != '' THEN DATE_BLOCK_CODE_1
+      ELSE NULL
+    END AS DATE_BLOCK_CODE_1_new,
+    CASE
+      WHEN BLOCK_CODE_2 IS NOT NULL AND BLOCK_CODE_2 != '' THEN DATE_BLOCK_CODE_2
+      ELSE NULL
+    END AS DATE_BLOCK_CODE_2_new,
+    LEAST(COALESCE(DATE_BLOCK_CODE_1_new, DATE_BLOCK_CODE_2_new), COALESCE(DATE_BLOCK_CODE_2_new, DATE_BLOCK_CODE_1_new)) AS FIRST_BLOCK_DATE,
+    CASE
+      WHEN DATE_BLOCK_CODE_1_new IS NOT NULL THEN DATE_BLOCK_CODE_1_new
+      ELSE DATE_BLOCK_CODE_2_new
+    END AS PRIORITY_BLOCK_DATE
+  FROM
+    AMBS_BASE
+)
+
+SELECT
+  *,
+  CASE
+    WHEN REGEXP_REPLACE(BLOCK_CODE_2, r'\s+', '') IN ('', 'A', 'B', 'C', 'D', 'E')
+         AND REGEXP_REPLACE(int_Status, r'\s+', '') IN ('A', 'D') THEN 1
+    ELSE 0
+  END AS aif_ind1,
+  CASE
+    WHEN int_status NOT IN ('f', 'g', 'h', 'u')
+         AND (REGEXP_REPLACE(BLOCK_CODE_1, r'\s+', '') IN ('A', 'Q', 'H') OR CURR_BAL/100 > 0)
+         AND CHGOFF_STATUS NOT IN ('5', '6') THEN 1
+    ELSE 0
+  END AS aif_risk1,
+  CASE
+    WHEN REGEXP_REPLACE(int_Status, r'\s+', '') IN ('A', 'D') THEN 1
+    ELSE 0
+  END AS VAL_INT_STATUS
+FROM
+  PREPARED_DATA;
