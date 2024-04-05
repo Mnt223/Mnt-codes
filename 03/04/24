@@ -4,6 +4,85 @@ from dash import Dash, html, dcc
 from dash.dependencies import Input, Output
 import datetime
 
+# Placeholder for loading your DataFrame
+# Ensure to replace this with your actual data loading logic
+# Example: df = pd.read_excel('path_to_your_file.xlsx')
+df = pd.DataFrame({
+    'Transaction Date': pd.date_range(start='2022-01-01', periods=120, freq='D'),
+    'Transaction Amount': pd.np.random.randint(100, 500, size=120),
+    'POS': pd.np.random.choice([0, 1], size=120)
+})
+df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
+
+app = Dash(__name__)
+
+app.layout = html.Div([
+    html.H1('Credit Card Spend Analysis Dashboard', style={'color': 'white', 'backgroundColor': 'black'}),
+    dcc.DatePickerRange(
+        id='date-picker-range',
+        start_date=df['Transaction Date'].min(),
+        end_date=datetime.date.today(),
+        display_format='YYYY-MM-DD',
+    ),
+    dcc.RadioItems(
+        id='period-selector',
+        options=[
+            {'label': '1W - Weekly', 'value': 'W'},
+            {'label': '1M - Monthly', 'value': 'M'},
+            {'label': '1Y - Yearly', 'value': 'Y'},
+        ],
+        value='M',  # Default selection
+        labelStyle={'display': 'inline-block', 'margin': '10px'}
+    ),
+    dcc.Graph(id='time-series-chart'),
+], style={'backgroundColor': 'rgb(40, 40, 40)', 'color': 'white', 'padding': '10px'})
+
+@app.callback(
+    Output('time-series-chart', 'figure'),
+    [Input('period-selector', 'value'),
+     Input('date-picker-range', 'start_date'),
+     Input('date-picker-range', 'end_date')]
+)
+def update_chart(period, start_date, end_date):
+    # Filter data based on the selected date range
+    filtered_df = df[(df['Transaction Date'] >= pd.to_datetime(start_date)) & (df['Transaction Date'] <= pd.to_datetime(end_date))]
+    
+    # Aggregate data based on the selected period
+    if period == 'W':
+        aggregated_df = filtered_df.resample('W', on='Transaction Date').sum().reset_index()
+    elif period == 'M':
+        aggregated_df = filtered_df.resample('M', on='Transaction Date').sum().reset_index()
+    else:  # 'Y'
+        aggregated_df = filtered_df.resample('Y', on='Transaction Date').sum().reset_index()
+    
+    # Create the figure
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=aggregated_df['Transaction Date'], y=aggregated_df['Transaction Amount'], mode='lines+markers', name='Aggregated Transactions'))
+    fig.update_layout(
+        title='Aggregated Transaction Amount Over Time',
+        xaxis_title='Date',
+        yaxis_title='Transaction Amount',
+        plot_bgcolor='black',
+        paper_bgcolor='rgb(40, 40, 40)',
+        font=dict(color='white')
+    )
+    
+    return fig
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objs as go
+from dash import Dash, html, dcc
+from dash.dependencies import Input, Output
+import datetime
+
 # Load your data
 df = pd.read_excel('sample.xlsx')
 df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
