@@ -1,3 +1,47 @@
+# Import necessary libraries
+import pandas as pd
+import plotly.express as px
+from dash import Dash, html, dcc
+
+# Assuming you have loaded your DataFrame as `df`
+# df = pd.read_csv('your_data.csv')  # or however you acquire your data
+
+# Preprocessing: Ensure Transaction Date is a datetime type and aggregate the data
+df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
+agg_df = df.groupby(['Transaction Date', 'General Category']).agg({'Transaction Amount': 'sum'}).reset_index()
+
+# Create the time series plot
+fig_time_series = px.line(agg_df, x='Transaction Date', y='Transaction Amount', color='General Category', title='Transaction Amount Over Time')
+
+# Create a Dash application
+app = Dash(__name__)
+
+# Define the app layout to include the time series plot
+app.layout = html.Div(children=[
+    html.H1('Credit Card Spend Analysis Dashboard'),
+    dcc.Graph(id='time-series-chart', figure=fig_time_series),
+    # You will add more components to the layout later
+])
+
+# Run the application
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import plotly.graph_objs as go
 from dash import Dash, html, dcc, Input, Output
