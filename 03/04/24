@@ -8,6 +8,110 @@ import datetime
 df = pd.DataFrame({
     'Transaction Date': pd.date_range(start='2023-01-01', periods=365, freq='D'),
     'Transaction Amount': pd.np.random.randint(100, 500, size=365),
+    'POS': pd.np.random.choice([0, 1], size=365),
+    'Category': pd.np.random.choice(['Dining', 'Grocery', 'Entertainment'], size=365),
+    'Merchant Name': pd.np.random.choice(['Merchant A', 'Merchant B', 'Merchant C'], size=365),
+    'City': pd.np.random.choice(['City X', 'City Y', 'City Z'], size=365)
+})
+df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
+
+app = Dash(__name__)
+
+app.layout = html.Div([
+    html.H1('Credit Card Spend Analysis Dashboard', style={'color': 'white', 'backgroundColor': 'black'}),
+    dcc.DatePickerRange(
+        id='date-picker-range',
+        start_date=df['Transaction Date'].min(),
+        end_date=datetime.date.today(),
+        display_format='YYYY-MM-DD',
+    ),
+    dcc.RadioItems(
+        id='period-selector',
+        options=[
+            {'label': '1W - Weekly', 'value': 'W'},
+            {'label': '1M - Monthly', 'value': 'M'},
+            {'label': '1Y - Yearly', 'value': 'Y'},
+        ],
+        value='M',  # Default selection
+        labelStyle={'display': 'inline-block', 'margin': '10px', 'color': 'white'}
+    ),
+    dcc.Graph(id='transaction-time-series'),
+    dcc.Graph(id='category-bar-chart'),
+    dcc.Graph(id='merchant-bar-chart'),
+    dcc.Graph(id='city-bar-chart'),
+], style={'backgroundColor': 'rgb(40, 40, 40)', 'color': 'white', 'padding': '10px'})
+
+# Callback for the time series chart
+@app.callback(
+    Output('transaction-time-series', 'figure'),
+    [Input('period-selector', 'value'),
+     Input('date-picker-range', 'start_date'),
+     Input('date-picker-range', 'end_date')]
+)
+def update_time_series_chart(period, start_date, end_date):
+    # Your existing logic for updating the time series chart
+    # ...
+
+# Generate static bar chart figures for Categories, Merchants, and Cities
+@app.callback(
+    Output('category-bar-chart', 'figure'),
+    Output('merchant-bar-chart', 'figure'),
+    Output('city-bar-chart', 'figure'),
+    [Input('date-picker-range', 'start_date'),
+     Input('date-picker-range', 'end_date')]
+)
+def update_bar_charts(start_date, end_date):
+    filtered_df = df[(df['Transaction Date'] >= pd.to_datetime(start_date)) & (df['Transaction Date'] <= pd.to_datetime(end_date))]
+    
+    # Aggregating data for category, merchant, and city
+    category_agg = filtered_df.groupby('Category')['Transaction Amount'].sum().nlargest(10)
+    merchant_agg = filtered_df.groupby('Merchant Name')['Transaction Amount'].sum().nlargest(10)
+    city_agg = filtered_df.groupby('City')['Transaction Amount'].sum().nlargest(10)
+    
+    # Creating bar chart for Category
+    category_fig = go.Figure(go.Bar(
+        x=category_agg.index,
+        y=category_agg.values,
+        marker_color='cyan'
+    ))
+    category_fig.update_layout(title='Top Categories', xaxis_title='Category', yaxis_title='Amount', plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white'))
+    
+    # Creating bar chart for Merchant Name
+    merchant_fig = go.Figure(go.Bar(
+        x=merchant_agg.index,
+        y=merchant_agg.values,
+        marker_color='magenta'
+    ))
+    merchant_fig.update_layout(title='Top Merchants', xaxis_title='Merchant', yaxis_title='Amount', plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white'))
+
+    # Creating bar chart for City
+    city_fig = go.Figure(go.Bar(
+        x=city_agg.index,
+        y=city_agg.values,
+        marker_color='yellow'
+    ))
+    city_fig.update_layout(title='Top Cities', xaxis_title='City', yaxis_title='Amount', plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white'))
+
+    return category_fig, merchant_fig, city_fig
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objs as go
+from dash import Dash, html, dcc
+from dash.dependencies import Input, Output
+import datetime
+
+# Placeholder DataFrame setup - replace with your actual data loading logic
+df = pd.DataFrame({
+    'Transaction Date': pd.date_range(start='2023-01-01', periods=365, freq='D'),
+    'Transaction Amount': pd.np.random.randint(100, 500, size=365),
     'POS': pd.np.random.choice([0, 1], size=365)
 })
 df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
