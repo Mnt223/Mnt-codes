@@ -1,6 +1,89 @@
 import pandas as pd
 import plotly.graph_objs as go
 from dash import Dash, html, dcc
+from dash.dependencies import Input, Output
+import datetime
+
+# Sample DataFrame setup
+# Replace this with your actual data loading logic
+data = {
+    'Transaction Date': pd.date_range(start='2022-01-01', periods=120, freq='D'),
+    'Transaction Amount': pd.np.random.randint(100, 500, size=120),
+    'POS': pd.np.random.choice([0, 1], size=120)
+}
+df = pd.DataFrame(data)
+df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
+
+app = Dash(__name__)
+
+app.layout = html.Div(children=[
+    html.H1('Credit Card Spend Analysis Dashboard', style={'color': 'white', 'backgroundColor': 'black'}),
+    
+    html.Div([
+        dcc.RadioItems(
+            id='time-period-selector',
+            options=[
+                {'label': '1D', 'value': '1D'},
+                {'label': '1W', 'value': '1W'},
+                {'label': '1M', 'value': '1M'},
+                {'label': '1Y', 'value': '1Y'},
+            ],
+            value='1M',  # Default value
+            labelStyle={'display': 'inline-block', 'color': 'white'},
+            style={'padding': '20px'}
+        ),
+        dcc.DatePickerRange(
+            id='date-picker-range',
+            start_date=datetime.date.today() - datetime.timedelta(days=30),
+            end_date=datetime.date.today(),
+            calendar_orientation='horizontal',
+        ),
+    ], style={'backgroundColor': 'black'}),
+    
+    dcc.Graph(id='time-series-chart'),
+])
+
+@app.callback(
+    Output('time-series-chart', 'figure'),
+    [Input('time-period-selector', 'value'),
+     Input('date-picker-range', 'start_date'),
+     Input('date-picker-range', 'end_date')]
+)
+def update_chart(selected_period, start_date, end_date):
+    filtered_df = df.copy()  # Placeholder for actual filtering based on inputs
+    
+    # Example filtering logic (to be replaced with actual logic based on 'selected_period')
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+    filtered_df = filtered_df[(filtered_df['Transaction Date'] >= start_date) & (filtered_df['Transaction Date'] <= end_date)]
+
+    # Creating the time series plot
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(x=filtered_df['Transaction Date'], y=filtered_df['Transaction Amount'], mode='lines', name='Overall', line=dict(color='red')))
+    if 'POS' in filtered_df.columns:
+        pos_df = filtered_df[filtered_df['POS'] == 1]
+        fig.add_trace(go.Scatter(x=pos_df['Transaction Date'], y=pos_df['Transaction Amount'], mode='lines', name='POS', line=dict(color='yellow')))
+    
+    # Customizing the plot appearance
+    fig.update_layout(plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white'))
+    
+    return fig
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+
+
+
+
+
+
+
+tt
+import pandas as pd
+import plotly.graph_objs as go
+from dash import Dash, html, dcc
 
 # Load your DataFrame
 # df = pd.read_csv('your_data.csv')  # Replace with your actual data loading logic
