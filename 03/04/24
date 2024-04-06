@@ -19,6 +19,132 @@ df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
 app = Dash(__name__)
 
 app.layout = html.Div([
+    html.H1('Credit Card Spend Analysis Dashboard', style={'color': 'white', 'backgroundColor': 'black'}),
+    dcc.DatePickerRange(
+        id='date-picker-range',
+        start_date=df['Transaction Date'].min(),
+        end_date=datetime.date.today(),
+        display_format='YYYY-MM-DD',
+    ),
+    dcc.RadioItems(
+        id='period-selector',
+        options=[
+            {'label': '1W - Weekly', 'value': 'W'},
+            {'label': '1M - Monthly', 'value': 'M'},
+            {'label': '1Y - Yearly', 'value': 'Y'},
+        ],
+        value='M',  # Default selection
+        labelStyle={'display': 'inline-block', 'margin': '10px'}
+    ),
+    dcc.Graph(id='transaction-time-series'),
+    html.Div([
+        dcc.Graph(id='category-bar-chart'),
+        dcc.Graph(id='merchant-bar-chart'),
+        dcc.Graph(id='city-bar-chart'),
+    ], style={'display': 'flex', 'justifyContent': 'space-between'}),
+], style={'backgroundColor': 'rgb(40, 40, 40)', 'color': 'white', 'padding': '10px'})
+
+@app.callback(
+    [
+        Output('transaction-time-series', 'figure'),
+        Output('category-bar-chart', 'figure'),
+        Output('merchant-bar-chart', 'figure'),
+        Output('city-bar-chart', 'figure'),
+    ],
+    [
+        Input('period-selector', 'value'),
+        Input('date-picker-range', 'start_date'),
+        Input('date-picker-range', 'end_date'),
+    ]
+)
+def update_charts(period, start_date, end_date):
+    filtered_df = df[(df['Transaction Date'] >= pd.to_datetime(start_date)) & (df['Transaction Date'] <= pd.to_datetime(end_date))]
+    period_agg = 'D' if period == 'W' else period
+    aggregated_df = filtered_df.resample(period_agg, on='Transaction Date').sum().reset_index()
+    pos_filtered_df = filtered_df[filtered_df['POS'] == 1].resample(period_agg, on='Transaction Date').sum().reset_index()
+
+    # Time Series Chart (remains unchanged)
+    fig_time_series = go.Figure()
+    # Add traces and layout adjustments for time series chart here
+    
+    # Category Bar Chart
+    category_agg = filtered_df.groupby('Category')['Transaction Amount'].sum().sort_values()
+    fig_category = go.Figure(go.Bar(
+        x=category_agg.values,
+        y=category_agg.index,
+        orientation='h'
+    ))
+    fig_category.update_layout(
+        title='Spend by Category',
+        xaxis_title='Total Transaction Amount',
+        yaxis_title='Category',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgb(243, 243, 243)',
+        font=dict(color='black')
+    )
+
+    # Merchant Bar Chart
+    merchant_agg = filtered_df.groupby('Merchant Name')['Transaction Amount'].sum().sort_values()
+    fig_merchant = go.Figure(go.Bar(
+        x=merchant_agg.values,
+        y=merchant_agg.index,
+        orientation='h'
+    ))
+    fig_merchant.update_layout(
+        title='Spend by Merchant',
+        xaxis_title='Total Transaction Amount',
+        yaxis_title='Merchant Name',
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgb(243, 243, 243)',
+        font=dict(color='black')
+    )
+
+    # City Bar Chart
+    city_agg = filtered_df.groupby('City')['Transaction Amount'].sum().sort_values()
+    fig_city= go.Figure(go.Bar(
+x=city_agg.values,
+y=city_agg.index,
+orientation=‘h’
+))
+fig_city.update_layout(
+title=‘Spend by City’,
+xaxis_title=‘Total Transaction Amount’,
+yaxis_title=‘City’,
+plot_bgcolor=‘rgba(0,0,0,0)’,
+paper_bgcolor=‘rgb(243, 243, 243)’,
+font=dict(color=‘black’)
+)
+
+
+
+
+
+
+
+
+new
+
+import pandas as pd
+import plotly.graph_objs as go
+from dash import Dash, html, dcc
+from dash.dependencies import Input, Output
+import datetime
+import numpy as np
+
+# Placeholder DataFrame setup - replace with your actual data loading logic
+df = pd.DataFrame({
+    'Transaction Date': pd.date_range(start='2023-01-01', periods=365, freq='D'),
+    'Transaction Amount': np.random.randint(100, 500, size=365),
+    'POS': np.random.choice([0, 1], size=365),
+    'Category': np.random.choice(['Dining', 'Grocery', 'Entertainment'], size=365),
+    'Merchant Name': np.random.choice(['Merchant A', 'Merchant B', 'Merchant C'], size=365),
+    'City': np.random.choice(['City X', 'City Y', 'City Z'], size=365)
+})
+df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
+
+app = Dash(__name__)
+
+app.layout = html.Div([
     html.H1('Credit Card Spend Analysis Dashboard', style={'textAlign': 'center', 'color': '#007BFF', 'padding': '10px'}),
     dcc.DatePickerRange(
         id='date-picker-range',
