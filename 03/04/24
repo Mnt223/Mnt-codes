@@ -5,6 +5,116 @@ from dash.dependencies import Input, Output
 import datetime
 import numpy as np
 
+# Placeholder DataFrame setup
+df = pd.DataFrame({
+    'Transaction Date': pd.date_range(start='2023-01-01', periods=365, freq='D'),
+    'Transaction Amount': np.random.randint(100, 500, size=365),
+    'POS': np.random.choice([0, 1], size=365),
+    'Category': np.random.choice(['Dining', 'Grocery', 'Entertainment'], size=365),
+    'Merchant Name': np.random.choice(['Merchant A', 'Merchant B', 'Merchant C'], size=365),
+    'City': np.random.choice(['City X', 'City Y', 'City Z'], size=365)
+})
+df['Transaction Date'] = pd.to_datetime(df['Transaction Date'])
+
+app = Dash(__name__)
+
+app.layout = html.Div([
+    html.H1('Credit Card Spend Analysis Dashboard', style={'color': 'white', 'backgroundColor': 'black'}),
+    dcc.DatePickerRange(
+        id='date-picker-range',
+        start_date=df['Transaction Date'].min(),
+        end_date=datetime.date.today(),
+        display_format='YYYY-MM-DD',
+        style={'color': 'black'}
+    ),
+    dcc.RadioItems(
+        id='period-selector',
+        options=[
+            {'label': '1W - Weekly', 'value': 'W'},
+            {'label': '1M - Monthly', 'value': 'M'},
+            {'label': '1Y - Yearly', 'value': 'Y'},
+        ],
+        value='M',  # Default selection
+        labelStyle={'display': 'inline-block', 'margin': '10px', 'color': 'white'}
+    ),
+    dcc.Graph(id='transaction-time-series'),
+    dcc.Graph(id='category-bar-chart'),
+    dcc.Graph(id='merchant-bar-chart'),
+    dcc.Graph(id='city-bar-chart'),
+], style={'backgroundColor': 'rgb(40, 40, 40)', 'color': 'white', 'padding': '10px'})
+
+@app.callback(
+    [Output('transaction-time-series', 'figure'),
+     Output('category-bar-chart', 'figure'),
+     Output('merchant-bar-chart', 'figure'),
+     Output('city-bar-chart', 'figure')],
+    [Input('period-selector', 'value'),
+     Input('date-picker-range', 'start_date'),
+     Input('date-picker-range', 'end_date'),
+     Input('transaction-time-series', 'hoverData')]
+)
+def update_charts(period, start_date, end_date, hoverData):
+    filtered_df = df[(df['Transaction Date'] >= pd.to_datetime(start_date)) & 
+                     (df['Transaction Date'] <= pd.to_datetime(end_date))]
+
+    # Time Series Chart logic remains the same
+    fig_time_series = go.Figure()
+    fig_time_series.add_trace(go.Scatter(
+        x=filtered_df['Transaction Date'], 
+        y=filtered_df['Transaction Amount'], 
+        mode='lines',
+        name='Overall',
+        line=dict(color='red', width=3)
+    ))
+    fig_time_series.update_layout(
+        title='Transaction Amount Over Time',
+        plot_bgcolor='black', 
+        paper_bgcolor='black', 
+        font=dict(color='white')
+    )
+    
+    # Check if hoverData is None, return the existing figures to prevent errors
+    if not hoverData:
+        return fig_time_series, go.Figure(), go.Figure(), go.Figure()
+    
+    # Assuming hoverData is available, parse it
+    hover_date_str = hoverData['points'][0]['x']
+    hover_date = pd.to_datetime(hover_date_str)
+
+    # Filter data for the hovered date
+    hover_filtered_df = filtered_df[filtered_df['Transaction Date'].dt.date == hover_date.date()]
+
+    # Aggregate and create figures for category, merchant, and city based on hovered date
+    category_agg = hover_filtered_df.groupby('Category')['Transaction Amount'].sum().nlargest(5)
+    fig_category = go.Figure(go.Bar(x=category_agg.index, y=category_agg.values, marker_color='cyan'))
+    fig_category.update_layout(title='Top 5 Categories', plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white'))
+
+    merchant_agg = hover_filtered_df.groupby('Merchant Name')['Transaction Amount'].sum().nlargest(5)
+    fig_merchant = go.Figure(go.Bar(x=merchant_agg.index, y=merchant_agg.values, marker_color='magenta'))
+    fig_merchant.update_layout(title='Top 5 Merchants’, plot_bgcolor=‘black’, paper_bgcolor=‘black’, font=dict(color=‘white’))
+city_agg = hover_filtered_df.groupby('City')['Transaction Amount'].sum().nlargest(5)
+fig_city = go.Figure(go.Bar(x=city_agg.index, y=city_agg.values, marker_color='yellow'))
+fig_city.update_layout(title='Top 5 Cities', plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white'))
+
+return fig_time_series, fig_category, fig_merchant, fig_city
+
+
+
+
+
+
+
+
+nd
+
+
+import pandas as pd
+import plotly.graph_objs as go
+from dash import Dash, html, dcc
+from dash.dependencies import Input, Output
+import datetime
+import numpy as np
+
 # Placeholder DataFrame setup - replace with your data loading logic
 df = pd.DataFrame({
     'Transaction Date': pd.date_range(start='2023-01-01', periods=365, freq='D'),
