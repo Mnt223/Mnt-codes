@@ -1,3 +1,91 @@
+import paramiko
+import os
+from datetime import datetime
+import pandas as pd
+
+# Server connection details
+host = "inmsas.in.bsbo"  # SFTP and SSH server address
+port = 22  # Common port for SFTP and SSH
+username = "d5456"  # SFTP and SSH username
+password_filepath = r"C:\Users\d5456\credentials.txt"  # Path to the password file
+
+# Paths on the SFTP server and local system
+base_directory = "/appvol/mix_nas/inm/INMDNA/IMCE/sandbox/Bureau_strategy/Dev/Output/"
+local_temp_directory = "C:/local/temp/"
+local_master_csv = "C:/local/path/to/master.csv"
+remote_master_directory = "/path/to/sftp/master/location/"  # Remote directory for the master file
+log_file_path = "processed_folders.log"
+
+# Read password from file
+with open(password_filepath, 'r') as file:
+    mypwd = file.read().strip()
+
+# Create SSH and SFTP clients
+ssh_client = paramiko.SSHClient()
+ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh_client.connect(host, port, username, mypwd)
+
+sftp = ssh_client.open_sftp()
+
+# Function to get the newest folder within a specific directory
+def get_newest_folder(sftp, directory):
+    folders = [(f.filename, f.st_mtime) for f in sftp.listdir_attr(directory) if f.longname.startswith('d')]
+    return max(folders, key=lambda x: x[1])[0] if folders else None
+
+# Read processed folders from the log
+def read_processed_folders(log_path):
+    try:
+        with open(log_path, 'r') as file:
+            return file.read().splitlines()
+    except FileNotFoundError:
+        return []
+
+# Log a processed folder
+def log_processed_folder(log_path, folder_name):
+    with open(log_path, 'a') as file:
+        file.write(folder_name + '\n')
+
+processed_folders = read_processed_folders(log_file_path)
+newest_folder_name, _ = get_newest_folder(sftp, base_directory)
+
+# Check if folder is already processed
+if newest_folder_name not in processed_folders:
+    # Download files from the newest folder
+    newest_folder_path = os.path.join(base_directory, newest_folder_name)
+    files = sftp.listdir(newest_folder_path)
+    os.makedirs(local_temp_directory, exist_ok=True)
+    for file in files:
+        if file.endswith('.csv'):
+            sftp.get(os.path.join(newest_folder_path, file), os.path.join(local_temp_directory, file))
+
+    # Combine CSV files into a master file
+    csv_files = [pd.read_csv(os.path.join(local_temp_directory, f)) for f in os.listdir(local_temp_directory) if f.endswith('.csv')]
+    combined_df = pd.concat(csv_files, ignore_index=True)
+    combined_df.to_csv(local_master_csv, index=False)
+
+    # Upload the master CSV file back to a specific location on the SFTP server
+    remote_master_file_path = os.path.join(remote_master_directory, "final_master.csv")
+    sftp.put(local_master_csv, remote_master_file_path)
+
+    # Log the processed folder
+    log_processed_folder(log_file_path, newest_folder_name)
+
+    print(f"Folder {newest_folder_name} processed and master file uploaded.")
+else:
+    print(f"Folder {newest_folder_name} has already been processed.")
+
+# Clean up and close connections
+sftp.close()
+ssh_client.close()
+
+
+
+
+
+
+
+
+
 import subprocess
 import re
 import pandas as pd
