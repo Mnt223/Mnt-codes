@@ -1,3 +1,93 @@
+import subprocess
+import re
+import pandas as pd
+from datetime import datetime
+import os
+
+# SFTP Details and Credentials
+sftp_username = "your_sftp_username"
+sftp_password = "your_sftp_password"
+sftp_host = "sftp.example.com"
+sftp_hostkey = "ssh-rsa 2048 xxxxxxxxxxx...="
+sftp_target_directory = "/path/to/your/directories/"
+local_temp_directory = "C:/local/temp/"
+local_master_csv = "C:/local/path/to/master.csv"
+log_file_path = "processed_folders.log"
+winscp_path = "C:/Program Files (x86)/WinSCP/WinSCP.com"
+
+# Functions for log handling
+def read_processed_folders(log_path):
+    try:
+        with open(log_path, 'r') as file:
+            return file.read().splitlines()
+    except FileNotFoundError:
+        return []
+
+def log_processed_folder(log_path, folder_name):
+    with open(log_path, 'a') as file:
+        file.write(folder_name + '\n')
+
+processed_folders = read_processed_folders(log_file_path)
+
+# Generate and execute WinSCP command to list directories and parse output
+winscp_commands = f'''
+open sftp://{sftp_username}:{sftp_password}@{sftp_host}/ -hostkey="{sftp_hostkey}"
+ls {sftp_target_directory}
+exit
+'''
+process = subprocess.Popen([winscp_path, '/command', *winscp_commands.split('\n')],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+stdout, stderr = process.communicate()
+
+# Assuming stdout lists directories in "YYYY-MM-DD HH:MM <DIR> directory_name" format
+regex = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+<DIR>\s+(\S+)"
+folders = [(match.groups()[1], datetime.strptime(match.groups()[0], "%Y-%m-%d %H:%M"))
+           for match in re.finditer(regex, stdout)]
+folders.sort(key=lambda x: x[1], reverse=True)
+
+# Process folders
+for folder_name, _ in folders:
+    if folder_name not in processed_folders:
+        print(f"Processing new folder: {folder_name}")
+
+        # Download CSV files from the folder
+        download_commands = f'''
+        open sftp://{sftp_username}:{sftp_password}@{sftp_host}/ -hostkey="{sftp_hostkey}"
+        lcd {local_temp_directory}
+        cd {sftp_target_directory}/{folder_name}
+        mget *.csv
+        exit
+        '''
+        subprocess.run([winscp_path, '/command', *download_commands.split('\n')])
+
+        # Combine CSV files if there are multiple, else use the single CSV file directly
+        combined_df = pd.concat([pd.read_csv(f) for f in os.listdir(local_temp_directory) if f.endswith('.csv')])
+
+        # Update master CSV file
+        if os.path.exists(local_master_csv):
+            master_df = pd.read_csv(local_master_csv)
+            updated_master_df = pd.concat([master_df, combined_df])
+        else:
+            updated_master_df = combined_df
+
+        updated_master_df.to_csv(local_master_csv, index=False)
+
+        # Log the processed folder
+        log_processed_folder(log_file_path, folder_name)
+        print(f"Folder {folder_name} processed and logged.")
+        break
+    else:
+        print(f"Skipping already processed folder: {folder_name}")
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import plotly.graph_objs as go
 from dash import Dash, html, dcc
