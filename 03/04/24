@@ -2,6 +2,92 @@ import paramiko
 import os
 from datetime import datetime
 import pandas as pd
+import re
+
+# Server connection details
+host = 'inmsas.in.bsbo'
+port = 22
+username = 'd5456'
+password_filepath = r'C:\Users\d5456\credentials.txt'
+
+# Paths on the SFTP server and local system
+base_directory = '/appvol/mix_nas/inm/INMDNA/IMCE/sandbox/Bureau_strategy/Dev/Output/email_nonpega'
+local_temp_directory = 'C:/local/temp/'
+local_master_csv = 'C:/local/path/to/master.csv'
+remote_master_directory = '/path/to/sftp/master/location/'
+log_file_path = 'processed_folders.log'
+
+# Read password from file
+with open(password_filepath, 'r') as file:
+    mypwd = file.read().strip()
+
+# Create SSH and SFTP clients
+ssh_client = paramiko.SSHClient()
+ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh_client.connect(host, port, username, mypwd)
+
+sftp = ssh_client.open_sftp()
+
+# Read processed folders from the log
+def read_processed_folders(log_path):
+    try:
+        with open(log_path, 'r') as file:
+            return set(file.read().splitlines())
+    except FileNotFoundError:
+        return set()
+
+# Log a processed folder
+def log_processed_folder(log_path, folder_name):
+    with open(log_path, 'a') as file:
+        file.write(folder_name + '\n')
+
+processed_folders = read_processed_folders(log_file_path)
+
+# Function to get and sort folders by date
+def get_sorted_folders(sftp, directory):
+    folder_regex = r'^Email_(\d{2})_(\d{2})_(\d{2})$'
+    folders = [f for f in sftp.listdir(directory) if re.match(folder_regex, f)]
+    folders.sort(key=lambda x: datetime.strptime(x, 'Email_%d_%m_%y'))
+    return folders
+
+sorted_folders = get_sorted_folders(sftp, base_directory)
+
+# Download, combine, and process files from each folder
+combined_df = pd.DataFrame()
+for folder_name in sorted_folders:
+    if folder_name not in processed_folders:
+        folder_path = os.path.join(base_directory, folder_name)
+        files = sftp.listdir(folder_path)
+        for file in files:
+            if file.endswith('.csv'):
+                local_path = os.path.join(local_temp_directory, file)
+                sftp.get(os.path.join(folder_path, file), local_path)
+                df = pd.read_csv(local_path)
+                combined_df = pd.concat([combined_df, df], ignore_index=True)
+        log_processed_folder(log_file_path, folder_name)
+
+# Save the combined data to a master CSV file and upload to SFTP
+combined_df.to_csv(local_master_csv, index=False)
+remote_master_file_path = os.path.join(remote_master_directory, 'final_master.csv')
+sftp.put(local_master_csv, remote_master_file_path)
+
+# Clean up and close connections
+sftp.close()
+ssh_client.close()
+
+print("Processing complete. Master file updated and uploaded.")
+
+
+
+
+
+
+
+
+import paramiko
+import os
+from datetime import datetime
+import pandas as pd
 
 # Server connection details
 host = "inmsas.in.bsbo"  # SFTP and SSH server address
