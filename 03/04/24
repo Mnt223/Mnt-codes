@@ -1,3 +1,66 @@
+%macro import_and_combine_csvs;
+    %local dir_list num_dirs i current_dir filepath filename;
+
+    * Example of manually setting directory paths - replace with dynamic fetching method if available;
+    data directories;
+        input directory :$100.;
+        datalines;
+        /path/to/sftp/email_nonpega/Email_01_04_24
+        /path/to/sftp/email_nonpega/Email_02_04_24
+        /path/to/sftp/email_nonpega/Email_03_04_24
+    ;
+    run;
+
+    * Fetch the list of directories;
+    proc sql noprint;
+        select directory into :dir_list separated by ' ' from directories;
+    quit;
+
+    %let num_dirs = &sqlobs;
+
+    * Loop through each directory and import all CSV files;
+    %do i = 1 %to &num_dirs;
+        %let current_dir = %scan(&dir_list, &i);
+
+        * Assume CSV files are named in a predictable manner or just import all CSVs;
+        filename csvfile pipe "ls &current_dir/*.csv";
+        
+        data _null_;
+            infile csvfile truncover;
+            input filepath $200.;
+            call execute(cats('proc import datafile="', "&current_dir/", filepath, '" out=work.temp dbms=csv replace; getnames=yes; run;'));
+            call execute('proc append base=work.master data=work.temp; run;');
+        run;
+        
+        filename csvfile clear;
+    %end;
+
+%mend import_and_combine_csvs;
+
+* Initialize the master dataset if necessary;
+data work.master;
+    length var1 $100 var2 $100;  * Define columns as per your CSV file structure;
+    stop;
+run;
+
+%import_and_combine_csvs;
+
+* Optionally export the master dataset;
+proc export data=work.master
+    outfile="/path/to/output/master_combined.csv"
+    dbms=csv
+    replace;
+run;
+
+
+
+
+
+
+
+
+
+
 * Define a macro to import and append CSV files from a given directory;
 %macro import_and_append_files(directory);
     * List all CSV files in the specified directory;
