@@ -1,4 +1,72 @@
 %macro import_and_combine_csvs;
+    %local dir_list num_dirs i current_dir filepath;
+
+    * Example of manually setting directory paths - replace with dynamic fetching method if available;
+    data directories;
+        input directory :$100.;
+        datalines;
+        /path/to/sftp/email_nonpega/Email_01_04_24
+        /path/to/sftp/email_nonpega/Email_02_04_24
+        /path/to/sftp/email_nonpega/Email_03_04_24
+    ;
+    run;
+
+    * Fetch the list of directories;
+    proc sql noprint;
+        select directory into :dir_list separated by ' ' from directories;
+    quit;
+
+    %let num_dirs = &sqlobs;
+
+    * Loop through each directory and import all CSV files;
+    %do i = 1 %to &num_dirs;
+        %let current_dir = %scan(&dir_list, &i);
+
+        * Set up a temporary filename reference for listing CSV files;
+        filename filelist pipe "ls &current_dir/*.csv";
+        
+        * Use a separate data step to process the file list;
+        data _null_;
+            infile filelist truncover;
+            input filepath $200.;
+            call symputx('csvfile', cats("&current_dir/", filepath));
+            * Ensure only data manipulation commands are called;
+            call execute(cats('proc import datafile="', symget('csvfile'), '" out=work.temp dbms=csv replace; getnames=yes; run;'));
+            call execute('proc append base=work.master data=work.temp; run;');
+        run;
+
+        * Clear the filename reference;
+        filename filelist clear;
+    %end;
+
+%mend import_and_combine_csvs;
+
+* Initialize the master dataset if necessary;
+data work.master;
+    length var1 $100 var2 $100;  * Define columns as per your CSV file structure;
+    stop;
+run;
+
+%import_and_combine_csvs;
+
+* Optionally export the master dataset;
+proc export data=work.master
+    outfile="/path/to/output/master_combined.csv"
+    dbms=csv
+    replace;
+run;
+
+
+
+
+
+
+
+
+nd
+
+
+%macro import_and_combine_csvs;
     %local dir_list num_dirs i current_dir filepath filename;
 
     * Example of manually setting directory paths - replace with dynamic fetching method if available;
