@@ -1,3 +1,68 @@
+* Set up library references and path variables;
+%let basepath = /path/to/sftp/email_nonpega;
+%let logpath = /path/to/log/logfile.txt;
+
+* Define a macro to handle import and append operations;
+%macro import_and_append(filepath);
+    %local dsid rc;
+    %let dsid = %sysfunc(fileexist(&filepath));
+    %if &dsid %then %do;
+        proc import datafile="&filepath"
+            out=temp
+            dbms=csv
+            replace;
+            getnames=yes;
+            guessingrows=max;
+        run;
+
+        * Append the data to the master dataset;
+        proc append base=work.master data=temp force;
+        run;
+    %end;
+    %else %do;
+        %put WARNING: The file &filepath does not exist.;
+    %end;
+
+    * Log the processed file;
+    data _null_;
+        file "&logpath" mod;
+        put "&filepath";
+    run;
+%mend import_and_append;
+
+* Initialize or clear the master dataset if necessary;
+proc datasets lib=work nolist;
+    delete master;
+run;
+
+data work.master;
+    length var1 $100 var2 $100;  * Specify the structure according to the actual data columns in CSV files;
+    stop;
+run;
+
+* Assuming 'file_paths' dataset has paths of CSV files to process;
+data _null_;
+    set file_paths;
+    call execute(cats('%import_and_append(', path, ')'));
+run;
+
+* Export the master dataset if needed to an external location or further analysis;
+proc export data=work.master
+    outfile="/path/to/export/master_combined.csv"
+    dbms=csv
+    replace;
+run;
+
+
+
+
+
+
+
+
+
+
+
 %let basepath = /path/to/sftp/email_nonpega;
 
 /* Log file setup */
