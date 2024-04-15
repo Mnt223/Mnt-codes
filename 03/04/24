@@ -1,3 +1,65 @@
+* Define a macro to import and append CSV files from a given directory;
+%macro import_and_append_files(directory);
+    * List all CSV files in the specified directory;
+    filename csvfiles pipe "dir ""&directory\*.csv"" /b";
+    data _null_;
+        infile csvfiles truncover;
+        input filepath $100.;
+        call symputx('fullpath', cats("&directory\", filepath));
+        call execute(cats('%import_csv(', "&fullpath", ')'));
+    run;
+    filename csvfiles clear;
+%mend;
+
+* Define a macro to import a single CSV file using PROC IMPORT;
+%macro import_csv(filepath);
+    proc import datafile="&filepath" out=temp dbms=csv replace;
+        getnames=yes;
+    run;
+    proc append base=work.master data=temp force;
+    run;
+%mend;
+
+* Example dataset containing the folder paths (replace with dynamic input if available);
+data folders;
+    input folderpath $100.;
+    datalines;
+    C:\path\to\sftp\email_nonpega\Email_01_04_24
+    C:\path\to\sftp\email_nonpega\Email_02_04_24
+    C:\path\to\sftp\email_nonpega\Email_03_04_24
+;
+run;
+
+* Initialize or clear the master dataset to ensure it starts empty;
+proc datasets lib=work nolist;
+    delete master;
+run;
+
+* Define the master dataset to specify the variables structure (adjust according to your data);
+data work.master;
+    length var1 $100 var2 $100;  * Adapt these variables as per your actual CSV structure;
+    stop;
+run;
+
+* Process all CSV files in each directory;
+data _null_;
+    set folders;
+    call execute(cats('%import_and_append_files(', folderpath, ')'));
+run;
+
+* Optionally export the master dataset to a CSV file for further use;
+proc export data=work.master outfile="C:\path\to\export\master_combined.csv" dbms=csv replace;
+run;
+
+
+
+
+
+
+
+
+
+
 * Set up library references and path variables;
 %let basepath = /path/to/sftp/email_nonpega;
 %let logpath = /path/to/log/logfile.txt;
