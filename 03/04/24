@@ -1,3 +1,76 @@
+%let basepath = /path/to/sftp/email_nonpega;
+
+/* Log file setup */
+%let logpath = /path/to/sftp/process_log.txt;
+
+/* Ensure the log file exists */
+data _null_;
+    file "&logpath" mod;
+run;
+
+/* Read the log file to avoid re-processing */
+data processed;
+    infile "&logpath" truncover;
+    input foldername $100.;
+run;
+
+/* Get a list of folders in the base directory */
+filename dirlist pipe "ls &basepath";
+data folders;
+    length folder $100;
+    infile dirlist truncover;
+    input folder $100.;
+    if index(folder, 'Email_') then output; /* Filter based on your naming convention */
+run;
+
+/* Exclude already processed folders */
+proc sql;
+    create table folders_to_process as
+    select a.folder from folders a
+    where not exists (select 1 from processed b where a.folder = b.foldername);
+quit;
+
+/* Append all CSV files from each unprocessed folder */
+data master;
+    length sourcefile $200;
+    retain sourcefile;
+    set folders_to_process;
+    folderpath = catx('/', "&basepath", folder);
+    d = dopen(folderpath);
+    if d > 0 then do;
+        count = dnum(d);
+        do i = 1 to count;
+            sourcefile = dread(d, i);
+            if upcase(scan(sourcefile, -1, '.')) = 'CSV' then do;
+                infile = catx('/', folderpath, sourcefile);
+                infile dummy filevar=infile dlm=',' firstobs=2 dsd truncover end=eof;
+                do while(not eof);
+                    input var1 var2 var3; /* Adjust according to your actual data structure */
+                    output master;
+                end;
+            end;
+        end;
+        rc = dclose(d);
+    end;
+run;
+
+/* Log processed folders */
+data _null_;
+    set folders_to_process;
+    file "&logpath" mod;
+    put folder;
+run;
+
+/* Export the master dataset */
+proc export data=master outfile="&basepath/master_data.csv" dbms=csv replace;
+run;
+
+
+
+
+
+
+
 import paramiko
 import os
 from datetime import datetime
