@@ -1,3 +1,40 @@
+import pandas as pd
+from sqlalchemy import create_engine
+
+# Database connection string
+credentials = 'postgresql://username:password@hostname:port/database'
+engine = create_engine(credentials)
+
+# SQL query to fetch data
+query = """
+SELECT * FROM your_table;  -- replace 'your_table' with your actual table name
+"""
+
+# Fetch data from PostgreSQL and load into DataFrame
+with engine.connect() as connection:
+    df_sql = pd.read_sql_query(query, connection)
+
+# Load data from Excel file
+df_excel = pd.read_excel('path_to_your_excel_file.xlsx')
+
+# Ensure that 'contentid' is the common column in both DataFrames and set how the join should be handled (e.g., 'inner', 'outer', 'left', 'right')
+df_joined = pd.merge(df_sql, df_excel, on='contentid', how='inner')
+
+# Save the joined DataFrame to an Excel file in the desired location
+output_path = 'desired_location/final_output.xlsx'
+df_joined.to_excel(output_path, index=False)
+
+# Optionally, print a preview of the final DataFrame
+print(df_joined.head())
+
+
+
+
+
+
+
+
+ff
 %macro import_and_combine_csvs;
     %local dir_list num_dirs i current_dir filepath;
 
