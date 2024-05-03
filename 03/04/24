@@ -1,3 +1,32 @@
+proc sql;
+   create table customer_presence as
+   select 
+       coalesce(a.custid, b.custid, c.custid, d.custid) as custid,
+       a.cib_score as cib_score1,
+       b.cib_score as cib_score2,
+       c.cib_score as cib_score3,
+       d.cib_score as cib_score4,
+       /* Create flags for presence in each table */
+       (case when a.custid is not null then 'Y' else 'N' end) as in_table1,
+       (case when b.custid is not null then 'Y' else 'N' end) as in_table2,
+       (case when c.custid is not null then 'Y' else 'N' end) as in_table3,
+       (case when d.custid is not null then 'Y' else 'N' end) as in_table4,
+       /* Create a flag for presence in all tables */
+       (case when a.custid is not null and b.custid is not null and c.custid is not null and d.custid is not null then 'Y' else 'N' end) as in_all_tables
+   from dataset1 a
+   full outer join dataset2 b on a.custid = b.custid
+   full outer join dataset3 c on coalesce(a.custid, b.custid) = c.custid
+   full outer join dataset4 d on coalesce(a.custid, b.custid, c.custid) = d.custid;
+quit;
+
+
+
+
+
+
+
+
+
 import pandas as pd
 from sqlalchemy import create_engine
 
