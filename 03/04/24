@@ -1,4 +1,25 @@
 Customer Count by Bucket = 
+VAR Customers1_2 = CALCULATE(COUNTROWS('Table'), FILTER('Table', 'Table'[Message Delivered] > 0 && 'Table'[Message Delivered] <= 2))
+VAR Customers3_5 = CALCULATE(COUNTROWS('Table'), FILTER('Table', 'Table'[Message Delivered] > 2 && 'Table'[Message Delivered] <= 5))
+VAR Customers6_10 = CALCULATE(COUNTROWS('Table'), FILTER('Table', 'Table'[Message Delivered] > 5 && 'Table'[Message Delivered] <= 10))
+VAR Customers11_15 = CALCULATE(COUNTROWS('Table'), FILTER('Table', 'Table'[Message Delivered] > 10 && 'Table'[Message Delivered] <= 15))
+VAR Customers16_20 = CALCULATE(COUNTROWS('Table'), FILTER('Table', 'Table'[Message Delivered] > 15 && 'Table'[Message Delivered] <= 20))
+VAR CustomersMoreThan20 = CALCULATE(COUNTROWS('Table'), FILTER('Table', 'Table'[Message Delivered] > 20))
+
+RETURN
+"1-2: " & Customers1_2 & "; " &
+"3-5: " & Customers3_5 & "; " &
+"6-10: " & Customers6_10 & "; " &
+"11-15: " & Customers11_15 & "; " &
+"16-20: " & Customers16_20 & "; " &
+"More than 20: " & CustomersMoreThan20
+
+
+
+
+
+
+Customer Count by Bucket = 
 VAR TotalMessages = [Total Messages]  // Reference your Total Messages measure
 VAR CustomerID = VALUES('Table'[Customer ID])  // Unique customer IDs
 
