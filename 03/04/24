@@ -1,3 +1,25 @@
+Delivered Bucket = 
+VAR DeliveredCount = CALCULATE(
+    COUNTROWS('YourTable'),
+    'YourTable'[delivered] = 1,
+    ALLEXCEPT('YourTable', 'YourTable'[customer_id])
+)
+RETURN
+    SWITCH(
+        TRUE(),
+        DeliveredCount = 1, "1 delivery",
+        DeliveredCount = 2, "2 deliveries",
+        DeliveredCount >= 3 && DeliveredCount <= 5, "3-5 deliveries",
+        DeliveredCount > 5 && DeliveredCount <= 20, "5-20 deliveries",
+        DeliveredCount > 20 && DeliveredCount <= 40, "20-40 deliveries",
+        DeliveredCount > 40, "More than 40 deliveries",
+        "Undelivered" // You can customize this to manage edge cases where delivered count may be zero
+    )
+
+
+
+
+
 Customer Count by Bucket = 
 VAR Customers1_2 = CALCULATE(COUNTROWS('Table'), FILTER('Table', 'Table'[Message Delivered] > 0 && 'Table'[Message Delivered] <= 2))
 VAR Customers3_5 = CALCULATE(COUNTROWS('Table'), FILTER('Table', 'Table'[Message Delivered] > 2 && 'Table'[Message Delivered] <= 5))
