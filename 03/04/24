@@ -1,3 +1,26 @@
+Customer Count by Bucket = 
+VAR Bucket1 = CALCULATE(DISTINCTCOUNT('YourTable'[Customer ID]), FILTER(ALL('YourTable'), [Total Messages Per Customer] >= 1 && [Total Messages Per Customer] <= 2))
+VAR Bucket2 = CALCULATE(DISTINCTCOUNT('YourTable'[Customer ID]), FILTER(ALL('YourTable'), [Total Messages Per Customer] >= 3 && [Total Messages Per Customer] <= 5))
+VAR Bucket3 = CALCULATE(DISTINCTCOUNT('YourTable'[Customer ID]), FILTER(ALL('YourTable'), [Total Messages Per Customer] >= 6 && [Total Messages Per Customer] <= 10))
+VAR Bucket4 = CALCULATE(DISTINCTCOUNT('YourTable'[Customer ID]), FILTER(ALL('YourTable'), [Total Messages Per Customer] >= 11 && [Total Messages Per Customer] <= 15))
+VAR Bucket5 = CALCULATE(DISTINCTCOUNT('YourTable'[Customer ID]), FILTER(ALL('YourTable'), [Total Messages Per Customer] >= 16 && [Total Messages Per Customer] <= 20))
+VAR Bucket6 = CALCULATE(DISTINCTCOUNT('YourTable'[Customer ID]), FILTER(ALL('YourTable'), [Total Messages Per Customer] > 20))
+RETURN
+CONCATENATEX(
+    VALUES('YourTable'[Message Bucket]),
+    SWITCH(
+        TRUE(),
+        'YourTable'[Message Bucket] = "1-2", Bucket1,
+        'YourTable'[Message Bucket] = "3-5", Bucket2,
+        'YourTable'[Message Bucket] = "6-10", Bucket3,
+        'YourTable'[Message Bucket] = "11-15", Bucket4,
+        'YourTable'[Message Bucket] = "16-20", Bucket5,
+        'YourTable'[Message Bucket] = "More than 20", Bucket6
+    ), ", "
+)
+
+
+
 Customer Count by Bucket = CALCULATE(
     DISTINCTCOUNT('YourTable'[Customer ID]),
     ALLEXCEPT('YourTable', 'YourTable'[Message Bucket])
