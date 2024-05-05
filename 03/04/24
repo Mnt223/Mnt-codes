@@ -1,3 +1,28 @@
+Customer Buckets = 
+ADDCOLUMNS(
+    SUMMARIZE(
+        'Table', 
+        'Table'[Customer ID], 
+        "TotalMessages", [Total Messages]
+    ),
+    "Message Bucket", 
+    SWITCH(
+        TRUE(),
+        'TotalMessages' <= 2, "1-2",
+        'TotalMessages' <= 5, "3-5",
+        'TotalMessages' <= 10, "6-10",
+        'TotalMessages' <= 15, "11-15",
+        'TotalMessages' <= 20, "16-20",
+        "More than 20"
+    )
+)
+
+
+
+
+
+
+
 Customer Count by Bucket = 
 VAR Bucket1 = CALCULATE(DISTINCTCOUNT('YourTable'[Customer ID]), FILTER(ALL('YourTable'), [Total Messages Per Customer] >= 1 && [Total Messages Per Customer] <= 2))
 VAR Bucket2 = CALCULATE(DISTINCTCOUNT('YourTable'[Customer ID]), FILTER(ALL('YourTable'), [Total Messages Per Customer] >= 3 && [Total Messages Per Customer] <= 5))
