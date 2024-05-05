@@ -1,3 +1,7 @@
+Customers Per Bucket = COUNTROWS('Customer Buckets')
+
+
+
 Customer Buckets = 
 ADDCOLUMNS(
     SUMMARIZE(
