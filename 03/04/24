@@ -1,3 +1,23 @@
+Total Messages = SUMX(
+  DISTINCT('YourTable'[Customer ID]),
+  CALCULATE(SUM('YourTable'[Messages]))
+)
+
+Message Bucket = SWITCH(
+    TRUE(),
+    [Total Messages] >= 1 && [Total Messages] <= 2, "1-2",
+    [Total Messages] >= 3 && [Total Messages] <= 5, "3-5",
+    [Total Messages] >= 6 && [Total Messages] <= 10, "6-10",
+    [Total Messages] >= 11 && [Total Messages] <= 15, "11-15",
+    [Total Messages] >= 16 && [Total Messages] <= 20, "16-20",
+    "More than 20"
+)
+
+
+
+
+
+
 proc sql;
    create table customer_presence as
    select 
