@@ -1,4 +1,31 @@
 Customer Count by Bucket = 
+VAR TotalMessages = [Total Messages]  // Reference your Total Messages measure
+VAR CustomerID = VALUES('Table'[Customer ID])  // Unique customer IDs
+
+RETURN
+CONCATENATE(
+    "1-2: " & CALCULATE(COUNTROWS(CustomerID), TotalMessages > 0, TotalMessages <= 2) & "; ",
+    CONCATENATE(
+        "3-5: " & CALCULATE(COUNTROWS(CustomerID), TotalMessages > 2, TotalMessages <= 5) & "; ",
+        CONCATENATE(
+            "6-10: " & CALCULATE(COUNTROWS(CustomerID), TotalMessages > 5, TotalMessages <= 10) & "; ",
+            CONCATENATE(
+                "11-15: " & CALCULATE(COUNTROWS(CustomerID), TotalMessages > 10, TotalMessages <= 15) & "; ",
+                CONCATENATE(
+                    "16-20: " & CALCULATE(COUNTROWS(CustomerID), TotalMessages > 15, TotalMessages <= 20) & "; ",
+                    "More than 20: " & CALCULATE(COUNTROWS(CustomerID), TotalMessages > 20)
+                )
+            )
+        )
+    )
+)
+
+
+
+
+
+
+Customer Count by Bucket = 
 VAR Customers1_2 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 0, [Total Messages] <= 2)
 VAR Customers3_5 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 2, [Total Messages] <= 5)
 VAR Customers6_10 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 5, [Total Messages] <= 10)
