@@ -1,3 +1,10 @@
+Customer Count by Bucket = CALCULATE(
+    DISTINCTCOUNT('YourTable'[Customer ID]),
+    ALLEXCEPT('YourTable', 'YourTable'[Message Bucket])
+)
+
+
+
 Total Messages = SUMX(
   DISTINCT('YourTable'[Customer ID]),
   CALCULATE(SUM('YourTable'[Messages]))
