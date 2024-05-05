@@ -1,3 +1,25 @@
+Customer Count by Bucket = 
+VAR Customers1_2 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 0, [Total Messages] <= 2)
+VAR Customers3_5 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 2, [Total Messages] <= 5)
+VAR Customers6_10 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 5, [Total Messages] <= 10)
+VAR Customers11_15 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 10, [Total Messages] <= 15)
+VAR Customers16_20 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 15, [Total Messages] <= 20)
+VAR CustomersMoreThan20 = CALCULATE(COUNTROWS(VALUES('Table'[Customer ID])), [Total Messages] > 20)
+
+RETURN
+"1-2: " & Customers1_2 & "; " &
+"3-5: " & Customers3_5 & "; " &
+"6-10: " & Customers6_10 & "; " &
+"11-15: " & Customers11_15 & "; " &
+"16-20: " & Customers16_20 & "; " &
+"More than 20: " & CustomersMoreThan20
+
+
+
+
+
+
+
 Customers Per Bucket = COUNTROWS('Customer Buckets')
 
 
