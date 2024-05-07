@@ -1,6 +1,62 @@
 import pandas as pd
 import plotly.graph_objects as go
 
+# Sample data
+data = {
+    'cusid': [1, 2, 3, 4, 5],
+    'nov-bucket': ['600-650', '650-700', '600-650', '700-750', '650-700'],
+    'jan-bucket': ['650-700', '700-750', '600-650', '750-800', '700-750'],
+    'feb-bucket': ['700-750', '750-800', '650-700', '800-850', '750-800'],
+    'apr-bucket': ['750-800', '800-850', '700-750', '850-900', '800-850']
+}
+df = pd.DataFrame(data)
+
+# Prepare lists to hold source, target, and counts
+sources = []
+targets = []
+values = []
+
+# Unique bucket names for mapping
+unique_buckets = set()
+for col in df.columns[1:]:
+    unique_buckets.update(df[col].unique())
+unique_buckets = list(unique_buckets)
+bucket_index = {bucket: i for i, bucket in enumerate(unique_buckets)}
+
+# Generate the source, target, and value lists
+for i in range(1, len(df.columns) - 1):
+    month_data = df.groupby([df.columns[i], df.columns[i+1]]).size().reset_index(name='count')
+    for _, row in month_data.iterrows():
+        sources.append(bucket_index[row[df.columns[i]]])
+        targets.append(bucket_index[row[df.columns[i+1]]])
+        values.append(row['count'])
+
+# Create the Sankey diagram
+fig = go.Figure(data=[go.Sankey(
+    node = dict(
+      pad = 15,
+      thickness = 20,
+      line = dict(color = "black", width = 0.5),
+      label = unique_buckets,
+      color = "blue"
+    ),
+    link = dict(
+      source = sources,  # indices correspond to labels
+      target = targets,  # indices correspond to labels
+      value = values
+  ))])
+
+fig.update_layout(title_text="Customer Movements Across CIBIL Score Buckets Over Months", font_size=10)
+fig.show()
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objects as go
+
 # Sample DataFrame setup
 # You should replace this with your actual data loading method, e.g., pd.read_csv()
 data = {
