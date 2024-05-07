@@ -1,3 +1,25 @@
+Vintage Closure Rate = 
+CALCULATE(
+    DIVIDE(
+        COUNTROWS('Data'),
+        CALCULATE(
+            COUNTROWS('Data'),
+            ALL('Date Table')
+        )
+    ),
+    FILTER(
+        'Data',
+        'Data'[Last Date] <= MAX('Date Table'[Date]) &&
+        YEAR('Data'[Start Date]) = EARLIER('Data'[Vintage Year])
+    ),
+    ALL('Data')
+)
+
+
+
+
+
+
 import pandas as pd
 import streamlit as st
 from keplergl import KeplerGl
