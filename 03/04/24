@@ -1,6 +1,69 @@
 import pandas as pd
 import plotly.graph_objects as go
 
+# Calculate transitions
+def get_transitions(df, start_month, end_month):
+    transitions = df.groupby([start_month, end_month]).size().reset_index(name='count')
+    return transitions
+
+# List of months and an empty list for storing transitions
+months = ['nov-bucket', 'jan-bucket', 'feb-bucket', 'apr-bucket']
+transitions_list = []
+
+# Calculate transitions for consecutive months
+for i in range(len(months) - 1):
+    month_data = get_transitions(df, months[i], months[i + 1])
+    transitions_list.append(month_data)
+
+# Prepare the source, target, and values for the Sankey diagram
+sources = []
+targets = []
+values = []
+label_list = []
+
+# Function to add indices and get unique labels
+def add_indices(data, source_col, target_col, value_col, label_list):
+    for index, row in data.iterrows():
+        if row[source_col] not in label_list:
+            label_list.append(row[source_col])
+        if row[target_col] not in label_list:
+            label_list.append(row[target_col])
+        sources.append(label_list.index(row[source_col]))
+        targets.append(label_list.index(row[target_col]))
+        values.append(row[value_col])
+
+# Process each transition
+for transition in transitions_list:
+    add_indices(transition, 0, 1, 'count', label_list)
+
+# Create Sankey diagram
+fig = go.Figure(data=[go.Sankey(
+    node=dict(
+        pad=15,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=label_list,
+        color="blue"
+    ),
+    link=dict(
+        source=sources,
+        target=targets,
+        value=values
+    ))])
+
+fig.update_layout(title_text="Customer Movements Across CIBIL Score Buckets Over Months", font_size=10)
+fig.show()
+
+
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objects as go
+
 # Sample data
 data = {
     'cusid': [1, 2, 3, 4, 5],
