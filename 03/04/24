@@ -1,3 +1,46 @@
+SELECT DISTINCT
+    CAST(a.pxdecisiontime AS DATE) AS decision_date,
+    d.cust_id_num,
+    a.pysubjectid,
+    c.pyoutcome,
+    a.contentid,
+    b.PRPS_CDE,
+    CASE
+        WHEN b.OVS_PRSN_IND = 'N' THEN 'DOM'
+        WHEN b.OVS_PRSN_IND = 'Y' THEN 'NR'
+        ELSE ''
+    END AS DOM_NR,
+    b.Indv_Pho_Num_Mobl_Pagr_3_Txt
+FROM
+    PMDINPA1.PR_DATA_IH_FACT_reporting a
+LEFT JOIN
+    PMDINPA1.PR_DATA_IH_DIM_OUTCOME c ON a.pzoutcomeid = c.pzid
+LEFT JOIN
+    ISSINPA1.PEGA_CAR b ON a.pysubjectid = b.customer_id
+LEFT JOIN
+    ISSINPA1.PEGA_XAR d ON a.pysubjectid = b.customer_id
+WHERE
+    a.contentid = 'MECLO1_MEC004_PGCCD1_442_IA_1'
+    AND a.pxdecisiontime >= '07-NOV-2023'
+    AND a.pxdecisiontime <= CURRENT_DATE
+    AND c.pyoutcome = 'Accepted'
+GROUP BY
+    a.pysubjectid,
+    a.contentid,
+    c.pyoutcome,
+    CAST(a.pxdecisiontime AS DATE),
+    b.PRPS_CDE,
+    b.OVS_PRSN_IND,
+    b.Indv_Pho_Num_Mobl_Pagr_3_Txt,
+    d.cust_id_num;
+
+
+
+
+
+
+
+
 Delivered Bucket = 
 VAR DeliveredCount = CALCULATE(
     COUNTROWS('YourTable'),
