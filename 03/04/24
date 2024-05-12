@@ -1,3 +1,108 @@
+%macro sm(dayz);
+   %let input_filepath = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer;
+   %let output_filepath = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPeg;
+   %let output_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPeg;
+
+   /* Step 1: Unzip the file */
+   %unzip_file(&input_filepath., &output_filepath., &dayz.);
+
+   /* Step 2: Import the CSV file */
+   %import_csv(&output_filepath., &dayz., file_import1);
+
+   /* Step 3: Modify variable lengths */
+   %modify_lengths(file_import1, file_import, 'MESSAGE TEXT'n, 9999);
+
+   /* Step 4: Initialize or append to CONSOL_DATA */
+   %initialize_or_append(consol_data, file_import, 'MESSAGE TEXT'n, 9999);
+
+   /* Step 5: Sort and remove duplicates */
+   %sort_and_dedup(consol_data);
+
+   /* Step 6: Export the consolidated data */
+   %export_csv(consol_data, &output_path./NonPega_sms/MAR/NON_PEGA_SMS_&dayz..csv);
+
+   /* Step 7: Save the March data dump */
+   data sms_mar.mar_sms_dump;
+      set consol_data;
+   run;
+
+%mend sm;
+
+/* Step 1: Macro to unzip file */
+%macro unzip_file(input_path, output_path, date);
+   filename oscmdl pipe "unzip -d &output_path. &input_path./&date..zip";
+   data _null_;
+      infile oscmdl;
+      input;
+      put _infile_;
+   run;
+%mend unzip_file;
+
+/* Step 2: Macro to import CSV */
+%macro import_csv(filepath, date, out_dataset);
+   proc import datafile="&filepath./&date..csv"
+               dbms=csv
+               out=&out_dataset.
+               replace;
+   run;
+%mend import_csv;
+
+/* Step 3: Macro to modify variable lengths */
+%macro modify_lengths(in_dataset, out_dataset, var, length);
+   data &out_dataset.;
+      length &var $&length.;
+      set &in_dataset.;
+   run;
+%mend modify_lengths;
+
+/* Step 4: Macro to initialize or append to CONSOL_DATA */
+%macro initialize_or_append(consol_data, file_import, var, length);
+   %if %sysfunc(exist(&consol_data.)) = 0 %then %do;
+      data &consol_data.;
+         length &var $&length.;
+         if _n_ = 0 then set &file_import.;
+         stop;
+      run;
+   %end;
+   
+   proc append base=&consol_data. data=&file_import. force;
+   run;
+%mend initialize_or_append;
+
+/* Step 5: Macro to sort and remove duplicates */
+%macro sort_and_dedup(data);
+   proc sort data=&data. nodupkey;
+      by _all_;
+   run;
+%mend sort_and_dedup;
+
+/* Step 6: Macro to export data to CSV */
+%macro export_csv(data, filepath);
+   proc export data=&data.
+               outfile="&filepath."
+               dbms=csv
+               replace;
+   quit;
+%mend export_csv;
+
+/* Call the macro for each day */
+%sm(2024-03-01);
+%sm(2024-03-02);
+%sm(2024-03-03);
+%sm(2024-03-04);
+%sm(2024-03-05);
+%sm(2024-03-06);
+
+
+
+
+
+
+
+
+
+
+
 SELECT
     outcome,
     COUNT(CASE WHEN EXTRACT(YEAR FROM date) = 2023 AND EXTRACT(MONTH FROM date) = 1 THEN cusid END) AS Jan_2023,
