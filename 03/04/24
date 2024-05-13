@@ -1,4 +1,82 @@
 %macro sm(dayz);
+    %LET INPUT_FILEPATH = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup;
+    %LET OUTPUT_FILEPATH = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_Sms;
+    %LET OUTPUT_PATH = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_sms;
+
+    /* Unzipping the file */
+    filename oscmd pipe "unzip -d &OUTPUT_FILEPATH. &INPUT_FILEPATH./&dayz..zip";
+
+    data _null_;
+        infile oscmd;
+        input;
+        put _infile_;
+    run;
+
+    /* Importing the file */
+    PROC IMPORT DATAFILE="&OUTPUT_FILEPATH./&dayz..csv"
+                OUT=file_import
+                DBMS=csv
+                REPLACE;
+    RUN;
+
+    /* Renaming and changing length of the variable */
+    DATA file_import;
+        LENGTH Message_Text $ 1000;
+        SET file_import (RENAME=('Message Text'n = Message_Text));
+    RUN;
+
+    /* Checking if CONSOL_DATA exists */
+    %if %sysfunc(exist(CONSOL_DATA)) %then %do;
+        /* If CONSOL_DATA exists, append to it */
+        PROC APPEND DATA=work.file_import BASE=CONSOL_DATA FORCE;
+        RUN;
+    %end;
+    %else %do;
+        /* If CONSOL_DATA does not exist, create it */
+        DATA CONSOL_DATA;
+            SET file_import;
+        RUN;
+    %end;
+
+    /* Creating SMS_DATA dataset */
+    DATA SMS_DATA;
+        SET CONSOL_DATA;
+    RUN;
+
+    /* Sorting data */
+    PROC SORT DATA=SMS_DATA NODUPKEY;
+        BY _ALL_;
+    RUN;
+
+    /* Exporting the data */
+    PROC EXPORT DATA=SMS_DATA
+                OUTFILE="&OUTPUT_PATH./MAR/NC_SMS_DATA.csv"
+                DBMS=csv
+                REPLACE;
+    RUN;
+
+    /* Saving file for March data dump */
+    DATA MAR_SMS_DUMP;
+        SET SMS_DATA;
+    RUN;
+
+%mend sm;
+
+/* Running the macro for specified dates */
+%sm(2024-03-01);
+%sm(2024-03-02);
+%sm(2024-03-03);
+
+
+
+
+
+
+
+
+
+
+bdrf%macro sm(dayz);
    %let input_filepath = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer;
    %let output_filepath = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPeg;
    %let output_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPeg;
