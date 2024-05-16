@@ -1,4 +1,80 @@
-%macro sm(dayz);
+%macro append_csv_files(path);
+    /* Create an empty dataset with the same structure as your CSV files */
+    data all_data;
+    length var1 var2 var3 $100;  /* Adjust variable names and types according to your CSV structure */
+    stop;
+    run;
+
+    /* Get the list of CSV files */
+    filename filelist pipe "dir &path\*.csv /b";
+    data _null_;
+        infile filelist truncover;
+        input fname $100.;
+        call symputx('filename', trim("&path\"||fname), 'G'); /* Adjust for your path delimiter */
+
+        /* Append each file, skipping the header for files after the first */
+        %if &sysindex = 1 %then %do;
+            proc import datafile="&filename" 
+                out=temp
+                dbms=csv
+                replace;
+                getnames=yes;
+            run;
+        %end;
+        %else %do;
+            proc import datafile="&filename" 
+                out=temp
+                dbms=csv
+                replace;
+                getnames=no;
+                datarow=2;  /* Skip header row */
+            run;
+        %end;
+
+        /* Append the imported data */
+        proc append base=all_data data=temp;
+        run;
+
+        call symputx('sysindex', &sysindex+1); /* Increment file index */
+    run;
+%mend append_csv_files;
+
+%let sysindex=1;
+%append_csv_files(C:\path_to_your_files);
+
+
+
+
+
+
+%macro append_datasets(path);
+    /* Create a temporary dataset to store filenames */
+    proc sql noprint;
+        create table filenames( fname varchar(256) );
+    quit;
+
+    /* List all datasets in the specified directory */
+    x "dir &path\*.sas7bdat /b > &path\filelist.txt";
+
+    /* Read the list of filenames into the temporary dataset */
+    data filenames;
+        infile "&path\filelist.txt" truncover;
+        input fname $256.;
+    run;
+
+    /* Append all datasets */
+    data all_data;
+        set 
+            %do i=1 %to &nobs;
+                %let dsname = %scan(&data_list, &i, ' ');
+                &path\&dsname
+            %end;
+    ;
+    run;
+%mend append_datasets;
+
+/* Call the macro */
+%append_datasets(&path);macro sm(dayz);
     %LET INPUT_FILEPATH = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup;
     %LET OUTPUT_FILEPATH = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_Sms;
     %LET OUTPUT_PATH = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_sms;
