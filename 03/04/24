@@ -1,3 +1,21 @@
+proc sql;
+    create table output as 
+    select cust_seg,
+           branch,
+           /* Using monotonic() to simulate row number */
+           case 
+               when cust_seg = 'premier' then 
+                   cats('CAR/', branch, '/PAC/', 1111000 + monotonic() - 1)
+               else 
+                   cats('CAR/', branch, '/PRC/', 1111000 + monotonic() - 1)
+           end as FRN
+    from input; /* Replace 'input' with your actual table name */
+quit;
+
+
+
+
+
 =IF(A2="premier", "CAR/" & B2 & "/PAC/" & (1111000 + ROW() - 2), "CAR/" & B2 & "/PRC/" & (1111000 + ROW() - 2))
 
 
