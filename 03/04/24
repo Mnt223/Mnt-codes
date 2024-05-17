@@ -1,3 +1,62 @@
+=IF(A2="premier", "CAR/" & B2 & "/PAC/" & (1111000 + ROW() - 2), "CAR/" & B2 & "/PRC/" & (1111000 + ROW() - 2))
+
+
+
+
+
+/* Set up the library to connect to PostgreSQL */
+libname mydb odbc datasrc='Your_ODBC_DSN' user='YourUsername' password='YourPassword';
+
+/* Fetch data from the PostgreSQL table */
+proc sql;
+    create table work.fetched_data as
+    select * from mydb.your_table;
+quit;
+
+/* Generate a summary of the data */
+proc means data=work.fetched_data noprint;
+    var your_variable; /* Replace 'your_variable' with your actual data column names */
+    output out=work.summary mean=std=;
+run;
+
+/* Export data and summary to an Excel file */
+ods excel file='C:\path\to\your\file.xlsx';
+ods excel options(sheet_name='Data');
+proc print data=work.fetched_data;
+run;
+ods excel options(sheet_name='Summary');
+proc print data=work.summary;
+run;
+ods excel close;
+
+/* Email the Excel file */
+filename mymail email
+  to=('recipient@example.com')
+  subject='Your data and summary'
+  attach=('C:\path\to\your\file.xlsx' content_type='application/vnd.ms-excel');
+data _null_;
+  file mymail;
+  put 'Hello,';
+  put 'Please find attached the Excel file with the requested data and summary.';
+  put 'Best regards,';
+  put 'Your Name';
+run;
+
+/* Clear the libname and filename */
+libname mydb clear;
+filename mymail clear;
+
+
+
+
+
+
+
+
+
+
+
+
 * Set the directory containing the CSV files;
 %let path = C:\path\to\your\csv\folder;
 
