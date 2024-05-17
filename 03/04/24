@@ -1,3 +1,68 @@
+* Set the directory containing the CSV files;
+%let path = C:\path\to\your\csv\folder;
+
+* Define a macro to handle the import and append process;
+%macro process_files;
+    * Create a temporary library pointing to the folder;
+    libname csvlib 'C:\path\to\your\csv\folder';
+
+    * List all CSV files in the directory;
+    proc sql noprint;
+        create table csv_files as
+        select * from dictionary.files
+        where libname = 'CSVLIB' and upcase(scan(name, -1, '.')) = 'CSV';
+    quit;
+
+    * Append data from each CSV file;
+    data master_dataset;
+        length MOBILE_NUMBER $20 MESSAGE_ID $30 MESSAGE_TEXT $2000 TIMESTAMP 8 STATUS $20 CAUSE $20 DLT_Template_ID $20;
+        retain MOBILE_NUMBER MESSAGE_ID MESSAGE_TEXT TIMESTAMP STATUS CAUSE DLT_Template_ID;
+        format TIMESTAMP datetime.;
+        keep MOBILE_NUMBER MESSAGE_ID MESSAGE_TEXT TIMESTAMP STATUS CAUSE DLT_Template_ID;
+        set csvlib._all_ indsname=source;
+        if _n_ = 1 then call execute('proc datasets lib=work nolist; delete _all_; run;');
+    run;
+
+    * Loop through each CSV file and import only the necessary columns;
+    proc sql;
+        select cats('data _tmp; set csvlib.', name, '; keep MOBILE_NUMBER MESSAGE_ID MESSAGE_TEXT TIMESTAMP STATUS CAUSE DLT_Template_ID; proc append base=master_dataset data=_tmp; run;') into :import_cmds separated by ' '
+        from csv_files;
+    quit;
+
+    * Execute the generated import commands;
+    &import_cmds;
+
+    * Clean up;
+    proc datasets lib=csvlib nolist;
+        delete _all_;
+    quit;
+    proc datasets lib=work nolist;
+        delete _tmp;
+    quit;
+%mend process_files;
+
+* Execute the macro;
+%process_files;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %macro append_csv_files(path);
     /* Create an empty dataset with the same structure as your CSV files */
     data all_data;
