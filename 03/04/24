@@ -1,3 +1,61 @@
+filename outbox email
+    to=("prachi.jain@noexternalmail.hsbc.com")
+    subject="IMTD Inapp Campaign Performance"
+    type="text/html"
+    from=("prachi.jain@noexternalmail.hsbc.com");
+
+ods html body=outbox rs=none style=Htmlblue;
+ods escapechar='^';
+
+/* Email message body */
+ods html text='<html><body>';
+ods html text='<p>Hi,</p>';
+ods html text='<p>Please find the summary table below:</p>';
+ods html text='<hr>';
+
+/* Summary table */
+proc report data=Final_summary nowd style(report)={borderwidth=1 bordercolor=black borderspacing=3 cellpadding=4 rules=all frame=void}
+    style(header)={background=darkred foreground=white font_weight=bold};
+    column contentid message_name impression accepted neutral declined positive_click_rate click_quartile;
+    define contentid / display 'Content ID' style(column)={font_weight=bold};
+    define message_name / display 'Message Name';
+    define impression / display 'Impressions' format=comma10.;
+    define accepted / display 'Accepted' format=comma10.;
+    define neutral / display 'Neutral' format=comma10.;
+    define declined / display 'Declined' format=comma10.;
+    define positive_click_rate / display 'Positive Click Rate' format=pct_fmt.;
+    define click_quartile / noprint;
+
+    /* Custom header */
+    compute before _page_ / style={just=center font_weight=bold font_size=12pt};
+        line '^S={foreground=darkred font_weight=bold font_size=12pt}MTD Inapp Campaign Performance';
+    endcomp;
+run;
+
+/* Closing email message */
+ods html text='<p>Thanks & regards,</p>';
+ods html text='<p>Prachi Jain</p>';
+ods html text='</body></html>';
+
+ods html close;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 proc report data=ranked_data nowd;
     column contentid message_name impression accepted neutral decline click_rate click_quartile;
     define contentid / display 'Content ID';
