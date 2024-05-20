@@ -1,3 +1,59 @@
+/* Example data with calculated click rate */
+data work.content_summary;
+    input contentid $ message_name $ impression accepted neutral decline click_rate;
+    datalines;
+    001 Message1 1000 500 300 200 0.50
+    002 Message2 800 300 250 250 0.375
+    003 Message3 1200 600 400 200 0.50
+    004 Message4 1500 450 550 500 0.30
+    005 Message5 500 125 250 125 0.25
+    ;
+run;
+
+/* Step 1: Calculate quartiles for click rate */
+proc rank data=work.content_summary out=ranked_data groups=4;
+    var click_rate;
+    ranks click_quartile;
+run;
+
+/* Step 2: Create formats for color-coding based on quartiles */
+proc format;
+    value quart_fmt
+        1 = 'lightblue' /* Lowest quartile */
+        2 = 'yellow'
+        3 = 'orange'
+        4 = 'red'; /* Highest quartile */
+run;
+
+/* Step 3: Use PROC REPORT to highlight rows based on click rate quartiles */
+proc report data=ranked_data nowd;
+    column contentid message_name impression accepted neutral decline click_rate click_quartile;
+    define contentid / display 'Content ID';
+    define message_name / display 'Message Name';
+    define impression / display 'Impressions';
+    define accepted / display 'Accepted';
+    define neutral / display 'Neutral';
+    define decline / display 'Decline';
+    define click_rate / display 'Click Rate';
+    define click_quartile / noprint;
+    
+    compute before _page_ / style={background=white};
+    compute click_rate;
+        call define(_row_, 'style', 'style=[background=' quart_fmt. click_quartile ']');
+    endcomp;
+run;
+
+
+
+
+
+
+
+
+
+
+
+
 import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output
