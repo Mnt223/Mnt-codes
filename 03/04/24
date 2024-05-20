@@ -1,3 +1,41 @@
+proc report data=ranked_data nowd;
+    column contentid message_name impression accepted neutral decline click_rate click_quartile;
+    define contentid / display 'Content ID';
+    define message_name / display 'Message Name';
+    define impression / display 'Impressions';
+    define accepted / display 'Accepted';
+    define neutral / display 'Neutral';
+    define decline / display 'Decline';
+    define click_rate / display 'Click Rate' format=6.2;
+    define click_quartile / noprint;
+
+    /* Apply a style to the entire row based on the quartile of the click rate */
+    compute before;
+        /* This line is incorrect in the previous examples as it cannot reference _row_ outside a specific compute block for each row */
+    endcomp;
+
+    /* Correct compute block for applying styles based on click_quartile */
+    compute / style=[just=left foreground=black];
+        if click_quartile = 1 then call define(_row_, 'style', 'style=[background=lightblue]');
+        else if click_quartile = 2 then call define(_row_, 'style', 'style=[background=yellow]');
+        else if click_quartile = 3 then call define(_row_, 'style', 'style=[background=orange]');
+        else if click_quartile = 4 then call define(_row_, 'style', 'style=[background=red]');
+    endcomp;
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Example data with calculated click rate */
 data work.content_summary;
     input contentid $ message_name $ impression accepted neutral decline click_rate;
