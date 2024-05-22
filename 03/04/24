@@ -1,3 +1,118 @@
+import dash
+from dash import dcc, html, Input, Output
+import dash_bootstrap_components as dbc
+import pandas as pd
+import plotly.graph_objects as go
+import random
+
+# Initialize the Dash app (with optional Bootstrap styling)
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
+# Sample data setup (conversion of range to list is correct)
+data = {
+    'cusid': list(range(1, 11)),  # Correctly converted range to list
+    'nov-bucket': ['600-650', '650-700', '700-750', '750-800', '600-650', '700-750', '700-750', '750-800', '800-850', '850-900'],
+    'jan-bucket': ['600-650', '650-700', '700-750', '750-800', '650-700', '700-750', '700-750', '750-800', '850-900', '850-900'],
+    'feb-bucket': ['600-650', '700-750', '700-750', '800-850', '700-750', '700-750', '700-750', '850-900', '<600', '850-900'],
+    'apr-bucket': ['600-650', '800-850', '700-750', '<600', '750-800', '700-750', '700-750', '<600', '600-650', '650-700']
+}
+df = pd.DataFrame(data)
+
+# Adjust the bucket labels to include the month for uniqueness
+months = ['nov', 'jan', 'feb', 'apr']
+for month in months:
+    df[f'{month}-bucket'] = df[f'{month}-bucket'].apply(lambda x: f"{x} ({month})")  # Correctly adjusting labels
+
+# Dashboard layout
+app.layout = dbc.Container([
+    dbc.Row(dbc.Col(html.H1("CIBIL Score Movement Dashboard"), width={"size": 6, "offset": 3})),
+    dbc.Row(dbc.Col(dcc.Graph(id='sankey-diagram'), width=12)),
+    dbc.Row(dbc.Col(html.P("Select a view:"), width={"size": 6, "offset": 3})),
+    dbc.Row([
+        dbc.Col(dcc.Dropdown(
+            id='view-selector',
+            options=[
+                {'label': 'Overall Movement', 'value': 'all'},
+                {'label': 'Show Only Significant Changes', 'value': 'significant'}
+            ],
+            value='all',
+            clearable=False
+        ), width=4)
+    ], justify='center')
+])
+
+@app.callback(
+    Output('sankey-diagram', 'figure'),
+    Input('view-selector', 'value')
+)
+def update_sankey(selected_view):
+    sources = []
+    targets = []
+    values = []
+    labels = []
+    colors = []
+    unique_buckets = set()
+
+    for col in df.columns[1:]:
+        unique_buckets.update(df[col].unique())
+    unique_buckets = list(unique_buckets)
+    bucket_index = {bucket: i for i, bucket in enumerate(unique_buckets)}
+
+    def random_color():
+        return f'rgba({random.randint(0, 255)}, {random.randint(0, 255)}, {random.randint(0, 255)}, 0.5)'
+
+    for i in range(len(months) - 1):
+        transitions = df.groupby([f'{months[i]}-bucket', f'{months[i+1]}-bucket']).size().reset_index(name='count')
+        source_totals = transitions.groupby(f'{months[i]}-bucket')['count'].sum().to_dict()
+        for _, row in transitions.iterrows():
+            if selected_view == 'significant' and row['count'] / source_totals[row[f'{months[i]}-bucket']] < 0.1:
+                continue
+            sources.append(bucket_index[row[f'{months[i]}-bucket']])
+            targets.append(bucket_index[row[f'{months[i+1]}-bucket']])
+            values.append(row['count'])
+            percentage = (row['count'] / source_totals[row[f'{months[i]}-bucket']]) * 100
+            labels.append(f"{row[f'{months[i]}-bucket']} → {row[f'{months[i+1]}-bucket']} ({percentage:.2f}%)")
+            colors.append(random_color())
+
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=unique_buckets,
+            color="blue"
+        ),
+        link=dict(
+            source=sources,
+            target=targets,
+            value=values,
+            color=colors,
+            label=labels
+        ))])
+    fig.update_layout(title_text="Customer Movements Across CIBIL Score Buckets Over Months", font_size=10)
+    return fig
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+```
+
+### Review Findings:
+- **Data Preparation:** Correct and well-handled, ensuring unique bucket labels per month.
+- **Random Color Function:** Properly defined and used within the loop. This function adds a distinct color to each link, enhancing visual diversity.
+- **Filtering Logic:** The `update_sankey` function appropriately filters data based on the selection, either showing all data or filtering out transitions with less than 10% of the total transitions from a source.
+- **Dashboard Components and Layout:** Well-structured with clear, central titles and dropdown for user interaction.
+
+### Conclusion:
+The code is logically sound and syntactically correct. It effectively integrates the required functionalities for a dynamic, interactive dashboard visualizing CIBIL score movements over time with an option to filter the views. This setup should meet all specified requirements and is ready to deploy in a Dash environment.
+
+
+
+
+
+
+
+
+end
 filename outbox email
     to=("prachi.jain@noexternalmail.hsbc.com")
     subject="IMTD Inapp Campaign Performance"
