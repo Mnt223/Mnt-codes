@@ -1,3 +1,80 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.graph_objects as go
+
+# Load data
+data = pd.read_csv('cibil_scores.csv')
+
+# Data Preprocessing
+data['Date'] = pd.to_datetime(data['Date'])
+data = data.dropna()
+
+# Define score bands
+bins = [-float('inf'), 0, 100, 600, 650, 700, 750, 800, 850, float('inf')]
+labels = ['<0 (null)', '0-100', '101-600', '601-650', '651-700', '701-750', '751-800', '801-850', '850+']
+data['Score_Band'] = pd.cut(data['CIBIL_Score'], bins=bins, labels=labels, right=False)
+
+# Monthly Averages
+monthly_avg = data.groupby(data['Date'].dt.to_period('M'))['CIBIL_Score'].mean()
+
+# Distribution Analysis
+plt.figure(figsize=(10, 6))
+sns.histplot(data, x='CIBIL_Score', hue='Date', multiple='stack')
+plt.title('CIBIL Score Distribution Over 4 Months')
+plt.xlabel('CIBIL Score')
+plt.ylabel('Count')
+plt.show()
+
+# Segmentation Analysis
+score_band_counts = data.groupby(['Date', 'Score_Band']).size().unstack(fill_value=0)
+
+# Transition Analysis - Sankey Diagram
+# Prepare data for Sankey
+score_band_counts = score_band_counts.reset_index()
+score_band_counts['Date'] = score_band_counts['Date'].astype(str)
+
+source = []
+target = []
+value = []
+
+dates = score_band_counts['Date'].unique()
+
+for i in range(len(dates) - 1):
+    start = score_band_counts[score_band_counts['Date'] == dates[i]]
+    end = score_band_counts[score_band_counts['Date'] == dates[i + 1]]
+    
+    for band in labels:
+        source.append(labels.index(band))
+        target.append(labels.index(band) + len(labels))
+        value.append(start[band].values[0])
+
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=15,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=labels + labels
+    ),
+    link=dict(
+        source=source,
+        target=target,
+        value=value
+    )
+))
+
+fig.update_layout(title_text="Customer Transition Between CIBIL Score Bands", font_size=10)
+fig.show()
+
+
+
+
+
+
+
+
+
+
 import dash
 from dash import dcc, html, Input, Output
 import dash_bootstrap_components as dbc
