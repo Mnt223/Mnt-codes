@@ -13,6 +13,8 @@ data.columns = ['cusid', 'nov_score', 'jan_score', 'feb_score', 'apr_score']
 
 # Define score buckets
 def assign_bucket(score):
+    if pd.isna(score):
+        return '<0 (null)'
     if score < 0:
         return '<0 (null)'
     elif 0 <= score <= 100:
@@ -45,6 +47,8 @@ data['score_changed'] = (data['nov_bucket'] != data['jan_bucket']) | \
 
 # Define the simplified buckets for filter option 3
 def assign_simplified_bucket(score):
+    if pd.isna(score):
+        return '<0 (null)'
     if score < 0:
         return '<0 (null)'
     elif 0 <= score <= 100:
