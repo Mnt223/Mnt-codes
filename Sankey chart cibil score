@@ -1,0 +1,136 @@
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output
+
+# Load your data
+data = pd.read_csv('cibil_scores.csv')
+
+# Assuming the columns are 'cusid', 'nov_score', 'jan_score', 'feb_score', 'apr_score'
+data.columns = ['cusid', 'nov_score', 'jan_score', 'feb_score', 'apr_score']
+
+# Define score buckets
+def assign_bucket(score):
+    if score < 0:
+        return '<0 (null)'
+    elif 0 <= score <= 100:
+        return '0-100'
+    elif 101 <= score <= 600:
+        return '101-600'
+    elif 601 <= score <= 650:
+        return '601-650'
+    elif 651 <= score <= 700:
+        return '651-700'
+    elif 701 <= score <= 750:
+        return '701-750'
+    elif 751 <= score <= 800:
+        return '751-800'
+    elif 801 <= score <= 850:
+        return '801-850'
+    else:
+        return '850+'
+
+# Apply score buckets
+data['nov_bucket'] = data['nov_score'].apply(assign_bucket)
+data['jan_bucket'] = data['jan_score'].apply(assign_bucket)
+data['feb_bucket'] = data['feb_score'].apply(assign_bucket)
+data['apr_bucket'] = data['apr_score'].apply(assign_bucket)
+
+# Determine score changes
+data['score_changed'] = (data['nov_bucket'] != data['jan_bucket']) | \
+                        (data['jan_bucket'] != data['feb_bucket']) | \
+                        (data['feb_bucket'] != data['apr_bucket'])
+
+# Define the simplified buckets for filter option 3
+def assign_simplified_bucket(score):
+    if score < 0:
+        return '<0 (null)'
+    elif 0 <= score <= 100:
+        return '0-100'
+    elif 101 <= score <= 600:
+        return '101-600'
+    elif 601 <= score <= 650:
+        return '601-650'
+    elif 651 <= score <= 700:
+        return '651-700'
+    else:
+        return '700+'
+
+# Apply simplified buckets
+data['nov_simplified_bucket'] = data['nov_score'].apply(assign_simplified_bucket)
+data['jan_simplified_bucket'] = data['jan_score'].apply(assign_simplified_bucket)
+data['feb_simplified_bucket'] = data['feb_score'].apply(assign_simplified_bucket)
+data['apr_simplified_bucket'] = data['apr_score'].apply(assign_simplified_bucket)
+
+# Function to create Sankey diagrams
+def create_sankey(df, cols):
+    # Get unique buckets and sort them in decreasing order
+    unique_buckets = sorted(pd.unique(df[cols].values.ravel('K')), reverse=True)
+    node_indices = {bucket: i for i, bucket in enumerate(unique_buckets)}
+
+    links = []
+    for i in range(len(cols) - 1):
+        transition_counts = df.groupby([cols[i], cols[i + 1]]).size().reset_index(name='count')
+        for _, row in transition_counts.iterrows():
+            src, tgt = row[cols[i]], row[cols[i + 1]]
+            links.append(dict(source=node_indices[src], target=node_indices[tgt], value=row['count']))
+
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=unique_buckets
+        ),
+        link=dict(
+            source=[link['source'] for link in links],
+            target=[link['target'] for link in links],
+            value=[link['value'] for link in links]
+        )
+    )])
+
+    return fig
+
+# Create Sankey charts
+fig_overall = create_sankey(data, ['nov_bucket', 'jan_bucket', 'feb_bucket', 'apr_bucket'])
+fig_changed = create_sankey(data[data['score_changed']], ['nov_bucket', 'jan_bucket', 'feb_bucket', 'apr_bucket'])
+fig_simplified = create_sankey(data, ['nov_simplified_bucket', 'jan_simplified_bucket', 'feb_simplified_bucket', 'apr_simplified_bucket'])
+
+# Save figures as HTML for embedding in Dash
+fig_overall.write_html('fig_overall.html')
+fig_changed.write_html('fig_changed.html')
+fig_simplified.write_html('fig_simplified.html')
+
+# Create Dash app
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1("CIBIL Score Transitions Sankey Chart"),
+    dcc.Dropdown(
+        id='filter-dropdown',
+        options=[
+            {'label': 'Overall Score View', 'value': 'overall'},
+            {'label': 'Score Change View', 'value': 'changed'},
+            {'label': 'Simplified Buckets View', 'value': 'simplified'}
+        ],
+        value='overall'
+    ),
+    html.Div(id='sankey-container')
+])
+
+@app.callback(
+    Output('sankey-container', 'children'),
+    [Input('filter-dropdown', 'value')]
+)
+def update_sankey(filter_value):
+    if filter_value == 'overall':
+        return html.Iframe(srcDoc=open('fig_overall.html').read(), width='100%', height='600')
+    elif filter_value == 'changed':
+        return html.Iframe(srcDoc=open('fig_changed.html').read(), width='100%', height='600')
+    elif filter_value == 'simplified':
+        return html.Iframe(srcDoc=open('fig_simplified.html').read(), width='100%', height='600')
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
