@@ -1,3 +1,75 @@
+import os
+import hashlib
+import logging
+import openpyxl
+import msoffcrypto
+
+# Configure logging
+logging.basicConfig(filename='file_protection_log.txt', level=logging.INFO, format='%(asctime)s - %(message)s')
+
+# Function to generate a password
+def generate_password(filename):
+    return hashlib.md5(filename.encode()).hexdigest()
+
+# Function to password protect an Excel file
+def protect_excel_file(filepath, password):
+    wb = openpyxl.load_workbook(filepath)
+    # Save the file with password protection
+    protected_filepath = filepath.replace('.xlsx', '_protected.xlsx')
+    wb.security.workbookPassword = password
+    wb.save(protected_filepath)
+    return protected_filepath
+
+# Check and protect files in the directory
+def check_and_protect_files(directory):
+    log_path = 'file_protection_log.txt'
+    protected_files = set()
+    
+    # Load existing log entries
+    if os.path.exists(log_path):
+        with open(log_path, 'r') as log_file:
+            for line in log_file:
+                if 'Protected' in line:
+                    protected_files.add(line.split()[-1])
+
+    # Process each file in the directory
+    for filename in os.listdir(directory):
+        if filename.endswith('.xlsx') and filename not in protected_files:
+            filepath = os.path.join(directory, filename)
+            password = generate_password(filename)
+            protected_filepath = protect_excel_file(filepath, password)
+            
+            # Log the protected file and password
+            logging.info(f"Protected {filename} with password {password}. File saved as {protected_filepath}")
+            protected_files.add(filename)
+
+# Main function
+if __name__ == '__main__':
+    # Hardcoded directory path
+    directory_to_monitor = 'C:\\path\\to\\your\\excel\\files'
+    
+    if not os.path.isdir(directory_to_monitor):
+        print(f"The specified directory does not exist: {directory_to_monitor}")
+        sys.exit(1)
+    
+    check_and_protect_files(directory_to_monitor)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Certainly! Here’s a more detailed analysis plan based on your CIBIL score data structure, incorporating advanced techniques for deeper insights:
 
 ### Detailed Analysis Plan
