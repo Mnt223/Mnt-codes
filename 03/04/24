@@ -2,6 +2,76 @@ import os
 import sys
 import hashlib
 import logging
+import win32com.client as win32
+import openpyxl
+
+# Configure logging
+logging.basicConfig(filename='file_protection_log.txt', level=logging.INFO, format='%(asctime)s - %(message)s')
+
+# Function to generate a password
+def generate_password(filename):
+    return hashlib.md5(filename.encode()).hexdigest()
+
+# Function to password protect an Excel file
+def protect_excel_file(filepath, password):
+    excel = win32.Dispatch('Excel.Application')
+    excel.DisplayAlerts = False
+    workbook = excel.Workbooks.Open(filepath)
+    protected_filepath = filepath.replace('.xlsx', '_protected.xlsx')
+    workbook.SaveAs(protected_filepath, Password=password)
+    workbook.Close(SaveChanges=False)
+    excel.Quit()
+    return protected_filepath
+
+# Check and protect files in the directory
+def check_and_protect_files(directory):
+    log_path = 'file_protection_log.txt'
+    protected_files = set()
+    
+    # Load existing log entries
+    if os.path.exists(log_path):
+        with open(log_path, 'r') as log_file:
+            for line in log_file:
+                if 'Protected' in line:
+                    protected_files.add(line.split()[-1])
+
+    # Process each file in the directory
+    for filename in os.listdir(directory):
+        if filename.endswith('.xlsx') and filename not in protected_files:
+            filepath = os.path.join(directory, filename)
+            password = generate_password(filename)
+            protected_filepath = protect_excel_file(filepath, password)
+            
+            # Log the protected file and password
+            logging.info(f"Protected {filename} with password {password}. File saved as {protected_filepath}")
+            protected_files.add(filename)
+
+# Main function
+if __name__ == '__main__':
+    # Hardcoded directory path
+    directory_to_monitor = 'C:\\path\\to\\your\\excel\\files'
+    
+    if not os.path.isdir(directory_to_monitor):
+        print(f"The specified directory does not exist: {directory_to_monitor}")
+        sys.exit(1)
+    
+    check_and_protect_files(directory_to_monitor)
+
+
+
+
+
+
+
+
+
+
+
+ipt
+import os
+import sys
+import hashlib
+import logging
 import openpyxl
 import msoffcrypto
 
