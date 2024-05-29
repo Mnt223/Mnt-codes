@@ -1,3 +1,119 @@
+import pandas as pd
+import plotly.graph_objects as go
+
+# Specify the file location
+file_path = 'path_to_your_file/simple.xlsx'  # Replace with your actual file path
+
+# Load your data from Excel
+data = pd.read_excel(file_path, engine='openpyxl')
+
+# Ensure the columns are named correctly
+data.columns = ['cusid', 'nov_score', 'jan_score', 'feb_score', 'apr_score']
+
+# Define score buckets
+def assign_bucket(score):
+    if pd.isna(score):
+        return '<0 (null)'
+    if score < 0:
+        return '<0 (null)'
+    elif 0 <= score <= 100:
+        return '0-100'
+    elif 101 <= score <= 600:
+        return '101-600'
+    elif 601 <= score <= 650:
+        return '601-650'
+    elif 651 <= score <= 700:
+        return '651-700'
+    elif 701 <= score <= 750:
+        return '701-750'
+    elif 751 <= score <= 800:
+        return '751-800'
+    elif 801 <= score <= 850:
+        return '801-850'
+    else:
+        return '850+'
+
+# Apply score buckets
+data['nov_bucket'] = data['nov_score'].apply(assign_bucket)
+data['jan_bucket'] = data['jan_score'].apply(assign_bucket)
+data['feb_bucket'] = data['feb_score'].apply(assign_bucket)
+data['apr_bucket'] = data['apr_score'].apply(assign_bucket)
+
+# Determine score changes
+data['score_changed'] = (data['nov_bucket'] != data['jan_bucket']) | \
+                        (data['jan_bucket'] != data['feb_bucket']) | \
+                        (data['feb_bucket'] != data['apr_bucket'])
+
+# Define the simplified buckets for filter option 3
+def assign_simplified_bucket(score):
+    if pd.isna(score):
+        return '<0 (null)'
+    if score < 0:
+        return '<0 (null)'
+    elif 0 <= score <= 100:
+        return '0-100'
+    elif 101 <= score <= 600:
+        return '101-600'
+    elif 601 <= score <= 650:
+        return '601-650'
+    elif 651 <= score <= 700:
+        return '651-700'
+    else:
+        return '700+'
+
+# Apply simplified buckets
+data['nov_simplified_bucket'] = data['nov_score'].apply(assign_simplified_bucket)
+data['jan_simplified_bucket'] = data['jan_score'].apply(assign_simplified_bucket)
+data['feb_simplified_bucket'] = data['feb_score'].apply(assign_simplified_bucket)
+data['apr_simplified_bucket'] = data['apr_score'].apply(assign_simplified_bucket)
+
+# Function to create Sankey diagrams
+def create_sankey(df, cols):
+    unique_buckets = sorted(pd.unique(df[cols].values.ravel('K')), reverse=True)
+    node_indices = {bucket: i for i, bucket in enumerate(unique_buckets)}
+
+    links = []
+    for i in range(len(cols) - 1):
+        transition_counts = df.groupby([cols[i], cols[i + 1]]).size().reset_index(name='count')
+        for _, row in transition_counts.iterrows():
+            src, tgt = row[cols[i]], row[cols[i + 1]]
+            links.append(dict(source=node_indices[src], target=node_indices[tgt], value=row['count']))
+
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=unique_buckets
+        ),
+        link=dict(
+            source=[link['source'] for link in links],
+            target=[link['target'] for link in links],
+            value=[link['value'] for link in links]
+        )
+    )])
+
+    return fig
+
+# Create Sankey charts
+fig_overall = create_sankey(data, ['nov_bucket', 'jan_bucket', 'feb_bucket', 'apr_bucket'])
+fig_changed = create_sankey(data[data['score_changed']], ['nov_bucket', 'jan_bucket', 'feb_bucket', 'apr_bucket'])
+fig_simplified = create_sankey(data, ['nov_simplified_bucket', 'jan_simplified_bucket', 'feb_simplified_bucket', 'apr_simplified_bucket'])
+
+# Show figures
+fig_overall.show()
+fig_changed.show()
+fig_simplified.show()
+
+
+
+
+
+
+
+
+
+
 import os
 import pandas as pd
 import numpy as np
