@@ -1,4 +1,74 @@
 import pandas as pd
+import matplotlib.pyplot as plt
+
+# Create dummy data
+data = pd.DataFrame({
+    'cusid': range(1, 101),
+    'nov_bucket': ['101-600']*20 + ['0-100']*15 + ['601-650']*10 + ['651-700']*10 + ['701-750']*15 + ['751-800']*10 + ['801-850']*10 + ['850+']*10,
+    'jan_bucket': ['101-600']*18 + ['0-100']*18 + ['601-650']*12 + ['651-700']*12 + ['701-750']*13 + ['751-800']*10 + ['801-850']*10 + ['850+']*7,
+    'feb_bucket': ['101-600']*15 + ['0-100']*20 + ['601-650']*15 + ['651-700']*10 + ['701-750']*10 + ['751-800']*10 + ['801-850']*10 + ['850+']*10,
+    'apr_bucket': ['101-600']*17 + ['0-100']*17 + ['601-650']*14 + ['651-700']*12 + ['701-750']*15 + ['751-800']*10 + ['801-850']*10 + ['850+']*5
+})
+
+# Define the ordered bands
+bands = [
+    '<0 (null)',
+    '0-100',
+    '101-600',
+    '601-650',
+    '651-700',
+    '701-750',
+    '751-800',
+    '801-850',
+    '850+'
+]
+
+# Distribution of buckets for each month
+bucket_counts_nov = data['nov_bucket'].value_counts().reindex(bands).fillna(0)
+bucket_counts_jan = data['jan_bucket'].value_counts().reindex(bands).fillna(0)
+bucket_counts_feb = data['feb_bucket'].value_counts().reindex(bands).fillna(0)
+bucket_counts_apr = data['apr_bucket'].value_counts().reindex(bands).fillna(0)
+
+# Combine the value counts into a single DataFrame
+bucket_counts = pd.DataFrame({
+    'November': bucket_counts_nov,
+    'January': bucket_counts_jan,
+    'February': bucket_counts_feb,
+    'April': bucket_counts_apr
+})
+
+# Transform the DataFrame to a format suitable for a line plot
+bucket_counts = bucket_counts.reset_index().melt(id_vars='index', var_name='Month', value_name='Count')
+bucket_counts = bucket_counts.rename(columns={'index': 'Bucket'})
+
+# Plot the data as a single line chart
+plt.figure(figsize=(12, 8))
+
+for bucket in bands:
+    subset = bucket_counts[bucket_counts['Bucket'] == bucket]
+    plt.plot(subset['Month'], subset['Count'], marker='o', label=bucket)
+
+plt.xlabel('Month')
+plt.ylabel('Number of Customers')
+plt.title('Distribution of CIBIL Score Buckets Over Months')
+plt.legend(title='Buckets', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.xticks(rotation=45)
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import plotly.graph_objects as go
 
 # Specify the file location
