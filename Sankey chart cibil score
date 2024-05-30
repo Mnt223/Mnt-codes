@@ -1,3 +1,12 @@
+SELECT *
+FROM your_table
+WHERE your_date_column >= date_trunc('month', now())
+AND your_date_column < date_trunc('day', now()) + interval '1 day';
+
+
+
+
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
