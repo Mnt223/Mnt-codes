@@ -1,5 +1,12 @@
 SELECT *
 FROM your_table
+WHERE your_date_column >= (current_date - (date_part('day', current_date) - 1) * interval '1 day')
+AND your_date_column <= current_date;
+
+
+
+SELECT *
+FROM your_table
 WHERE your_date_column >= date_trunc('month', now())
 AND your_date_column < date_trunc('day', now()) + interval '1 day';
 
