@@ -1,3 +1,36 @@
+proc sql;
+    create table Metrics as
+    select 
+        tag,
+        prod_opt,
+        count(distinct customer_id) as Cust_count,
+        sum(amount) as Total_Amount
+    from conversion_final
+    group by tag, prod_opt;
+quit;
+
+data Metrics;
+    set Metrics;
+    combined_value = catx(' | ', Cust_count, Total_Amount);
+run;
+
+proc transpose data=Metrics out=Metrics_Transposed(drop=_NAME_);
+    by tag;
+    id prod_opt;
+    var combined_value;
+run;
+
+data Metrics_Final;
+    set Metrics_Transposed;
+    Total = sum(of 'Credit Cards'n, 'Investments'n, 'Personal Lending'n, 'Term Deposit'n, 'Home Loans'n);
+run;
+
+
+
+
+
+
+
 import pandas as pd
 import plotly.graph_objects as go
 import random
