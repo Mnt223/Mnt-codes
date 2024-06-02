@@ -29,6 +29,105 @@ sources = []
 targets = []
 values = []
 labels = []
+hover_text = []
+link_colors = []
+
+# Unique bucket names for mapping, keeping the order
+unique_buckets = sorted(bucket_order, key=bucket_order.get)
+bucket_index = {bucket: i for i, bucket in enumerate(unique_buckets)}
+
+# Generate a different color for each unique bucket
+def random_color():
+    return f'rgba({random.randint(0, 255)}, {random.randint(0, 255)}, {random.randint(0, 255)}, 0.8)'
+
+bucket_colors = {bucket: random_color() for bucket in unique_buckets}
+
+# Generate the source, target, value, color, and labels lists
+for i in range(len(months) - 1):
+    transitions = df.groupby([f'{months[i]}-bucket', f'{months[i+1]}-bucket']).size().reset_index(name='count')
+    source_totals = transitions.groupby(f'{months[i]}-bucket')['count'].sum().to_dict()
+    for _, row in transitions.iterrows():
+        sources.append(bucket_index[row[f'{months[i]}-bucket']])
+        targets.append(bucket_index[row[f'{months[i+1]}-bucket']])
+        values.append(row['count'])
+
+        # Calculate the percentage change within each source bucket
+        source_total = source_totals[row[f'{months[i]}-bucket']]
+        percentage = (row['count'] / source_total) * 100
+        labels.append(f"{row[f'{months[i]}-bucket']} → {row[f'{months[i+1]}-bucket']} ({percentage:.2f}%)")
+        
+        # Detailed hover information
+        hover_text.append(f"<b>Transition:</b> {row[f'{months[i]}-bucket']} to {row[f'{months[i+1]}-bucket']}<br>"
+                          f"<b>Count:</b> {row['count']}<br>"
+                          f"<b>Percentage:</b> {percentage:.2f}%")
+
+        link_colors.append(bucket_colors[row[f'{months[i]}-bucket']])  # Use the color of the source bucket
+
+# Create the Sankey diagram
+fig = go.Figure(data=[go.Sankey(
+    node=dict(
+        pad=20,
+        thickness=30,
+        line=dict(color="black", width=0.7),
+        label=unique_buckets,
+        color=[bucket_colors[bucket] for bucket in unique_buckets]  # Assign colors to nodes
+    ),
+    link=dict(
+        source=sources,
+        target=targets,
+        value=values,
+        color=link_colors,
+        hoverinfo="text",
+        customdata=labels,
+        hovertemplate='%{customdata}<extra></extra>'
+    ))])
+
+fig.update_layout(
+    title_text="Customer Movements Across CIBIL Score Buckets Over Months",
+    font_size=12,
+    plot_bgcolor='white',
+    paper_bgcolor='white'
+)
+
+fig.show()o
+
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objects as go
+import random
+
+# Sample data setup
+data = {
+    'cusid': range(1, 11),
+    'nov-bucket': ['600-650', '650-700', '700-750', '750-800', '600-650', '700-750', '700-750', '750-800', '800-850', '850-900'],
+    'jan-bucket': ['600-650', '650-700', '700-750', '750-800', '650-700', '700-750', '700-750', '750-800', '850-900', '850-900'],
+    'feb-bucket': ['600-650', '700-750', '700-750', '800-850', '700-750', '700-750', '700-750', '850-900', '<600', '850-900'],
+    'apr-bucket': ['600-650', '800-850', '700-750', '<600', '750-800', '700-750', '700-750', '<600', '600-650', '650-700']
+}
+
+df = pd.DataFrame(data)
+
+# Adjust the bucket labels to include the month for uniqueness
+months = ['nov', 'jan', 'feb', 'apr']
+for month in months:
+    df[f'{month}-bucket'] = df[f'{month}-bucket'].apply(lambda x: f"{x} ({month})")
+
+# Define the desired order of buckets
+desired_order = ['850-900', '800-850', '750-800', '700-750', '650-700', '600-650', '<600', 'nan']
+
+# Create a dictionary to map bucket labels to their order index
+bucket_order = {f"{bucket} ({month})": i for i, bucket in enumerate(desired_order) for month in months}
+
+# Prepare lists to hold source, target, values, and colors
+sources = []
+targets = []
+values = []
+labels = []
 link_colors = []
 
 # Unique bucket names for mapping, keeping the order
