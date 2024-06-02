@@ -1,3 +1,30 @@
+
+# Distribution of buckets for each month
+bucket_counts_nov = data_buckets['nov-bucket'].value_counts().sort_index()
+bucket_counts_jan = data_buckets['jan-bucket'].value_counts().sort_index()
+bucket_counts_feb = data_buckets['feb-bucket'].value_counts().sort_index()
+bucket_counts_apr = data_buckets['apr-bucket'].value_counts().sort_index()
+
+bucket_counts = pd.DataFrame({
+    'November': bucket_counts_nov,
+    'January': bucket_counts_jan,
+    'February': bucket_counts_feb,
+    'April': bucket_counts_apr
+}).fillna(0)
+
+bucket_counts
+
+
+
+
+
+
+
+
+
+
+
+
 SELECT *
 FROM your_table
 WHERE your_date_column >= (current_date - (date_part('day', current_date) - 1) * interval '1 day')
