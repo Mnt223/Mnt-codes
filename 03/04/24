@@ -1,3 +1,29 @@
+%macro append_files(start_date=24MAY2024, end_date=%sysfunc(today()));
+
+    %let date_fmt = %sysfunc(inputn(&start_date, date9.));
+
+    %do %while (&date_fmt <= %sysfunc(inputn(&end_date, date9.)));
+        %let current_date = %sysfunc(putn(&date_fmt, ddmmyy6.));
+        %let filepath = path/Ins_&current_date..sas7bdat;
+
+        %if %sysfunc(fileexist(&filepath)) %then %do;
+            proc append base=final_data data=&filepath force;
+            run;
+        %end;
+
+        /* Increment date by 1 day */
+        %let date_fmt = %eval(&date_fmt + 1);
+    %end;
+
+%mend append_files;
+
+%append_files();
+
+
+
+
+
+
 import os
 import sys
 import hashlib
