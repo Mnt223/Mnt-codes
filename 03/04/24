@@ -1,5 +1,43 @@
 %macro append_files(start_date=24MAY2024, end_date=%sysfunc(today()));
 
+    /* Convert start and end dates to SAS date values */
+    %let start_date_fmt = %sysfunc(inputn(&start_date, date9.));
+    %let end_date_fmt = %sysfunc(inputn(&end_date, date9.));
+
+    /* Loop from the start date to the end date */
+    %do date = &start_date_fmt %to &end_date_fmt;
+        /* Convert the current date to ddmmyy6. format for folder naming */
+        %let current_date = %sysfunc(putn(&date, ddmmyy6.));
+
+        /* Set the folder path based on the current date */
+        %let folderpath = path/ins_&current_date;
+
+        /* Check if the folder exists */
+        %if %sysfunc(fileexist(&folderpath)) %then %do;
+            /* Assuming all files in the folder need to be appended */
+            proc datasets lib=work nolist;
+                append base=final_data data=work.&folderpath..sas7bdat;
+            quit;
+        %end;
+    %end;
+
+%mend append_files;
+
+/* Call the macro with the start and end dates */
+%append_files(start_date=24MAY2024);
+
+
+
+
+
+
+
+
+
+
+
+%macro append_files(start_date=24MAY2024, end_date=%sysfunc(today()));
+
     %let date_fmt = %sysfunc(inputn(&start_date, date9.));
 
     %do %while (&date_fmt <= %sysfunc(inputn(&end_date, date9.)));
