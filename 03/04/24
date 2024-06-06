@@ -1,3 +1,164 @@
+/* Step 1: Extract Data from PostgreSQL */
+libname mypg odbc noprompt="Driver={PostgreSQL};Database=your_db;Server=your_server;Port=5432;Uid=your_username;Pwd=your_password;";
+
+proc sql;
+    create table sas_data as 
+    select date, customer_id
+    from mypg.your_table
+    where outcome in ('accepted', 'neutral');
+quit;
+
+/* Remove duplicates */
+proc sort data=sas_data nodupkey;
+    by customer_id;
+run;
+
+/* Step 2: Filter Main Dataset */
+data main_data;
+    set your_main_dataset;
+run;
+
+proc sql;
+    create table filtered_data as 
+    select a.*, b.*
+    from sas_data a
+    left join main_data b
+    on a.customer_id = b.customer_id;
+quit;
+
+/* Step 3: Handle Log Dataset */
+%let log_dataset = work.log_data;
+
+%if %sysfunc(exist(&log_dataset)) %then %do;
+    data log;
+        set &log_dataset;
+    run;
+%end;
+%else %do;
+    data log;
+        length customer_id $50.;
+        if 0 then output;
+    run;
+%end;
+
+/* Step 4: Filter New Customers and Update Log */
+data new_customers;
+    merge filtered_data(in=a) log(in=b);
+    by customer_id;
+    if a and not b then output;
+run;
+
+data log;
+    set log new_customers;
+run;
+
+data &log_dataset;
+    set log;
+run;
+
+/* Step 5: Segregate Data Based on Source */
+data call_centre;
+    set new_customers;
+    where source = 'Call Centre';
+run;
+
+proc sql;
+    create table branch_data as
+    select *, final_branch
+    from new_customers
+    where source = 'Branch';
+quit;
+
+proc sort data=branch_data;
+    by final_branch;
+run;
+
+/* Step 6: Export Data to Excel */
+proc export data=call_centre
+    outfile='your_excel_file.xlsx'
+    dbms=xlsx replace;
+    sheet='Call Centre';
+run;
+
+proc sql;
+    select distinct final_branch into :branch_list separated by ' '
+    from branch_data;
+quit;
+
+%macro export_branches;
+    %let count = 1;
+    %let branch = %scan(&branch_list, &count);
+    %do %while (&branch ne );
+        proc export data=branch_data(where=(final_branch="&branch"))
+            outfile='your_excel_file.xlsx'
+            dbms=xlsx replace;
+            sheet="&branch";
+        run;
+        %let count = %eval(&count + 1);
+        %let branch = %scan(&branch_list, &count);
+    %end;
+%mend;
+
+%export_branches;
+
+/* Step 7: Generate Summary Tables */
+proc sql;
+    create table call_centre_summary as
+    select count(*) as count
+    from new_customers
+    where source = 'Call Centre';
+quit;
+
+proc sql;
+    create table branch_summary as
+    select final_branch, count(*) as count
+    from new_customers
+    where source = 'Branch'
+    group by final_branch;
+quit;
+
+/* Step 8: Compose and Send the Email */
+filename mymail email
+    to='recipient@example.com'
+    subject='Lead Summary for Pre-Approved Cards'
+    type='text/html';
+
+data _null_;
+    file mymail;
+    put '<html>';
+    put '<body>';
+    put '<h2>Shared Lead Summary for Pre-Approved Cards</h2>';
+    put '<p>The following is the shared lead summary for pre-approved cards for Branch and Call Centre.</p>';
+    
+    /* Include Call Centre Summary */
+    put '<h3>Call Centre</h3>';
+    put '<table border="1">';
+    put '<tr><th>Source</th><th>Count</th></tr>';
+    set call_centre_summary;
+    put '<tr><td>Call Centre</td><td>' count '</td></tr>';
+    put '</table>';
+    
+    /* Include Branch Summary */
+    put '<h3>Branch</h3>';
+    put '<table border="1">';
+    put '<tr><th>Branch</th><th>Count</th></tr>';
+    do until (eof);
+        set branch_summary end=eof;
+        put '<tr><td>' final_branch '</td><td>' count '</td></tr>';
+    end;
+    put '</table>';
+    
+    put '</body>';
+    put '</html>';
+run;
+
+
+
+
+
+
+
+
 %macro append_files(start_date=24MAY2024, end_date=%sysfunc(today()));
 
     /* Convert start and end dates to SAS date values */
