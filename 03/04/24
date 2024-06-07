@@ -1,3 +1,54 @@
+filename mymail email
+    to='recipient@example.com'
+    subject='Lead Summary for Pre-Approved Cards'
+    type='text/html';
+
+data _null_;
+    file mymail;
+    put '<html>';
+    put '<body>';
+    put '<h2>Shared Lead Summary for Pre-Approved Cards</h2>';
+    put '<p>The following is the shared lead summary for pre-approved cards for Branch and Call Centre.</p>';
+    
+    /* Include Call Centre Summary */
+    put '<h3>Call Centre</h3>';
+    put '<table border="1">';
+    put '<tr><th>Source</th><th>Count</th></tr>';
+run;
+
+data _null_;
+    set call_centre_summary;
+    file mymail mod;
+    put '<tr><td>Call Centre</td><td>' count '</td></tr>';
+run;
+
+data _null_;
+    file mymail mod;
+    put '</table>';
+    
+    /* Include Branch Summary */
+    put '<h3>Branch</h3>';
+    put '<table border="1">';
+    put '<tr><th>Branch</th><th>Count</th></tr>';
+run;
+
+data _null_;
+    set branch_summary end=eof;
+    file mymail mod;
+    put '<tr><td>' final_branch '</td><td>' count '</td></tr>';
+    if eof then put '</table>';
+run;
+
+data _null_;
+    file mymail mod;
+    put '</body>';
+    put '</html>';
+run;
+
+
+
+
+
 /* Define the library for the log dataset */
 libname mylib '/your/path/for/log_dataset';
 
