@@ -1,3 +1,82 @@
+Creating a clear and structured book of work can be a powerful tool to showcase your projects and responsibilities effectively. Here’s a draft based on the details you provided for your book of work. You can use this as a template and expand or refine each point with additional details as needed:
+
+### Book of Work
+
+#### **Project 1: CRM 2.0**
+1. **Automation of Communication Channels**:
+   - Successfully automated daily code executions for in-app, SMS, and email communications to enhance customer relationship management.
+   - Pending integration of WhatsApp due to manual processing limitations.
+
+2. **Lead Distribution System**:
+   - Developed and implemented a system for distributing daily leads for pill and insurance products to business units according to specified requirements.
+
+3. **Power BI Development**:
+   - In progress: Developing Power BI dashboards to provide insights and analytics.
+   - Addressing SharePoint integration issues to automate data refresh processes, currently manual.
+   - Planning to integrate monthly WhatsApp data into Power BI for comprehensive reporting once automation is achieved.
+
+#### **Project 2: Pega BAU (Business As Usual)**
+1. **DIAO (Drop-Off) Lead Management**:
+   - Daily sharing of DIAO drop-off leads to premier and non-premier business segments, enhancing lead management and prioritization.
+
+2. **Daily Task Management**:
+   - Aligning and managing daily tasks within the Pega framework to support ongoing business operations.
+
+#### **Project 3: Non-Pega Initiatives**
+1. **SMS Volume Tracking and Data Management**:
+   - Conducted data preparation and coding for SMS communication tracking.
+   - Daily data sharing via SharePoint, ensuring transparency and accessibility.
+
+2. **Power BI Visualization**:
+   - Developed initial Power BI visualization to display Year-To-Date data stored in WinSCP.
+   - Currently enhancing the dashboard with additional metrics for more detailed insights.
+
+3. **Email and WhatsApp Volume Tracking**:
+   - In-progress coding for an email tracker to monitor email delivery metrics.
+   - Planned development of a Power BI visualization for WhatsApp volume tracking to complete the communication tracking suite.
+
+#### **General Contributions**
+1. **Data Preparation and Logic Development**:
+   - Spearheaded the data preparation and logic formulation for all projects, establishing a solid foundation for analytics and reporting.
+
+2. **Automation and Process Improvement**:
+   - Developed automated processes for daily ongoing summary creation, significantly reducing manual effort and improving accuracy.
+
+#### **Future Enhancements**
+- Outline potential upgrades and integrations that will further automate processes and expand analytical capabilities.
+
+Each of these points should ideally be backed up by specific outcomes or metrics that demonstrate the impact of your work. You can also include any challenges faced and how they were overcome, which provides depth to your professional narrative.
+
+
+You can add details about your daily BAU activities to your book of work to highlight the consistency and breadth of your day-to-day responsibilities. Here’s how you can incorporate these activities:
+
+#### **Daily Business-As-Usual (BAU) Activities**
+1. **Data Creation and Management**:
+   - Handle daily responsibilities involving the creation and management of data related to Pega and various campaigns.
+   - Utilize sophisticated data handling and processing techniques to ensure accuracy and relevance of data outputs.
+
+2. **Lead Preparation and Distribution**:
+   - Daily preparation and distribution of leads to various departments, tailored to specific business needs and goals.
+   - Implement and maintain stringent quality control measures to ensure the integrity and utility of the data provided.
+
+3. **Ad-Hoc Requests and Problem Solving**:
+   - Address urgent ad-hoc requests from different business units, demonstrating flexibility and problem-solving skills.
+   - Quickly adapt to changing priorities and requirements, maintaining high productivity and responsiveness.
+
+4. **Collaboration and Communication**:
+   - Collaborate closely with department heads and team members to align on data needs and outputs.
+   - Ensure transparent communication and reporting to keep all stakeholders informed of progress and issues.
+
+Adding these points gives a more comprehensive view of your role, emphasizing your capability to manage both planned projects and the dynamic demands of daily operations. This section showcases your ability to juggle multiple tasks efficiently and adapt to new challenges, which is crucial for leadership and advanced roles in data science and analytics.
+
+
+
+
+
+
+
+
+
 filename mymail email
     to='recipient@example.com'
     subject='Lead Summary for Pre-Approved Cards'
