@@ -1,3 +1,53 @@
+Understood. To create a dynamic donut chart in Power BI that changes with the application of filters and provides a visual representation even for a single variable, you can use a technique that simulates the effect of having more than one value. Here’s how you can achieve this:
+
+1. **Create a Measure for Total Value:**
+   - Create a measure to calculate the total value without any filters.
+
+     ```DAX
+     TotalValue = SUM('YourTable'[YourVariable])
+     ```
+
+2. **Create a Measure for Filtered Value:**
+   - Create a measure to calculate the value based on the current filters.
+
+     ```DAX
+     FilteredValue = CALCULATE(SUM('YourTable'[YourVariable]), ALLSELECTED('YourTable'))
+     ```
+
+3. **Create a Measure for the Remaining Value:**
+   - Create a measure to represent the difference between the total value and the filtered value. This will give the donut chart a sense of change.
+
+     ```DAX
+     RemainingValue = [TotalValue] - [FilteredValue]
+     ```
+
+4. **Create a Table for Donut Chart:**
+   - Create a new table to hold the values for the donut chart.
+
+     ```DAX
+     DonutChartTable = 
+     UNION(
+         ROW("Category", "Filtered", "Value", [FilteredValue]),
+         ROW("Category", "Remaining", "Value", [RemainingValue])
+     )
+     ```
+
+5. **Set Up the Donut Chart:**
+   - Add a donut chart to your report.
+   - Use the `DonutChartTable` as the data source for the donut chart.
+   - Drag the `Category` column to the Legend field well.
+   - Drag the `Value` column to the Values field well.
+
+With this setup, the donut chart will display two slices: one for the filtered value and one for the remaining value. As filters are applied, the sizes of these slices will change accordingly, providing a visual representation of the changes. This approach ensures that the donut chart dynamically updates and reflects the impact of the filters on your single variable, making your dashboard more visually engaging.
+
+
+
+
+
+
+
+
+
 Creating a clear and structured book of work can be a powerful tool to showcase your projects and responsibilities effectively. Here’s a draft based on the details you provided for your book of work. You can use this as a template and expand or refine each point with additional details as needed:
 
 ### Book of Work
