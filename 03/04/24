@@ -1,3 +1,71 @@
+Sub CreateBranchSheets()
+    Dim ws As Worksheet
+    Dim newWs As Worksheet
+    Dim branchName As String
+    Dim lastRow As Long
+    Dim i As Long
+    Dim uniqueBranches As Collection
+    Dim cell As Range
+    Dim sourceWs As Worksheet
+    
+    Set sourceWs = ThisWorkbook.Sheets("Inapp_Branch") ' Use "Inapp_Branch" as the source sheet
+    lastRow = sourceWs.Cells(sourceWs.Rows.Count, "G").End(xlUp).Row
+    
+    ' Create a collection of unique branch names
+    Set uniqueBranches = New Collection
+    On Error Resume Next
+    For i = 2 To lastRow ' Assuming headers are in row 1
+        branchName = sourceWs.Cells(i, "G").Value
+        If branchName <> "" Then
+            uniqueBranches.Add branchName, CStr(branchName)
+        End If
+    Next i
+    On Error GoTo 0
+    
+    ' Create a new sheet for each branch
+    For Each branchName In uniqueBranches
+        ' Check if the sheet already exists
+        On Error Resume Next
+        Set newWs = ThisWorkbook.Sheets(CStr(branchName))
+        On Error GoTo 0
+        
+        ' If the sheet does not exist, create it
+        If newWs Is Nothing Then
+            Set newWs = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+            newWs.Name = CStr(branchName)
+        End If
+        
+        ' Clear any existing data in the new sheet
+        newWs.Cells.Clear
+        
+        ' Copy headers
+        sourceWs.Rows(1).Copy Destination:=newWs.Rows(1)
+        
+        ' Copy rows for the branch
+        For i = 2 To lastRow
+            If sourceWs.Cells(i, "G").Value = branchName Then
+                sourceWs.Rows(i).Copy Destination:=newWs.Rows(newWs.Cells(newWs.Rows.Count, "A").End(xlUp).Row + 1)
+            End If
+        Next i
+    Next branchName
+    
+    MsgBox "Branch sheets created successfully!"
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Understood. To create a dynamic donut chart in Power BI that changes with the application of filters and provides a visual representation even for a single variable, you can use a technique that simulates the effect of having more than one value. Here’s how you can achieve this:
 
 1. **Create a Measure for Total Value:**
