@@ -1,3 +1,60 @@
+/* Step 1: Import your data */
+/* Assuming your data is already imported and named 'customer_data' */
+
+/* Step 2: Filter the data for the specific periods */
+data period1 period2;
+    set customer_data;
+    format date yymmdd10.;
+    if '01JAN2023'd <= open_date <= '31MAR2023'd then output period1;
+    if '01JAN2024'd <= open_date <= '31MAR2024'd then output period2;
+run;
+
+/* Step 3: Aggregate the data by employer */
+proc sql;
+    create table agg_period1 as
+    select employer,
+           sum(count_of_customers) as total_customers_2023,
+           sum(amount) as total_amount_2023
+    from period1
+    group by employer;
+    
+    create table agg_period2 as
+    select employer,
+           sum(count_of_customers) as total_customers_2024,
+           sum(amount) as total_amount_2024
+    from period2
+    group by employer;
+quit;
+
+/* Step 4: Combine and compare the aggregated data */
+proc sql;
+    create table comparison as
+    select coalesce(a.employer, b.employer) as employer,
+           a.total_customers_2023,
+           b.total_customers_2024,
+           (b.total_customers_2024 - a.total_customers_2023) as customer_diff,
+           a.total_amount_2023,
+           b.total_amount_2024,
+           (b.total_amount_2024 - a.total_amount_2023) as amount_diff
+    from agg_period1 as a
+    full join agg_period2 as b
+    on a.employer = b.employer;
+quit;
+
+/* Display the comparison table */
+proc print data=comparison;
+run;
+
+
+
+
+
+
+
+
+
+
+
 Sub CreateBranchSheets()
     Dim ws As Worksheet
     Dim newWs As Worksheet
