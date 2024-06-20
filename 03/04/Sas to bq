@@ -1,5 +1,4 @@
 import re
-import sqlparse
 import logging
 
 # Configure logging
@@ -16,30 +15,36 @@ def convert_var_declaration(sas_code):
 
 # Function to convert SAS set statements to BigQuery SQL
 def convert_set_statement(sas_code):
-    match = re.search(r'set\s+(\w+)\.(\w+);', sas_code, re.IGNORECASE)
+    match = re.search(r'set\s+(\w+)\.(\w+)', sas_code, re.IGNORECASE)
     if match:
         libname, dataset = match.group(1), match.group(2)
         logging.info(f"Converting set statement to SELECT: {libname}.{dataset}")
         return f"SELECT * FROM {libname}.{dataset}"
     return ""
 
+# Function to convert KEEP, DROP, and RENAME statements
+def convert_keep_drop_rename(sas_code):
+    # Convert KEEP
+    keep_pattern = re.compile(r'\(keep\s*=\s*\((.*?)\)\)', re.IGNORECASE)
+    sas_code = keep_pattern.sub(lambda m: f"SELECT {m.group(1)}", sas_code)
+    
+    # Convert DROP
+    drop_pattern = re.compile(r'\(drop\s*=\s*\((.*?)\)\)', re.IGNORECASE)
+    sas_code = drop_pattern.sub(lambda m: f"SELECT * EXCEPT ({m.group(1)})", sas_code)
+    
+    # Convert RENAME
+    rename_pattern = re.compile(r'\(rename\s*=\s*\((.*?)\)\)', re.IGNORECASE)
+    sas_code = rename_pattern.sub(lambda m: ', '.join(f'{old} AS {new}' for old, new in re.findall(r'(\w+)\s*=\s*(\w+)', m.group(1))), sas_code)
+    
+    logging.info("Converting KEEP, DROP, and RENAME statements")
+    return sas_code
+
 # Function to convert if-then-else statements
 def convert_if_else(sas_code):
     sas_code = re.sub(r'if\s+(.+?)\s+then\s+(.+?);', r'CASE WHEN \1 THEN \2', sas_code, flags=re.IGNORECASE)
-    sas_code = re.sub(r'else\s+(.+?);', r'ELSE \1 END,', sas_code, flags=re.IGNORECASE)
+    sas_code = re.sub(r'else\s+(.+?);', r'ELSE \1 END', sas_code, flags=re.IGNORECASE)
     logging.info("Converting if-then-else statements")
     return sas_code
-
-# Function to convert SAS procedures (e.g., proc sql)
-def convert_proc_sql(sas_code):
-    proc_sql_pattern = re.compile(r'proc\s+sql;\s*(.*?)\s*quit;', re.IGNORECASE | re.DOTALL)
-    match = proc_sql_pattern.search(sas_code)
-    if match:
-        sql_statements = match.group(1).strip()
-        sql_statements = convert_sas_functions(sql_statements)
-        logging.info("Converting proc sql block")
-        return sql_statements
-    return ""
 
 # Function to convert SAS functions to BigQuery SQL
 def convert_sas_functions(sas_code):
@@ -64,6 +69,18 @@ def convert_sas_functions(sas_code):
         sas_code = re.sub(r'\b' + sas_func + r'\b', bq_func, sas_code, flags=re.IGNORECASE)
     logging.info("Converting SAS functions to BigQuery functions")
     return sas_code
+
+# Function to convert proc sql to BigQuery SQL
+def convert_proc_sql(sas_code):
+    proc_sql_pattern = re.compile(r'proc\s+sql;\s*(.*?)\s*quit;', re.IGNORECASE | re.DOTALL)
+    match = proc_sql_pattern.search(sas_code)
+    if match:
+        sql_statements = match.group(1).strip()
+        sql_statements = convert_sas_functions(sql_statements)
+        sql_statements = convert_keep_drop_rename(sql_statements)
+        logging.info("Converting proc sql block")
+        return sql_statements
+    return ""
 
 # Function to convert proc freq and proc means
 def convert_proc_freq_means(sas_code):
@@ -262,59 +279,89 @@ def convert_sas_to_bigquery(sas_code):
     bigquery_sql = handle_advanced_joins(bigquery_sql)
     return bigquery_sql
 
-# Sample SAS code for testing
+# Complex SAS code for testing
 sas_code = """
-%macro example_macro;
-data work.new_dataset;
-    set libname.old_dataset;
-    if age > 30 then group = 'A';
-    else group = 'B';
-run;
+%macro complex_macro;
+    /* Data Step with KEEP, DROP, and RENAME */
+    data work.new_dataset (keep=id age group salary rename=(age=years));
+        set libname.old_dataset (drop=gender);
+        /* Conditional Logic */
+        if years > 30 then group = 'A';
+        else if years > 20 then group = 'B';
+        else group = 'C';
+        
+        /* Creating new variables */
+        length category $10;
+        if salary > 50000 then category = 'High';
+        else if salary > 30000 then category = 'Medium';
+        else category = 'Low';
+    run;
+    
+    /* Proc SQL with Joins and Subqueries */
+    proc sql;
+        create table work.joined as
+        select a.id, a.years, a.salary, b.department, 
+               (select max(salary) from libname.old_dataset where department = b.department) as max_dept_salary
+        from work.new_dataset as a
+        left join libname.departments as b
+        on a.id = b.id;
+    quit;
+    
+    /* Proc FREQ */
+    proc freq data=work.new_dataset;
+        tables group category / missing;
+    run;
+    
+    /* Proc MEANS */
+    proc means data=work.new_dataset n mean std min max;
+        var salary years;
+    run;
+    
+    /* Proc PRINT */
+    proc print data=work.new_dataset;
+        var id years salary category;
+    run;
+    
+    /* Proc SORT */
+    proc sort data=work.new_dataset out=work.sorted_dataset;
+        by category descending salary;
+    run;
+    
+    /* Proc UNIVARIATE */
+    proc univariate data=work.new_dataset;
+        var salary years;
+    run;
+    
+    /* Proc FORMAT */
+    proc format;
+        value $category_fmt
+            'High' = 'High Salary'
+            'Medium' = 'Medium Salary'
+            'Low' = 'Low Salary';
+        value age_fmt
+            1 - 20 = 'Young'
+            21 - 30 = 'Adult'
+            31 - high = 'Senior';
+    run;
+    
+    /* Proc REPORT */
+    proc report data=work.new_dataset;
+        column id years salary category;
+        define id / group;
+        define years / analysis;
+        define salary / analysis sum;
+        define category / display;
+    run;
+    
+    /* Proc TRANSPOSE */
+    proc transpose data=work.new_dataset out=work.transposed_dataset;
+        by id;
+        id category;
+        var salary;
+    run;
 %mend;
 
-proc sql;
-    create table work.joined as
-    select a.*, b.value
-    from libname.dataset1 as a
-    left join libname.dataset2 as b
-    on a.id = b.id;
-quit;
-
-proc freq data=libname.dataset1;
-    tables age gender;
-run;
-
-proc means data=libname.dataset2;
-    var age salary;
-run;
-
-proc print data=libname.dataset3;
-    var age salary;
-run;
-
-proc sort data=libname.dataset4;
-    by age;
-run;
-
-proc univariate data=libname.dataset5;
-    var age salary;
-run;
-
-proc format;
-    value agefmt
-        1 = "Young"
-        2 = "Old";
-run;
-
-proc report data=libname.dataset6;
-    column age salary;
-run;
-
-proc transpose data=libname.dataset7;
-    by age;
-    id gender;
-    var salary;
-run;
+%complex_macro;
 """
 
 # Convert SAS to BigQuery
@@ -322,13 +369,13 @@ bigquery_code = convert_sas_to_bigquery(sas_code)
 print(bigquery_code)
 ```
 
-### Summary of Final Enhancements:
+### Explanation
 
-1. **Error Handling and Logging**: Enhanced logging for better tracking and debugging of the conversion process.
-2. **Advanced Macro Handling**: Improved handling and conversion of SAS macros, including nested macros.
-3. **Comprehensive SAS Procedures**: Added support for `proc transpose` and other complex procedures.
-4. **Nested Queries and Joins**: Improved handling of nested queries and complex joins.
-5. **Expanded Function Conversion**: Added more SAS functions to the conversion list.
-6. **Enhanced Robustness**: Improved error handling and ensured no syntax or logic errors.
+1. **Macro Handling**: The script handles macros by expanding them and then converting the expanded code.
+2. **Data Step**: Handles `KEEP`, `DROP`, and `RENAME` statements, and conditional logic.
+3. **Proc SQL**: Converts SQL statements with joins and subqueries.
+4. **Procedures**: Converts `proc freq`, `proc means`, `proc print`, `proc sort`, `proc univariate`, `proc format`, `proc report`, and `proc transpose`.
+5. **SAS Functions**: Maps common SAS functions to their BigQuery equivalents.
+6. **Conditional Logic**: Converts complex if-then-else structures.
 
-This final version is designed to handle a wide range of SAS constructs, ensuring accurate and comprehensive conversion to BigQuery SQL.
+This script should cover a wide range of SAS constructs and provide a comprehensive conversion to BigQuery SQL.
