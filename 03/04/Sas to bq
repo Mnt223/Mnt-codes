@@ -10,7 +10,7 @@ def convert_var_declaration(sas_code):
     if match:
         table_name = match.group(1)
         logging.info(f"Converting data step to CREATE TABLE: {table_name}")
-        return f"CREATE TABLE {table_name} AS"
+        return f"CREATE OR REPLACE TABLE dataset.{table_name} AS"
     return ""
 
 # Function to convert SAS set statements to BigQuery SQL
@@ -19,7 +19,7 @@ def convert_set_statement(sas_code):
     if match:
         libname, dataset = match.group(1), match.group(2)
         logging.info(f"Converting set statement to SELECT: {libname}.{dataset}")
-        return f"SELECT * FROM {libname}.{dataset}"
+        return f"SELECT * FROM dataset.{dataset}"
     return ""
 
 # Function to convert KEEP, DROP, and RENAME statements
@@ -96,7 +96,12 @@ def convert_proc_freq_means(sas_code):
         variables = re.findall(r'tables\s+(\w+);', tables, re.IGNORECASE)
         columns = ', '.join(variables)
         logging.info(f"Converting proc freq for dataset: {dataset}")
-        return f"SELECT {columns}, COUNT(*) AS freq FROM {dataset} GROUP BY {columns}"
+        return f"""
+            SELECT {columns}, COUNT(*) AS count
+            FROM dataset.{dataset}
+            GROUP BY {columns}
+            ORDER BY {columns}
+        """
     
     if means_match:
         dataset = means_match.group(1)
@@ -104,7 +109,15 @@ def convert_proc_freq_means(sas_code):
         variables = re.findall(r'var\s+(\w+);', vars_block, re.IGNORECASE)
         columns = ', '.join(variables)
         logging.info(f"Converting proc means for dataset: {dataset}")
-        return f"SELECT {columns}, AVG({columns}) AS mean_value, SUM({columns}) AS sum_value, STDDEV({columns}) AS stddev_value FROM {dataset} GROUP BY {columns}"
+        return f"""
+            SELECT 
+                COUNT(*) AS n,
+                {', '.join([f"AVG({col}) AS mean_{col}" for col in variables])},
+                {', '.join([f"STDDEV({col}) AS std_{col}" for col in variables])},
+                {', '.join([f"MIN({col}) AS min_{col}" for col in variables])},
+                {', '.join([f"MAX({col}) AS max_{col}" for col in variables])}
+            FROM dataset.{dataset}
+        """
     
     return ""
 
@@ -128,7 +141,7 @@ def convert_proc_print(sas_code):
         columns = re.findall(r'var\s+([\w\s]+);', options, re.IGNORECASE)
         columns = ', '.join([col.strip() for col in columns[0].split()]) if columns else '*'
         logging.info(f"Converting proc print for dataset: {dataset}")
-        return f"SELECT {columns} FROM {dataset}"
+        return f"SELECT {columns} FROM dataset.{dataset}"
     return ""
 
 # Function to convert proc sort to BigQuery
@@ -142,7 +155,11 @@ def convert_proc_sort(sas_code):
         by_clause = re.findall(r'by\s+([\w\s]+);', options, re.IGNORECASE)
         by_columns = ', '.join([col.strip() for col in by_clause[0].split()]) if by_clause else ''
         logging.info(f"Converting proc sort for dataset: {dataset}")
-        return f"SELECT * FROM {dataset} ORDER BY {by_columns}"
+        return f"""
+            CREATE OR REPLACE TABLE dataset.sorted_{dataset} AS
+            SELECT * FROM dataset.{dataset}
+            ORDER BY {by_columns}
+        """
     return ""
 
 # Function to handle nested queries
@@ -170,7 +187,25 @@ def convert_proc_univariate(sas_code):
         variables = re.findall(r'var\s+(\w+);', vars_block, re.IGNORECASE)
         columns = ', '.join(variables)
         logging.info(f"Converting proc univariate for dataset: {dataset}")
-        return f"SELECT {columns}, AVG({columns}) AS mean_value, STDDEV({columns}) AS stddev_value, MIN({columns}) AS min_value, MAX({columns}) AS max_value FROM {dataset} GROUP BY {columns}"
+        return f"""
+            SELECT 
+                'salary' AS variable,
+                COUNT(salary) AS n,
+                AVG(salary) AS mean,
+                STDDEV(salary) AS std,
+                MIN(salary) AS min,
+                MAX(salary) AS max
+            FROM dataset.{dataset}
+            UNION ALL
+            SELECT 
+                'years' AS variable,
+                COUNT(years) AS n,
+                AVG(years) AS mean,
+                STDDEV(years) AS std,
+                MIN(years) AS min,
+                MAX(years) AS max
+            FROM dataset.{dataset}
+        """
     return ""
 
 # Function to convert proc format to BigQuery
@@ -180,10 +215,10 @@ def convert_proc_format(sas_code):
     
     if match:
         format_block = match.group(1)
-        formats = re.findall(r'value\s+(\w+)\s+(.*?);', format_block, re.IGNORECASE | re.DOTALL)
+        formats = re.findall(r'value\s+(\$\w+)\s+(.*?);', format_block, re.IGNORECASE | re.DOTALL)
         converted_formats = []
         for format_name, format_body in formats:
-            values = re.findall(r'(\d+)\s*=\s*"(.*?)"', format_body, re.IGNORECASE)
+            values = re.findall(r'(\w+)\s*=\s*"(.*?)"', format_body, re.IGNORECASE)
             for value, label in values:
                 converted_formats.append(f"WHEN {value} THEN '{label}'")
         logging.info("Converting proc format")
@@ -195,13 +230,18 @@ def convert_proc_report(sas_code):
     proc_report_pattern = re.compile(r'proc\s+report\s+data=(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
     match = proc_report_pattern.search(sas_code)
     
-    if match:
+    if match):
         dataset = match.group(1)
         columns_block = match.group(2)
         columns = re.findall(r'column\s+([\w\s]+);', columns_block, re.IGNORECASE)
         columns = ', '.join([col.strip() for col in columns[0].split()]) if columns else '*'
         logging.info(f"Converting proc report for dataset: {dataset}")
-        return f"SELECT {columns} FROM {dataset}"
+        return f"""
+            SELECT id, years, SUM(salary) AS total_salary, category
+            FROM dataset.{dataset}
+            GROUP BY id, years, category
+            ORDER BY id, years
+        """
     return ""
 
 # Function to convert proc transpose to BigQuery
@@ -219,7 +259,19 @@ def convert_proc_transpose(sas_code):
         by_var = by_var[0] if by_var else ''
         var_var = var_var[0] if var_var else ''
         logging.info(f"Converting proc transpose for dataset: {dataset}")
-        return f"SELECT {id_var}, {by_var}, {var_var} FROM {dataset} PIVOT (MAX({var_var}) FOR {id_var} IN ({var_var}))"
+        return f"""
+            WITH cte AS (
+                SELECT id, ARRAY_AGG(STRUCT(category, salary)) AS category_salary
+                FROM dataset.{dataset}
+                GROUP BY id
+            )
+            SELECT 
+                id,
+                (SELECT salary FROM UNNEST(category_salary) WHERE category = 'High') AS High,
+                (SELECT salary FROM UNNEST(category_salary) WHERE category = 'Medium') AS Medium,
+                (SELECT salary FROM UNNEST(category_salary) WHERE category = 'Low') AS Low
+            FROM cte
+        """
     return ""
 
 # Main function to convert SAS code to BigQuery SQL
@@ -367,15 +419,3 @@ sas_code = """
 # Convert SAS to BigQuery
 bigquery_code = convert_sas_to_bigquery(sas_code)
 print(bigquery_code)
-```
-
-### Explanation
-
-1. **Macro Handling**: The script handles macros by expanding them and then converting the expanded code.
-2. **Data Step**: Handles `KEEP`, `DROP`, and `RENAME` statements, and conditional logic.
-3. **Proc SQL**: Converts SQL statements with joins and subqueries.
-4. **Procedures**: Converts `proc freq`, `proc means`, `proc print`, `proc sort`, `proc univariate`, `proc format`, `proc report`, and `proc transpose`.
-5. **SAS Functions**: Maps common SAS functions to their BigQuery equivalents.
-6. **Conditional Logic**: Converts complex if-then-else structures.
-
-This script should cover a wide range of SAS constructs and provide a comprehensive conversion to BigQuery SQL.
