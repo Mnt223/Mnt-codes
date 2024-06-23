@@ -2,6 +2,139 @@
 %let unzip_folder = /path/to/your/unzipfolder;   /* Folder to unzip files to */
 %let log_file = &unzip_folder/unzipped_files.txt; /* Log file to track unzipped files */
 %let master_file = &unzip_folder/master_dataset.sas7bdat; /* Master dataset path */
+%let cutoff_date = '01JUN2024'd; /* Date to start processing files from */
+
+/* Step 1: Create log and master files if they do not exist */
+data _null_;
+    if fileexist("&log_file") = 0 then do;
+        file "&log_file";
+        put "Log file created.";
+    end;
+    if fileexist("&master_file") = 0 then do;
+        data master;
+            /* Define structure of master dataset if needed */
+            /* Example: */
+            length var1 $20 var2 $20 var3 $20;
+        run;
+
+        /* Save the master dataset to the specified location */
+        libname out "&unzip_folder";
+        data out.master_dataset;
+            set master;
+        run;
+        libname out clear;
+    end;
+run;
+
+/* Step 2: Read the log file to get the list of already processed files */
+data processed_files;
+    infile "&log_file" dlm=' ' truncover;
+    input file_name $100.;
+run;
+
+/* Step 3: Get the list of zip files in the source folder */
+filename ziplist pipe "ls -ltr --time-style=+%Y-%m-%d &zip_folder/*.zip";
+data folder_files;
+    infile ziplist truncover;
+    input @1 date $10. @12 time $8. @21 file_name $100.;
+    informat date yymmdd10.;
+    format date yymmdd10.;
+run;
+
+/* Step 4: Filter files based on date and exclude already processed files */
+proc sql;
+    create table new_files as
+    select file_name
+    from folder_files
+    where date >= &cutoff_date
+    except
+    select file_name
+    from processed_files;
+quit;
+
+/* Step 5: Unzip new files and process the CSV files */
+data _null_;
+    set new_files;
+    call execute(cats('%nrstr(%unzip_and_process(', file_name, '))'));
+run;
+
+/* Append new files to the log file */
+data _null_;
+    set new_files;
+    file "&log_file" mod;
+    put file_name;
+run;
+
+/* Macro to unzip files and process CSV */
+%macro unzip_and_process(file_name);
+    %let zip_filepath = &zip_folder./&file_name;
+    %let unzip_folder = &unzip_folder.;
+
+    /* Unzip the file */
+    filename unzip pipe "unzip -o &zip_filepath -d &unzip_folder";
+    data _null_;
+        infile unzip;
+        input;
+        put _infile_;
+    run;
+
+    /* Get the list of CSV files in the unzipped folder */
+    filename csvlist pipe "ls &unzip_folder/*.csv";
+    data csv_files;
+        infile csvlist truncover;
+        input csv_file $100.;
+    run;
+
+    /* Import CSV files and append to master dataset */
+    data _null_;
+        set csv_files;
+        call execute(cats('%nrstr(%import_and_append(', csv_file, '))'));
+    run;
+%mend unzip_and_process;
+
+/* Macro to import CSV and append to master dataset */
+%macro import_and_append(csv_file);
+    %let filepath = &unzip_folder./&csv_file;
+
+    /* Import CSV file using PROC IMPORT */
+    proc import datafile="&filepath"
+        out=temp_data
+        dbms=csv
+        replace;
+        getnames=yes;
+    run;
+
+    /* Append to master dataset */
+    libname out "&unzip_folder";
+    proc append base=out.master_dataset data=temp_data force;
+    run;
+    libname out clear;
+
+    /* Optionally delete temp_data if no longer needed */
+    proc datasets lib=work nolist;
+        delete temp_data;
+    quit;
+%mend import_and_append;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%let zip_folder = /path/to/your/zipfolder;       /* Folder containing zip files */
+%let unzip_folder = /path/to/your/unzipfolder;   /* Folder to unzip files to */
+%let log_file = &unzip_folder/unzipped_files.txt; /* Log file to track unzipped files */
+%let master_file = &unzip_folder/master_dataset.sas7bdat; /* Master dataset path */
 
 /* Step 1: Create log and master files if they do not exist */
 data _null_;
