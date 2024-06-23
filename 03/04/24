@@ -1,3 +1,79 @@
+%let folder_path = /path/to/your/folder; /* Update to your actual folder path */
+%let log_file = /path/to/processed_files.txt; /* Update to your actual log file path */
+
+/* Create log file if it does not exist */
+data _null_;
+    if fileexist("&log_file") = 0 then do;
+        file "&log_file";
+        put "Log file created.";
+    end;
+run;
+
+/* Step 1: Read the log file to get the list of already processed files */
+data processed_files;
+    infile "&log_file" dlm=' ' truncover;
+    input file_name $100.;
+run;
+
+/* Step 2: Get the list of files in the folder */
+filename dirlist pipe "ls &folder_path/*.csv";
+data folder_files;
+    infile dirlist truncover;
+    input file_name $100.;
+run;
+
+/* Step 3: Identify new files by excluding already processed files */
+proc sql;
+    create table new_files as
+    select file_name
+    from folder_files
+    except
+    select file_name
+    from processed_files;
+quit;
+
+/* Step 4: Process new files */
+data _null_;
+    set new_files;
+    call execute(cats('%nrstr(%process_file(', file_name, '))'));
+run;
+
+/* Append new files to the log file */
+data _null_;
+    set new_files;
+    file "&log_file" mod;
+    put file_name;
+run;
+
+/* Macro to process each file */
+%macro process_file(file_name);
+    %let filepath = &folder_path./&file_name;
+
+    /* Import CSV file using PROC IMPORT */
+    proc import datafile="&filepath"
+        out=work.temp
+        dbms=csv
+        replace;
+        getnames=yes;
+    run;
+
+    /* Example processing step: print dataset */
+    proc print data=work.temp;
+    run;
+
+    /* Additional processing steps can be added here */
+%mend process_file;
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Import your data */
 /* Assuming your data is already imported and named 'customer_data' */
 
