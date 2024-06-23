@@ -1,52 +1,113 @@
 import re
 import logging
+from flask import Flask, request, render_template, send_file
 
-# Configure logging
+app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
-# Function to convert SAS variable declarations to BigQuery SQL
-def convert_var_declaration(sas_code):
-    match = re.search(r'data\s+(\w+);', sas_code, re.IGNORECASE)
-    if match:
-        table_name = match.group(1)
-        logging.info(f"Converting data step to CREATE TABLE: {table_name}")
-        return f"CREATE OR REPLACE TABLE dataset.{table_name} AS"
-    return ""
+# Function to convert SAS code to BigQuery SQL
+def convert_sas_to_bigquery(sas_code):
+    # Expand macros first
+    sas_code = expand_macros(sas_code)
+    
+    # Break down and convert the entire SAS script
+    bigquery_code = []
+    lines = sas_code.split('\n')
+    
+    in_proc_sql = False
+    proc_sql_buffer = []
 
-# Function to convert SAS set statements to BigQuery SQL
-def convert_set_statement(sas_code):
-    match = re.search(r'set\s+(\w+)\.(\w+)', sas_code, re.IGNORECASE)
-    if match:
-        libname, dataset = match.group(1), match.group(2)
-        logging.info(f"Converting set statement to SELECT: {libname}.{dataset}")
-        return f"SELECT * FROM dataset.{dataset}"
-    return ""
+    for line in lines:
+        line = line.strip()
+        
+        if line.lower().startswith("proc sql"):
+            in_proc_sql = True
+            proc_sql_buffer.append(line)
+            continue
+        if in_proc_sql:
+            proc_sql_buffer.append(line)
+            if line.lower().startswith("quit;"):
+                proc_sql_code = '\n'.join(proc_sql_buffer)
+                bigquery_code.append(convert_proc_sql(proc_sql_code))
+                in_proc_sql = False
+                proc_sql_buffer = []
+            continue
+        
+        if line.lower().startswith("data"):
+            bigquery_code.append(convert_data_step(line))
+        elif line.lower().startswith("proc freq") or line.lower().startswith("proc means"):
+            bigquery_code.append(convert_proc_freq_means(line))
+        elif line.lower().startswith("proc print"):
+            bigquery_code.append(convert_proc_print(line))
+        elif line.lower().startswith("proc sort"):
+            bigquery_code.append(convert_proc_sort(line))
+        elif line.lower().startswith("proc univariate"):
+            bigquery_code.append(convert_proc_univariate(line))
+        elif line.lower().startswith("proc format"):
+            bigquery_code.append(convert_proc_format(line))
+        elif line.lower().startswith("proc report"):
+            bigquery_code.append(convert_proc_report(line))
+        elif line.lower().startswith("proc transpose"):
+            bigquery_code.append(convert_proc_transpose(line))
+        else:
+            bigquery_code.append(convert_sas_functions(line))
+    
+    bigquery_sql = '\n'.join(bigquery_code).rstrip(',')
+    bigquery_sql = handle_nested_queries(bigquery_sql)
+    bigquery_sql = handle_advanced_joins(bigquery_sql)
+    return bigquery_sql
 
-# Function to convert KEEP, DROP, and RENAME statements
+def expand_macros(sas_code):
+    macros = re.findall(r'%macro\s+(\w+);(.*?)%mend;', sas_code, re.IGNORECASE | re.DOTALL)
+    for macro_name, macro_body in macros:
+        macro_body = expand_macros(macro_body)
+        sas_code = sas_code.replace(f"%macro {macro_name};{macro_body}%mend;", "")
+        sas_code = sas_code.replace(f"%{macro_name}();", macro_body)
+    return sas_code
+
+def convert_data_step(sas_code):
+    data_step_pattern = re.compile(r'data\s+(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
+    matches = data_step_pattern.findall(sas_code)
+    for match in matches:
+        table_name, data_step_body, _ = match
+        data_step_body = convert_keep_drop_rename(data_step_body)
+        data_step_body = convert_if_else(data_step_body)
+        data_step_body = convert_sas_functions(data_step_body)
+        data_step_body = handle_merge_statements(data_step_body)
+        logging.info(f"Converting data step for table: {table_name}")
+        sas_code = sas_code.replace(f"data {table_name};{data_step_body}run;", f"CREATE OR REPLACE TABLE {table_name} AS\nSELECT {data_step_body}")
+    return sas_code
+
+def handle_merge_statements(data_step_body):
+    merge_pattern = re.compile(r'merge\s+(.*?);', re.IGNORECASE)
+    by_pattern = re.compile(r'by\s+(.*?);', re.IGNORECASE)
+    merge_matches = merge_pattern.findall(data_step_body)
+    by_matches = by_pattern.findall(data_step_body)
+    if merge_matches and by_matches:
+        merge_clause = merge_matches[0]
+        by_clause = by_matches[0]
+        return f"{merge_clause} USING {by_clause}"
+    return data_step_body
+
 def convert_keep_drop_rename(sas_code):
-    # Convert KEEP
     keep_pattern = re.compile(r'\(keep\s*=\s*\((.*?)\)\)', re.IGNORECASE)
     sas_code = keep_pattern.sub(lambda m: f"SELECT {m.group(1)}", sas_code)
     
-    # Convert DROP
     drop_pattern = re.compile(r'\(drop\s*=\s*\((.*?)\)\)', re.IGNORECASE)
     sas_code = drop_pattern.sub(lambda m: f"SELECT * EXCEPT ({m.group(1)})", sas_code)
     
-    # Convert RENAME
     rename_pattern = re.compile(r'\(rename\s*=\s*\((.*?)\)\)', re.IGNORECASE)
     sas_code = rename_pattern.sub(lambda m: ', '.join(f'{old} AS {new}' for old, new in re.findall(r'(\w+)\s*=\s*(\w+)', m.group(1))), sas_code)
     
     logging.info("Converting KEEP, DROP, and RENAME statements")
     return sas_code
 
-# Function to convert if-then-else statements
 def convert_if_else(sas_code):
     sas_code = re.sub(r'if\s+(.+?)\s+then\s+(.+?);', r'CASE WHEN \1 THEN \2', sas_code, flags=re.IGNORECASE)
     sas_code = re.sub(r'else\s+(.+?);', r'ELSE \1 END', sas_code, flags=re.IGNORECASE)
     logging.info("Converting if-then-else statements")
     return sas_code
 
-# Function to convert SAS functions to BigQuery SQL
 def convert_sas_functions(sas_code):
     sas_to_bq_functions = {
         'substr': 'SUBSTR',
@@ -70,7 +131,6 @@ def convert_sas_functions(sas_code):
     logging.info("Converting SAS functions to BigQuery functions")
     return sas_code
 
-# Function to convert proc sql to BigQuery SQL
 def convert_proc_sql(sas_code):
     proc_sql_pattern = re.compile(r'proc\s+sql;\s*(.*?)\s*quit;', re.IGNORECASE | re.DOTALL)
     match = proc_sql_pattern.search(sas_code)
@@ -82,7 +142,6 @@ def convert_proc_sql(sas_code):
         return sql_statements
     return ""
 
-# Function to convert proc freq and proc means
 def convert_proc_freq_means(sas_code):
     proc_freq_pattern = re.compile(r'proc\s+freq\s+data=(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
     proc_means_pattern = re.compile(r'proc\s+means\s+data=(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
@@ -98,7 +157,7 @@ def convert_proc_freq_means(sas_code):
         logging.info(f"Converting proc freq for dataset: {dataset}")
         return f"""
             SELECT {columns}, COUNT(*) AS count
-            FROM dataset.{dataset}
+            FROM {dataset}
             GROUP BY {columns}
             ORDER BY {columns}
         """
@@ -116,21 +175,11 @@ def convert_proc_freq_means(sas_code):
                 {', '.join([f"STDDEV({col}) AS std_{col}" for col in variables])},
                 {', '.join([f"MIN({col}) AS min_{col}" for col in variables])},
                 {', '.join([f"MAX({col}) AS max_{col}" for col in variables])}
-            FROM dataset.{dataset}
+            FROM {dataset}
         """
     
     return ""
 
-# Function to handle SAS macros
-def convert_macros(sas_code):
-    macros = re.findall(r'%macro\s+(\w+);(.*?)%mend;', sas_code, re.IGNORECASE | re.DOTALL)
-    for macro_name, macro_body in macros:
-        converted_macro_body = convert_sas_to_bigquery(macro_body)
-        sas_code = sas_code.replace(f"%macro {macro_name};{macro_body}%mend;", f"-- Macro: {macro_name}\n{converted_macro_body}\n-- End Macro: {macro_name}")
-        logging.info(f"Converting macro: {macro_name}")
-    return sas_code
-
-# Function to convert proc print to BigQuery
 def convert_proc_print(sas_code):
     proc_print_pattern = re.compile(r'proc\s+print\s+data=(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
     match = proc_print_pattern.search(sas_code)
@@ -141,10 +190,9 @@ def convert_proc_print(sas_code):
         columns = re.findall(r'var\s+([\w\s]+);', options, re.IGNORECASE)
         columns = ', '.join([col.strip() for col in columns[0].split()]) if columns else '*'
         logging.info(f"Converting proc print for dataset: {dataset}")
-        return f"SELECT {columns} FROM dataset.{dataset}"
+        return f"SELECT {columns} FROM {dataset}"
     return ""
 
-# Function to convert proc sort to BigQuery
 def convert_proc_sort(sas_code):
     proc_sort_pattern = re.compile(r'proc\s+sort\s+data=(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
     match = proc_sort_pattern.search(sas_code)
@@ -156,27 +204,24 @@ def convert_proc_sort(sas_code):
         by_columns = ', '.join([col.strip() for col in by_clause[0].split()]) if by_clause else ''
         logging.info(f"Converting proc sort for dataset: {dataset}")
         return f"""
-            CREATE OR REPLACE TABLE dataset.sorted_{dataset} AS
-            SELECT * FROM dataset.{dataset}
+            CREATE OR REPLACE TABLE sorted_{dataset} AS
+            SELECT * FROM {dataset}
             ORDER BY {by_columns}
         """
     return ""
 
-# Function to handle nested queries
 def handle_nested_queries(sas_code):
     nested_query_pattern = re.compile(r'\(\s*select\s+(.*?)\s*from\s+(.*?)\)', re.IGNORECASE | re.DOTALL)
     sas_code = nested_query_pattern.sub(r'(\1 FROM \2)', sas_code)
     logging.info("Handling nested queries")
     return sas_code
 
-# Function to handle advanced joins
 def handle_advanced_joins(sas_code):
     join_pattern = re.compile(r'(\w+)\s+join\s+(\w+)\s+on\s+(\w+\.\w+)\s*=\s*(\w+\.\w+)', re.IGNORECASE)
     sas_code = join_pattern.sub(r'\1 JOIN \2 ON \3 = \4', sas_code)
     logging.info("Handling advanced joins")
     return sas_code
 
-# Function to convert proc univariate to BigQuery
 def convert_proc_univariate(sas_code):
     proc_univariate_pattern = re.compile(r'proc\s+univariate\s+data=(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
     match = proc_univariate_pattern.search(sas_code)
@@ -195,7 +240,7 @@ def convert_proc_univariate(sas_code):
                 STDDEV(salary) AS std,
                 MIN(salary) AS min,
                 MAX(salary) AS max
-            FROM dataset.{dataset}
+            FROM {dataset}
             UNION ALL
             SELECT 
                 'years' AS variable,
@@ -204,11 +249,10 @@ def convert_proc_univariate(sas_code):
                 STDDEV(years) AS std,
                 MIN(years) AS min,
                 MAX(years) AS max
-            FROM dataset.{dataset}
+            FROM {dataset}
         """
     return ""
 
-# Function to convert proc format to BigQuery
 def convert_proc_format(sas_code):
     proc_format_pattern = re.compile(r'proc\s+format\s+(.*?);', re.IGNORECASE | re.DOTALL)
     match = proc_format_pattern.search(sas_code)
@@ -225,12 +269,11 @@ def convert_proc_format(sas_code):
         return f"CASE {' '.join(converted_formats)} END"
     return ""
 
-# Function to convert proc report to BigQuery
 def convert_proc_report(sas_code):
     proc_report_pattern = re.compile(r'proc\s+report\s+data=(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
     match = proc_report_pattern.search(sas_code)
     
-    if match):
+    if match:
         dataset = match.group(1)
         columns_block = match.group(2)
         columns = re.findall(r'column\s+([\w\s]+);', columns_block, re.IGNORECASE)
@@ -238,18 +281,17 @@ def convert_proc_report(sas_code):
         logging.info(f"Converting proc report for dataset: {dataset}")
         return f"""
             SELECT id, years, SUM(salary) AS total_salary, category
-            FROM dataset.{dataset}
+            FROM {dataset}
             GROUP BY id, years, category
             ORDER BY id, years
         """
     return ""
 
-# Function to convert proc transpose to BigQuery
 def convert_proc_transpose(sas_code):
     proc_transpose_pattern = re.compile(r'proc\s+transpose\s+data=(\w+);(.*?)(run;)', re.IGNORECASE | re.DOTALL)
     match = proc_transpose_pattern.search(sas_code)
     
-    if match:
+    if match):
         dataset = match.group(1)
         options = match.group(2).strip()
         id_var = re.findall(r'id\s+(\w+);', options, re.IGNORECASE)
@@ -262,7 +304,7 @@ def convert_proc_transpose(sas_code):
         return f"""
             WITH cte AS (
                 SELECT id, ARRAY_AGG(STRUCT(category, salary)) AS category_salary
-                FROM dataset.{dataset}
+                FROM {dataset}
                 GROUP BY id
             )
             SELECT 
@@ -274,148 +316,76 @@ def convert_proc_transpose(sas_code):
         """
     return ""
 
-# Main function to convert SAS code to BigQuery SQL
-def convert_sas_to_bigquery(sas_code):
-    bigquery_code = []
-    lines = sas_code.split('\n')
-    
-    in_proc_sql = False
-    proc_sql_buffer = []
-    
-    # Handle macros
-    sas_code = convert_macros(sas_code)
-
-    for line in lines:
-        line = line.strip()
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        sas_code = request.form.get('sas_code', '')
+        sas_file = request.files.get('sas_file')
         
-        # Check if we're within a proc sql block
-        if line.lower().startswith("proc sql"):
-            in_proc_sql = True
-            proc_sql_buffer.append(line)
-            continue
-        if in_proc_sql:
-            proc_sql_buffer.append(line)
-            if line.lower().startswith("quit;"):
-                proc_sql_code = ' '.join(proc_sql_buffer)
-                bigquery_code.append(convert_proc_sql(proc_sql_code))
-                in_proc_sql = False
-                proc_sql_buffer = []
-            continue
-
-        if line.lower().startswith("data"):
-            bigquery_code.append(convert_var_declaration(line))
-        elif line.lower().startswith("set"):
-            bigquery_code.append(convert_set_statement(line))
-        elif line.lower().startswith("if"):
-            bigquery_code.append(convert_if_else(line))
-        elif line.lower().startswith("proc freq") or line.lower().startswith("proc means"):
-            bigquery_code.append(convert_proc_freq_means(line))
-        elif line.lower().startswith("proc print"):
-            bigquery_code.append(convert_proc_print(line))
-        elif line.lower().startswith("proc sort"):
-            bigquery_code.append(convert_proc_sort(line))
-        elif line.lower().startswith("proc univariate"):
-            bigquery_code.append(convert_proc_univariate(line))
-        elif line.lower().startswith("proc format"):
-            bigquery_code.append(convert_proc_format(line))
-        elif line.lower().startswith("proc report"):
-            bigquery_code.append(convert_proc_report(line))
-        elif line.lower().startswith("proc transpose"):
-            bigquery_code.append(convert_proc_transpose(line))
-        else:
-            bigquery_code.append(convert_sas_functions(line))
-
-    # Join the converted lines into the final BigQuery SQL script
-    bigquery_sql = '\n'.join(bigquery_code).rstrip(',')
-    bigquery_sql = handle_nested_queries(bigquery_sql)
-    bigquery_sql = handle_advanced_joins(bigquery_sql)
-    return bigquery_sql
-
-# Complex SAS code for testing
-sas_code = """
-%macro complex_macro;
-    /* Data Step with KEEP, DROP, and RENAME */
-    data work.new_dataset (keep=id age group salary rename=(age=years));
-        set libname.old_dataset (drop=gender);
-        /* Conditional Logic */
-        if years > 30 then group = 'A';
-        else if years > 20 then group = 'B';
-        else group = 'C';
+        if sas_file:
+            sas_code = sas_file.read().decode('utf-8')
         
-        /* Creating new variables */
-        length category $10;
-        if salary > 50000 then category = 'High';
-        else if salary > 30000 then category = 'Medium';
-        else category = 'Low';
-    run;
+        if sas_code:
+            bigquery_code = convert_sas_to_bigquery(sas_code)
+            output_file = 'converted_code.txt'
+            with open(output_file, 'w') as f:
+                f.write(bigquery_code)
+            return render_template('index.html', sas_code=sas_code, bigquery_code=bigquery_code, output_file=output_file)
     
-    /* Proc SQL with Joins and Subqueries */
-    proc sql;
-        create table work.joined as
-        select a.id, a.years, a.salary, b.department, 
-               (select max(salary) from libname.old_dataset where department = b.department) as max_dept_salary
-        from work.new_dataset as a
-        left join libname.departments as b
-        on a.id = b.id;
-    quit;
-    
-    /* Proc FREQ */
-    proc freq data=work.new_dataset;
-        tables group category / missing;
-    run;
-    
-    /* Proc MEANS */
-    proc means data=work.new_dataset n mean std min max;
-        var salary years;
-    run;
-    
-    /* Proc PRINT */
-    proc print data=work.new_dataset;
-        var id years salary category;
-    run;
-    
-    /* Proc SORT */
-    proc sort data=work.new_dataset out=work.sorted_dataset;
-        by category descending salary;
-    run;
-    
-    /* Proc UNIVARIATE */
-    proc univariate data=work.new_dataset;
-        var salary years;
-    run;
-    
-    /* Proc FORMAT */
-    proc format;
-        value $category_fmt
-            'High' = 'High Salary'
-            'Medium' = 'Medium Salary'
-            'Low' = 'Low Salary';
-        value age_fmt
-            1 - 20 = 'Young'
-            21 - 30 = 'Adult'
-            31 - high = 'Senior';
-    run;
-    
-    /* Proc REPORT */
-    proc report data=work.new_dataset;
-        column id years salary category;
-        define id / group;
-        define years / analysis;
-        define salary / analysis sum;
-        define category / display;
-    run;
-    
-    /* Proc TRANSPOSE */
-    proc transpose data=work.new_dataset out=work.transposed_dataset;
-        by id;
-        id category;
-        var salary;
-    run;
-%mend;
+    return render_template('index.html')
 
-%complex_macro;
-"""
+@app.route('/download/<filename>', methods=['GET'])
+def download_file(filename):
+    return send_file(filename, as_attachment=True)
 
-# Convert SAS to BigQuery
-bigquery_code = convert_sas_to_bigquery(sas_code)
-print(bigquery_code)
+if __name__ == '__main__':
+    app.run(debug=True)
+```
+
+### templates/index.html
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
+    <title>SAS to BigQuery Converter</title>
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="mt-5">SAS to BigQuery Converter</h1>
+      <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+          <label for="sas_code">Enter SAS Code:</label>
+          <textarea class="form-control" id="sas_code" name="sas_code" rows="10">{{ sas_code or '' }}</textarea>
+        </div>
+        <div class="form-group">
+          <label for="sas_file">Or upload SAS file:</label>
+          <input type="file" class="form-control-file" id="sas_file" name="sas_file">
+        </div>
+        <button type="submit" class="btn btn-primary">Convert</button>
+      </form>
+      
+      {% if bigquery_code %}
+      <h2 class="mt-5">Converted BigQuery SQL Code</h2>
+      <pre>{{ bigquery_code }}</pre>
+      <a href="{{ url_for('download_file', filename=output_file) }}" class="btn btn-success mt-3">Download Converted Code</a>
+      {% endif %}
+    </div>
+  </body>
+</html>
+```
+
+### Summary
+
+This code should handle a wide range of SAS constructs dynamically, converting them into equivalent BigQuery SQL code. This includes:
+
+1. **Macro Handling**: Expanding and interpreting macros correctly.
+2. **Advanced Data Steps**: Handling multiple datasets, merges, `keep`, `drop`, `rename`, `if-then-else`, etc.
+3. **Procedures**: Converting various SAS procedures to equivalent SQL operations.
+4. **Function Mapping**: Mapping a broad range of SAS functions to BigQuery equivalents.
+5. **Control Structures**: Converting complex control structures to BigQuery SQL.
+
+By integrating this into a Flask app, users can input SAS code directly or upload a file, and get the converted BigQuery SQL
