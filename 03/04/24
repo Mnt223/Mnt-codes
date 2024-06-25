@@ -1,3 +1,54 @@
+import paramiko
+from scp import SCPClient
+import os
+
+# Define server and login credentials
+hostname = 'your_server_address'
+port = 22
+username = 'your_username'
+password = 'your_password'
+remote_path = '/path/to/remote/directory/'
+local_path = '/path/to/local/directory/'
+
+def create_ssh_client(hostname, port, username, password):
+    client = paramiko.SSHClient()
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(hostname, port, username, password)
+    return client
+
+def download_files():
+    ssh_client = create_ssh_client(hostname, port, username, password)
+    scp = SCPClient(ssh_client.get_transport())
+
+    stdin, stdout, stderr = ssh_client.exec_command(f'ls {remote_path}')
+    files = stdout.read().splitlines()
+
+    for file in files:
+        remote_file = os.path.join(remote_path, file.decode('utf-8'))
+        local_file = os.path.join(local_path, file.decode('utf-8'))
+        scp.get(remote_file, local_file)
+        print(f'Downloaded {remote_file} to {local_file}')
+
+    scp.close()
+    ssh_client.close()
+
+if __name__ == '__main__':
+    download_files()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %let zip_folder = /path/to/your/zipfolder;       /* Folder containing zip files */
 %let unzip_folder = /path/to/your/unzipfolder;   /* Folder to unzip files to */
 %let log_file = &unzip_folder/unzipped_files.txt; /* Log file to track unzipped files */
