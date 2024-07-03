@@ -1,3 +1,76 @@
+import paramiko
+import time
+
+sas_dir = "/appvol/mix_mas/"
+local_dir = "C:/Users/46865556/3D Objects/hplat/"
+filename = "BF02330001_04000_27062024_2_master.txt"
+sas_script = "your_sas_script.sas"
+
+# Connection with SAS Grid SFTP server
+print("Connecting to SAS Grid Server!")
+
+with open(r"C:/Users/45331629/pwd.txt", 'r') as file:
+    mypwd = file.read().rstrip()
+
+# Open a transport
+host, port = "intyh.in.hkyr", 22
+transport = paramiko.Transport((host, port))
+
+# Auth
+username = "d5367655"
+password = mypwd
+transport.connect(None, username, password)
+
+# Start an SSH session
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect(host, port, username, password)
+
+# Run the SAS script
+print("Running SAS script on the server...")
+sas_script_path = sas_dir + sas_script
+stdin, stdout, stderr = ssh.exec_command(f"sas {sas_script_path}")
+stdout.channel.recv_exit_status()  # Wait for the command to complete
+
+# Check for errors
+errors = stderr.read().decode()
+if errors:
+    print("Errors while running SAS script:")
+    print(errors)
+else:
+    print("SAS script ran successfully.")
+
+# Go for SFTP
+sftp = paramiko.SFTPClient.from_transport(transport)
+print("Downloading file...")
+
+# Copy the generated file from server to local
+filepath = sas_dir + filename
+localpath = local_dir + filename
+sftp.get(filepath, localpath)
+
+time.sleep(10)
+
+# Close connections
+if sftp:
+    sftp.close()
+if transport:
+    transport.close()
+if ssh:
+    ssh.close()
+
+print("File downloaded successfully.")
+
+
+
+
+
+
+
+
+
+
+
 import os
 import pandas as pd
 
