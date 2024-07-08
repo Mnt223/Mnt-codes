@@ -1,3 +1,326 @@
+/* Basic Data Step */
+data work.sample;
+    set sashelp.class;
+    age_squared = age**2;
+    keep name age age_squared;
+run;
+
+/* Basic PROC SQL */
+proc sql;
+    create table work.class_avg as
+    select sex, avg(age) as avg_age
+    from sashelp.class
+    group by sex;
+quit;
+
+/* Data Step with Conditional Logic */
+data work.class_flagged;
+    set sashelp.class;
+    if age < 13 then age_group = 'Child';
+    else if age < 18 then age_group = 'Teen';
+    else age_group = 'Adult';
+run;
+
+/* Joining Tables with PROC SQL */
+proc sql;
+    create table work.class_joined as
+    select a.name, a.age, b.height
+    from sashelp.class as a
+    inner join sashelp.classfit as b
+    on a.name = b.name;
+quit;
+
+/* Complex Data Step with Macros and Arrays */
+%macro process_data(dsname, outname);
+    data &outname;
+        set &dsname;
+        array scores[5] score1-score5;
+        do i = 1 to 5;
+            scores[i] = ranuni(1234) * 100;
+        end;
+        drop i;
+    run;
+%mend process_data;
+
+%process_data(sashelp.class, work.class_processed);
+
+/* Advanced PROC SQL with Macros */
+%let min_age = 12;
+%let max_age = 16;
+
+proc sql;
+    create table work.filtered_class as
+    select name, age, height, weight
+    from sashelp.class
+    where age between &min_age and &max_age
+    order by age;
+quit;
+
+/* Nested Macros with Conditional Logic */
+%macro categorize_data(age_threshold=13);
+    %macro categorize(sex);
+        data work.class_&sex;
+            set sashelp.class;
+            where sex = "&sex";
+            if age < &age_threshold then age_group = 'Child';
+            else age_group = 'Teen';
+        run;
+    %mend categorize;
+
+    %categorize(M);
+    %categorize(F);
+%mend categorize_data;
+
+%categorize_data(age_threshold=14);
+
+/* Hash Objects for Lookup */
+data work.hash_example;
+    if _N_ = 1 then do;
+        declare hash h(dataset:'sashelp.class');
+        h.defineKey('name');
+        h.defineData('age', 'height', 'weight');
+        h.defineDone();
+    end;
+    set sashelp.classfit;
+    if h.find() = 0 then output;
+run;
+
+/* Dynamic SQL with Macros */
+%macro dynamic_sql(var=age, table=sashelp.class);
+    proc sql;
+        select name, &var
+        into :name1-:name10, :value1-:value10
+        from &table;
+    quit;
+
+    %do i = 1 %to 10;
+        %put &&name&i = &&value&i;
+    %end;
+%mend dynamic_sql;
+
+%dynamic_sql(var=height, table=sashelp.class);
+
+/* Using PROC FCMP for Custom Functions */
+proc fcmp outlib=work.functions.math;
+    function square(x);
+        return(x * x);
+    endsub;
+quit;
+
+options cmplib=work.functions;
+
+data work.squared_values;
+    set sashelp.class;
+    squared_height = square(height);
+run;
+
+/* Merging Multiple Data Sets with Arrays */
+data work.class_merged;
+    merge sashelp.class(in=a) sashelp.classfit(in=b);
+    by name;
+    if a and b;
+run;
+
+data work.final;
+    set work.class_merged;
+    array measures[2] height weight;
+    do i = 1 to 2;
+        measures[i] = measures[i] * 2.54; /* Convert to cm */
+    end;
+    drop i;
+run;
+
+/* Complex PROC SQL with Subqueries and Joins */
+proc sql;
+    create table work.class_stats as
+    select a.name, a.age, a.height, a.weight,
+           (select avg(height) from sashelp.class where sex=a.sex) as avg_height,
+           (select avg(weight) from sashelp.class where sex=a.sex) as avg_weight
+    from sashelp.class as a;
+quit;
+
+/* Creating and Using Formats */
+proc format;
+    value agefmt
+        low-<13 = 'Child'
+        13-<18 = 'Teen'
+        18-high = 'Adult';
+run;
+
+data work.class_formatted;
+    set sashelp.class;
+    age_group = put(age, agefmt.);
+run;
+
+/* Recursive Macros for Complex Iterations */
+%macro recursive_macro(iter, max_iter);
+    %if &iter <= &max_iter %then %do;
+        %put Iteration: &iter;
+        %recursive_macro(%eval(&iter + 1), &max_iter);
+    %end;
+%mend recursive_macro;
+
+%recursive_macro(1, 5);
+
+/* PROC FREQ for Frequency Analysis */
+proc freq data=sashelp.class;
+    tables sex age / chisq;
+    format age agefmt.;
+run;
+
+/* Data Import/Export */
+proc import datafile='/path/to/file.csv' out=work.imported_data dbms=csv replace;
+    getnames=yes;
+run;
+
+proc export data=work.imported_data outfile='/path/to/file_exported.csv' dbms=csv replace;
+run;
+
+/* Advanced Statistical Procedures */
+/* PROC REG for Linear Regression */
+proc reg data=sashelp.class;
+    model weight = height;
+run;
+quit;
+
+/* PROC GLM for General Linear Model */
+proc glm data=sashelp.class;
+    class sex;
+    model weight = height sex height*sex;
+run;
+quit;
+
+/* PROC LOGISTIC for Logistic Regression */
+proc logistic data=sashelp.class;
+    class sex / param=ref;
+    model sex = age height weight;
+run;
+quit;
+
+/* Data Cleaning and Transformation */
+data work.cleaned_data;
+    set sashelp.class;
+    if missing(age) then age = .;
+    if height < 50 then height = .;
+run;
+
+/* Advanced Formatting and Labeling */
+data work.labeled_data;
+    set sashelp.class;
+    label age = 'Age in Years' height = 'Height in Inches';
+    format age 8. height 8.2;
+run;
+
+/* BY-Group Processing */
+proc sort data=sashelp.class out=sorted_class;
+    by sex;
+run;
+
+data work.by_group;
+    set sorted_class;
+    by sex;
+    if first.sex then do;
+        group_sum = 0;
+    end;
+    group_sum + height;
+    if last.sex then output;
+run;
+
+/* ODS (Output Delivery System) */
+ods html file='output.html';
+proc means data=sashelp.class;
+    var age height weight;
+run;
+ods html close;
+
+/* PROC TRANSPOSE */
+proc transpose data=sashelp.class out=transposed_class;
+    by name;
+    var height weight;
+run;
+
+/* Macros with Conditional Execution and Iteration */
+%macro dynamic_iteration;
+    %do i = 1 %to 5;
+        %if &i = 3 %then %do;
+            %put Skipping iteration 3;
+            %continue;
+        %end;
+        %put Iteration: &i;
+    %end;
+%mend dynamic_iteration;
+
+%dynamic_iteration;
+
+/* PROC MEANS for Summary Statistics */
+proc means data=sashelp.class n mean std min max;
+    var age height weight;
+    class sex;
+run;
+
+/* PROC SUMMARY for Data Summarization */
+proc summary data=sashelp.class;
+    var age height weight;
+    class sex;
+    output out=work.summary_stats mean=;
+run;
+
+/* PROC REPORT for Custom Reports */
+proc report data=sashelp.class nowd;
+    column name sex age height weight;
+    define name / display;
+    define sex / group;
+    define age / analysis mean;
+    define height / analysis mean;
+    define weight / analysis mean;
+run;
+
+/* PROC TABULATE for Tabular Reports */
+proc tabulate data=sashelp.class;
+    class sex;
+    var age height weight;
+    table sex, (age height weight)*(mean);
+run;
+
+/* Using PROC FORMAT for Custom Value Labels */
+proc format;
+    value $gender
+        'M' = 'Male'
+        'F' = 'Female';
+run;
+
+data work.formatted_class;
+    set sashelp.class;
+    sex_label = put(sex, $gender.);
+run;
+
+/* Complex Data Manipulation with Multiple Data Steps */
+data work.step1;
+    set sashelp.class;
+    bmi = weight / (height * height) * 703;
+run;
+
+data work.step2;
+    set work.step1;
+    if bmi < 18.5 then bmi_category = 'Underweight';
+    else if bmi < 24.9 then bmi_category = 'Normal weight';
+    else if bmi < 29.9 then bmi_category = 'Overweight';
+    else bmi_category = 'Obesity';
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import paramiko
 import time
 
