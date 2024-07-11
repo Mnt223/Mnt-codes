@@ -1,3 +1,74 @@
+/* Step 1: Create the summary table */
+proc sql;
+    create table summary as
+    select 
+        count(cusid) as total_cusid,
+        sum(has_casa_0524) as sum_has_casa_0524,
+        sum(has_sav_0524) as sum_has_sav_0524,
+        sum(has_cur_0524) as sum_has_cur_0524,
+        sum(has_td_0524) as sum_has_td_0524,
+        sum(has_ins_0524) as sum_has_ins_0524,
+        sum(has_inv_0524) as sum_has_inv_0524,
+        sum(has_card_0524) as sum_has_card_0524,
+        sum(has_loan_0524) as sum_has_loan_0524
+    from cust_cube
+    where live = 1 and has_mrtg_0524 = 1;
+quit;
+
+/* Step 2: Apply filters and create balance bands */
+data summary_bands;
+    set summary;
+    
+    /* Create balance band for casa_0524_unique */
+    if has_casa_0524 = 0 and (casa_0524_unique = 0 or missing(casa_0524_unique)) then casa_band = 'No CASA';
+    else if has_casa_0524 = 1 and casa_0524_unique > 0 and casa_0524_unique <= 500 then casa_band = '0-500';
+    else if has_casa_0524 = 1 and casa_0524_unique > 500 and casa_0524_unique <= 5000 then casa_band = '501-5K';
+    else if has_casa_0524 = 1 and casa_0524_unique > 5000 and casa_0524_unique <= 25000 then casa_band = '5K-25K';
+    else if has_casa_0524 = 1 and casa_0524_unique > 25000 and casa_0524_unique <= 50000 then casa_band = '25K-50K';
+    else if has_casa_0524 = 1 and casa_0524_unique > 50000 and casa_0524_unique <= 100000 then casa_band = '50K-1L';
+    else if has_casa_0524 = 1 and casa_0524_unique > 100000 and casa_0524_unique <= 500000 then casa_band = '1L-5L';
+    else if has_casa_0524 = 1 and casa_0524_unique > 500000 and casa_0524_unique <= 2000000 then casa_band = '5L-20L';
+    else if has_casa_0524 = 1 and casa_0524_unique > 2000000 and casa_0524_unique <= 4000000 then casa_band = '20L-40L';
+    else if has_casa_0524 = 1 and casa_0524_unique > 4000000 and casa_0524_unique <= 10000000 then casa_band = '40L-1CR';
+    else if has_casa_0524 = 1 and casa_0524_unique > 10000000 then casa_band = '1CR+';
+    else casa_band = 'Unknown';
+    
+    /* Create balance band for trb_bal_0524_unique */
+    if trb_bal_0524_unique = 0 or missing(trb_bal_0524_unique) then trb_band = 'No TRB';
+    else if trb_bal_0524_unique > 0 and trb_bal_0524_unique <= 10000 then trb_band = '0-10K';
+    else if trb_bal_0524_unique > 10000 and trb_bal_0524_unique <= 50000 then trb_band = '10K-50K';
+    else if trb_bal_0524_unique > 50000 and trb_bal_0524_unique <= 100000 then trb_band = '50K-1L';
+    else if trb_bal_0524_unique > 100000 and trb_bal_0524_unique <= 500000 then trb_band = '1L-5L';
+    else if trb_bal_0524_unique > 500000 and trb_bal_0524_unique <= 2000000 then trb_band = '5L-20L';
+    else if trb_bal_0524_unique > 2000000 and trb_bal_0524_unique <= 4000000 then trb_band = '20L-40L';
+    else if trb_bal_0524_unique > 4000000 and trb_bal_0524_unique <= 10000000 then trb_band = '40L-1CR';
+    else if trb_bal_0524_unique > 10000000 then trb_band = '1CR+';
+    else trb_band = 'Unknown';
+run;
+
+/* Step 3: Apply filters for active, mrtg_sts, final_cus_seg, has_casa_0524, has_sav_0524 */
+proc sql;
+    create table filtered_summary as
+    select *
+    from summary_bands
+    where active = 1
+      and mrtg_sts in ('Status1', 'Status2') /* Replace with actual status values */
+      and final_cus_seg in ('Seg1', 'Seg2')  /* Replace with actual segment values */
+      and has_casa_0524 = 1
+      and has_sav_0524 = 1;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
 /* Basic Data Step */
 data work.sample;
     set sashelp.class;
