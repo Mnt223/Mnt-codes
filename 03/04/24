@@ -1,3 +1,32 @@
+proc sql;
+    create table cust_cube_bands as
+    select *,
+        case
+            when sm_0524_uniq = 0 or missing(sm_0524_uniq) then 'No Balance'
+            when sm_0524_uniq > 0 and sm_0524_uniq <= 3000 then '0-3K'
+            when sm_0524_uniq > 3000 and sm_0524_uniq <= 75000 then '3K-75K'
+            when sm_0524_uniq > 75000 and sm_0524_uniq <= 250000 then '75K-250K'
+            when sm_0524_uniq > 250000 and sm_0524_uniq <= 1000000 then '250K-1M'
+            when sm_0524_uniq > 1000000 and sm_0524_uniq <= 5000000 then '1M-5M'
+            when sm_0524_uniq > 5000000 and sm_0524_uniq <= 10000000 then '5M-10M'
+            when sm_0524_uniq > 10000000 and sm_0524_uniq <= 50000000 then '10M-50M'
+            when sm_0524_uniq > 50000000 then '50M+'
+            else 'Unknown'
+        end as sm_band
+    from cust_cube;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Create the summary table */
 proc sql;
     create table summary as
