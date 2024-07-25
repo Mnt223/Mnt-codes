@@ -1,3 +1,52 @@
+SELECT * FROM crosstab(
+    $$
+    SELECT 
+        customer_id,
+        to_char(campaign_date, 'Mon') AS month,
+        COUNT(campaign_id) AS total_campaigns,
+        COUNT(DISTINCT campaign_date) AS unique_days,
+        COUNT(*) FILTER (WHERE campaign_id LIKE '%_sms') AS sms_count,
+        COUNT(*) FILTER (WHERE campaign_id LIKE '%_email') AS email_count
+    FROM 
+        campaigns
+    WHERE
+        EXTRACT(MONTH FROM campaign_date) IN (5, 6, 7)
+    GROUP BY 
+        customer_id, 
+        to_char(campaign_date, 'Mon')
+    ORDER BY 
+        customer_id, 
+        month
+    $$,
+    $$
+    VALUES ('May'), ('Jun'), ('Jul')
+    $$
+) AS ct (
+    customer_id INT,
+    may_total_campaigns INT,
+    may_unique_days INT,
+    may_sms_count INT,
+    may_email_count INT,
+    jun_total_campaigns INT,
+    jun_unique_days INT,
+    jun_sms_count INT,
+    jun_email_count INT,
+    jul_total_campaigns INT,
+    jul_unique_days INT,
+    jul_sms_count INT,
+    jul_email_count INT
+);
+
+
+
+
+
+
+
+
+
+
+
 proc sql;
     create table cust_cube_bands as
     select *,
