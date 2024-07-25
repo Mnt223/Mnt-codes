@@ -1,3 +1,39 @@
+SELECT 
+    customer_id,
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 5 THEN 1 ELSE 0 END) AS may_total_campaigns,
+    COUNT(DISTINCT CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 5 THEN pxoutcometime ELSE NULL END) AS may_unique_days,
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 5 AND contentid LIKE '%_sms' THEN 1 ELSE 0 END) AS may_sms_count,
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 5 AND contentid LIKE '%_email' THEN 1 ELSE 0 END) AS may_email_count,
+    
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 6 THEN 1 ELSE 0 END) AS jun_total_campaigns,
+    COUNT(DISTINCT CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 6 THEN pxoutcometime ELSE NULL END) AS jun_unique_days,
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 6 AND contentid LIKE '%_sms' THEN 1 ELSE 0 END) AS jun_sms_count,
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 6 AND contentid LIKE '%_email' THEN 1 ELSE 0 END) AS jun_email_count,
+    
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 7 THEN 1 ELSE 0 END) AS jul_total_campaigns,
+    COUNT(DISTINCT CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 7 THEN pxoutcometime ELSE NULL END) AS jul_unique_days,
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 7 AND contentid LIKE '%_sms' THEN 1 ELSE 0 END) AS jul_sms_count,
+    SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 7 AND contentid LIKE '%_email' THEN 1 ELSE 0 END) AS jul_email_count
+FROM 
+    campaigns
+WHERE
+    EXTRACT(MONTH FROM pxoutcometime) IN (5, 6, 7)
+GROUP BY 
+    customer_id
+ORDER BY 
+    customer_id;
+
+
+
+
+
+
+
+
+
+
+
+
 SELECT * FROM crosstab(
     $$
     SELECT 
