@@ -1,3 +1,46 @@
+Here's a draft email you can use to request access for UAT testing and gather feedback from your teammates:
+
+---
+
+Subject: Request for UAT Access and Feedback on Non-Pega Communication Tracking Dashboard
+
+Hi Team,
+
+I hope this message finds you well.
+
+I am pleased to inform you that we have developed a Power BI dashboard for tracking non-Pega communication. As part of our next steps, we need to conduct UAT (User Acceptance Testing) to ensure that all filters and metrics are functioning as expected.
+
+To proceed, I kindly request you to raise access for UAT testing. Once you have access, please review the dashboard thoroughly. Your task will involve testing all the filters and metrics to confirm their accuracy and functionality. 
+
+Additionally, I would appreciate it if you could provide feedback on the following:
+- Are all the metrics working properly?
+- Is there any missing information or metric that should be added according to our business requirements?
+- Are there any updates or changes needed to improve the dashboard?
+
+Your suggestions and feedback are crucial to ensure that the dashboard meets our needs before we add Pega data in the future. Please take your time to review and provide detailed feedback on any areas of improvement.
+
+Thank you for your cooperation and support.
+
+Best regards,
+
+[Your Name]  
+[Your Position]  
+[Your Contact Information]
+
+---
+
+Feel free to customize this email as needed.
+
+
+
+
+
+
+
+
+
+
+
 SELECT 
     customer_id,
     SUM(CASE WHEN EXTRACT(MONTH FROM pxoutcometime) = 5 THEN 1 ELSE 0 END) AS may_total_campaigns,
