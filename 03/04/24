@@ -1,3 +1,122 @@
+To compare the data obtained from the provided query with the `msd` data to check if they are the same or not, you can follow these steps:
+
+1. **Run the provided query to get the transformed `cdl` data.**
+2. **Fetch the relevant data from the `msd` table.**
+3. **Perform a comparison between the transformed `cdl` data and the `msd` data.**
+
+Here’s how you can structure the queries:
+
+### 1. Fetch Transformed `cdl` Data
+First, save the results of your provided query into a temporary table or CTE.
+
+```sql
+-- Step 1: Create a temporary table for the transformed cdl data
+WITH cdl_transformed AS (
+    SELECT 
+        cdl.TRAN_ID_NUM,
+        cdl.TRAN_TYPE_CDE,
+        cdl.CUST_ACCT_ID_NUM AS cdl_CUST_ACCT_ID_NUM,
+        prfl.CUST_ACCT_ID_NUM AS prfl_CUST_ACCT_ID_NUM
+    FROM 
+        `project.dataset.credit_card_tran_cdl` cdl
+    JOIN 
+        `project.dataset.credit_card_acct_prfl` prfl
+    ON 
+        cdl.CUST_ACCT_ID_NUM = prfl.CUST_ACCT_ID_NUM
+    WHERE 
+        cdl.TRAN_TYPE_CDE != 'M'
+)
+```
+
+### 2. Fetch Corresponding `msd` Data
+Fetch the corresponding data from the `msd` table.
+
+```sql
+-- Step 2: Fetch msd data
+WITH msd_data AS (
+    SELECT 
+        TRAN_ID_NUM,
+        TRAN_TYPE_CDE,
+        CUST_ACCT_ID_NUM
+    FROM 
+        `project.dataset.credit_card_tran_msd`
+)
+```
+
+### 3. Compare the Transformed `cdl` Data with `msd` Data
+Join the two datasets and perform the comparison.
+
+```sql
+-- Step 3: Compare cdl_transformed with msd_data
+WITH cdl_transformed AS (
+    SELECT 
+        cdl.TRAN_ID_NUM,
+        cdl.TRAN_TYPE_CDE,
+        cdl.CUST_ACCT_ID_NUM AS cdl_CUST_ACCT_ID_NUM,
+        prfl.CUST_ACCT_ID_NUM AS prfl_CUST_ACCT_ID_NUM
+    FROM 
+        `project.dataset.credit_card_tran_cdl` cdl
+    JOIN 
+        `project.dataset.credit_card_acct_prfl` prfl
+    ON 
+        cdl.CUST_ACCT_ID_NUM = prfl.CUST_ACCT_ID_NUM
+    WHERE 
+        cdl.TRAN_TYPE_CDE != 'M'
+),
+msd_data AS (
+    SELECT 
+        TRAN_ID_NUM,
+        TRAN_TYPE_CDE,
+        CUST_ACCT_ID_NUM
+    FROM 
+        `project.dataset.credit_card_tran_msd`
+)
+SELECT 
+    cdl_transformed.TRAN_ID_NUM,
+    cdl_transformed.TRAN_TYPE_CDE,
+    cdl_transformed.cdl_CUST_ACCT_ID_NUM,
+    msd_data.CUST_ACCT_ID_NUM AS msd_CUST_ACCT_ID_NUM,
+    CASE 
+        WHEN cdl_transformed.TRAN_ID_NUM IS NULL THEN 'Missing in CDL'
+        WHEN msd_data.TRAN_ID_NUM IS NULL THEN 'Missing in MSD'
+        WHEN cdl_transformed.TRAN_ID_NUM != msd_data.TRAN_ID_NUM THEN 'Mismatch in TRAN_ID_NUM'
+        WHEN cdl_transformed.TRAN_TYPE_CDE != msd_data.TRAN_TYPE_CDE THEN 'Mismatch in TRAN_TYPE_CDE'
+        WHEN cdl_transformed.cdl_CUST_ACCT_ID_NUM != msd_data.CUST_ACCT_ID_NUM THEN 'Mismatch in CUST_ACCT_ID_NUM'
+        ELSE 'Match'
+    END AS comparison_result
+FROM 
+    cdl_transformed
+FULL OUTER JOIN 
+    msd_data
+ON 
+    cdl_transformed.TRAN_ID_NUM = msd_data.TRAN_ID_NUM
+AND cdl_transformed.TRAN_TYPE_CDE = msd_data.TRAN_TYPE_CDE
+AND cdl_transformed.cdl_CUST_ACCT_ID_NUM = msd_data.CUST_ACCT_ID_NUM;
+```
+
+### Explanation:
+
+1. **`cdl_transformed` CTE**: This CTE fetches and filters the `cdl` data based on your provided query logic.
+2. **`msd_data` CTE**: This CTE fetches the relevant columns from the `msd` table.
+3. **Comparison Query**: This final query performs a `FULL OUTER JOIN` to ensure that all records from both datasets are included. The `CASE` statement is used to indicate whether each record matches, has a mismatch, or is missing in one of the datasets.
+
+This approach ensures a comprehensive comparison between the transformed `cdl` data and the `msd` data, highlighting any discrepancies or mismatches. If you need further adjustments, feel free to let me know!
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Here's a draft email you can use to request access for UAT testing and gather feedback from your teammates:
 
 ---
