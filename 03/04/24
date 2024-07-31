@@ -1,3 +1,89 @@
+Got it. Based on the image, you need to transform the `TRAN_CHANL_CDE` column from the `cdl` table and then compare it with the `CHANL_DESC` column in the `msd` table using the provided mapping logic.
+
+### Transformation Mapping
+
+The transformation logic converts `TRAN_CHANL_CDE` values into descriptions as follows:
+
+- 5600: HUB
+- 5700: ATM
+- 6100: GTSMSIN VISA SINGLE MSG
+- 6200: GTMDSIN MC SINGLE MSG
+- 9000: VISA
+- 9001: MASTERCARD
+- 9400: CREDIT MANAGEMENT SYSTEM INPUTS
+- 9455: VCR ADJ (AMT1) FORMAT
+- For any other code: 'OTHER'
+
+### SQL Implementation
+
+Here is how you can implement this in BigQuery:
+
+```sql
+-- Step 1: Extract and Transform Data from CDL Table
+CREATE OR REPLACE TEMP TABLE cdl_transformed AS
+SELECT 
+    TRAN_CHANL_CDE,
+    CASE 
+        WHEN TRAN_CHANL_CDE = '5600' THEN 'HUB'
+        WHEN TRAN_CHANL_CDE = '5700' THEN 'ATM'
+        WHEN TRAN_CHANL_CDE = '6100' THEN 'GTSMSIN VISA SINGLE MSG'
+        WHEN TRAN_CHANL_CDE = '6200' THEN 'GTMDSIN MC SINGLE MSG'
+        WHEN TRAN_CHANL_CDE = '9000' THEN 'VISA'
+        WHEN TRAN_CHANL_CDE = '9001' THEN 'MASTERCARD'
+        WHEN TRAN_CHANL_CDE = '9400' THEN 'CREDIT MANAGEMENT SYSTEM INPUTS'
+        WHEN TRAN_CHANL_CDE = '9455' THEN 'VCR ADJ (AMT1) FORMAT'
+        ELSE 'OTHER'
+    END AS CHANL_DESC
+FROM 
+    `your_project.your_dataset.credit_card_tran_cdl`;
+
+-- Step 2: Extract Data from MSD Table
+CREATE OR REPLACE TEMP TABLE msd_data AS
+SELECT 
+    CHANL_DESC,
+    -- add other necessary columns if needed
+FROM 
+    `your_project.your_dataset.credit_card_tran_msd`;
+
+-- Step 3: Compare Data
+SELECT 
+    cdl.TRAN_CHANL_CDE,
+    cdl.CHANL_DESC AS cdl_transformed_desc,
+    msd.CHANL_DESC AS msd_desc,
+    CASE 
+        WHEN cdl.CHANL_DESC = msd.CHANL_DESC THEN 'Match'
+        ELSE 'Mismatch'
+    END AS comparison_result
+FROM 
+    cdl_transformed cdl
+LEFT JOIN 
+    msd_data msd
+ON 
+    cdl.CHANL_DESC = msd.CHANL_DESC;
+```
+
+This SQL script performs the following:
+1. Transforms the `TRAN_CHANL_CDE` column from the `cdl` table into the corresponding `CHANL_DESC` values.
+2. Extracts the `CHANL_DESC` column from the `msd` table.
+3. Compares the transformed `CHANL_DESC` values from the `cdl` table with the `CHANL_DESC` values in the `msd` table and checks for matches.
+
+If you have more transformations or additional columns to compare, please provide those details, and we can adjust the script accordingly.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- Step 1: Create a temporary table for the transformed cdl data
 WITH cdl_transformed AS (
     SELECT 
