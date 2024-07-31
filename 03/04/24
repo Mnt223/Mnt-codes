@@ -23,6 +23,86 @@ msd_data AS (
         `hsbc-10505826-indsw-prod.DS_IN_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_TRAN_MSD`
 )
 SELECT 
+    COUNT(*) AS total_records,
+    SUM(CASE 
+        WHEN cdl_transformed.TRAN_ID_NUM IS NULL THEN 1 
+        ELSE 0 
+    END) AS missing_in_cdl,
+    SUM(CASE 
+        WHEN msd_data.TRAN_ID_NUM IS NULL THEN 1 
+        ELSE 0 
+    END) AS missing_in_msd,
+    SUM(CASE 
+        WHEN cdl_transformed.TRAN_ID_NUM = msd_data.TRAN_ID_NUM
+            AND cdl_transformed.TRAN_TYPE_CDE = msd_data.TRAN_TYPE_CDE
+            AND cdl_transformed.cdl_CUST_ACCT_ID_NUM = msd_data.CUST_ACCT_ID_NUM
+        THEN 1 
+        ELSE 0 
+    END) AS match_count,
+    SUM(CASE 
+        WHEN cdl_transformed.TRAN_ID_NUM != msd_data.TRAN_ID_NUM
+            OR cdl_transformed.TRAN_TYPE_CDE != msd_data.TRAN_TYPE_CDE
+            OR cdl_transformed.cdl_CUST_ACCT_ID_NUM != msd_data.CUST_ACCT_ID_NUM
+        THEN 1 
+        ELSE 0 
+    END) AS mismatch_count
+FROM 
+    cdl_transformed
+FULL OUTER JOIN 
+    msd_data
+ON 
+    cdl_transformed.TRAN_ID_NUM = msd_data.TRAN_ID_NUM
+AND cdl_transformed.TRAN_TYPE_CDE = msd_data.TRAN_TYPE_CDE
+AND cdl_transformed.cdl_CUST_ACCT_ID_NUM = msd_data.CUST_ACCT_ID_NUM;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- Step 1: Create a temporary table for the transformed cdl data
+WITH cdl_transformed AS (
+    SELECT 
+        cdl.TRAN_ID_NUM,
+        cdl.TRAN_TYPE_CDE,
+        cdl.CUST_ACCT_ID_NUM AS cdl_CUST_ACCT_ID_NUM,
+        prfl.CUST_ACCT_ID_NUM AS prfl_CUST_ACCT_ID_NUM
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_TRAN_CDL` cdl
+    JOIN 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_CDL_AUTH_VIEWS_ACCT_IN_PROD.CREDIT_CARD_ACCT_PRFL` prfl
+    ON 
+        cdl.CUST_ACCT_ID_NUM = prfl.CUST_ACCT_ID_NUM
+    WHERE 
+        cdl.TRAN_TYPE_CDE != 'M'
+),
+msd_data AS (
+    SELECT 
+        TRAN_ID_NUM,
+        TRAN_TYPE_CDE,
+        CUST_ACCT_ID_NUM
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_IN_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_TRAN_MSD`
+)
+SELECT 
     cdl_transformed.TRAN_ID_NUM,
     cdl_transformed.TRAN_TYPE_CDE,
     cdl_transformed.cdl_CUST_ACCT_ID_NUM,
