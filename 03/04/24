@@ -1,3 +1,42 @@
+CREATE TEMPORARY TABLE temp_country_mapping AS
+SELECT 
+    CUST_ID,
+    TRAN_TEXT,
+    GLOBL_MRCH_CTRY_CDE,
+    CASE 
+        -- If GLOBL_MRCH_CTRY_CDE is 3 characters long
+        WHEN LENGTH(GLOBL_MRCH_CTRY_CDE) = 3 THEN
+            (SELECT iso2 FROM `project.dataset.country_codes` WHERE iso3 = GLOBL_MRCH_CTRY_CDE LIMIT 1)
+        
+        -- If GLOBL_MRCH_CTRY_CDE is not null
+        WHEN GLOBL_MRCH_CTRY_CDE IS NOT NULL THEN 
+            GLOBL_MRCH_CTRY_CDE
+        
+        -- Otherwise, process TRAN_TEXT
+        ELSE 
+            CASE 
+                -- Extract the last word from TRAN_TEXT
+                WHEN LENGTH(SPLIT(TRAN_TEXT, ' ')[ORDINAL(ARRAY_LENGTH(SPLIT(TRAN_TEXT, ' ')))]) = 2 AND 
+                     (SELECT COUNT(*) FROM `project.dataset.country_codes` WHERE iso2 = SPLIT(TRAN_TEXT, ' ')[ORDINAL(ARRAY_LENGTH(SPLIT(TRAN_TEXT, ' ')))]) > 0 THEN
+                    SPLIT(TRAN_TEXT, ' ')[ORDINAL(ARRAY_LENGTH(SPLIT(TRAN_TEXT, ' ')))]
+
+                -- If last word is 3 characters and valid ISO country code, convert to 2 characters
+                WHEN LENGTH(SPLIT(TRAN_TEXT, ' ')[ORDINAL(ARRAY_LENGTH(SPLIT(TRAN_TEXT, ' ')))]) = 3 AND 
+                     (SELECT COUNT(*) FROM `project.dataset.country_codes` WHERE iso3 = SPLIT(TRAN_TEXT, ' ')[ORDINAL(ARRAY_LENGTH(SPLIT(TRAN_TEXT, ' ')))]) > 0 THEN
+                    (SELECT iso2 FROM `project.dataset.country_codes` WHERE iso3 = SPLIT(TRAN_TEXT, ' ')[ORDINAL(ARRAY_LENGTH(SPLIT(TRAN_TEXT, ' ')))])
+                
+                -- Otherwise, map to null
+                ELSE NULL
+            END
+    END AS COUNTRY_CODE
+FROM 
+    `project.dataset.credit_card_tran_cdl`;
+
+
+
+
+
+
 Got it. Based on the image, you need to transform the `TRAN_CHANL_CDE` column from the `cdl` table and then compare it with the `CHANL_DESC` column in the `msd` table using the provided mapping logic.
 
 ### Transformation Mapping
