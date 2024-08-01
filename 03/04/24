@@ -1,3 +1,36 @@
+-- Example for converting past 12 months into a specific format
+WITH transformed_data AS (
+    SELECT 
+        CUST_ID,
+        STRING_AGG(FORMAT_TIMESTAMP('%Y%m', DATE_SUB(CURRENT_DATE(), INTERVAL month_num MONTH)), '|') AS CREDIT_CARD_MO_SPEND
+    FROM 
+        `project.dataset.credit_card_tran_cdl`,
+        UNNEST(GENERATE_ARRAY(1, 12)) AS month_num
+    GROUP BY 
+        CUST_ID
+)
+SELECT * FROM transformed_data;
+
+-- Example for mapping transaction types
+SELECT 
+    CASE 
+        WHEN TRAN_TYPE_CDE = 'C' THEN 'Credit'
+        WHEN TRAN_TYPE_CDE = 'D' THEN 'Debit'
+        ELSE TRAN_TYPE_CDE
+    END AS TRAN_TYPE_DESC
+FROM
+    `project.dataset.credit_card_tran_cdl`;
+
+
+
+
+
+
+
+
+
+
+
 SELECT 
     CUST_ID_NUM,
     CUST_ACCT_ID_NUM,
