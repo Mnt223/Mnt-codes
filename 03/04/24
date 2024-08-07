@@ -1,3 +1,66 @@
+/* List of variables to be processed */
+%let varlist = LST_3MNTH_Int_Airlines LST_3MNTH_INTL_TRVL_OTH LST_3MNTH_ECOM LST_3MNTH_POS
+               LST_3MNTH_High_AIR_Spend LST_3MNTH_High_Hotel_Spend LST_3MNTH_High_Travel_Spend
+               LST_12MNTH_ECOM LST_12MNTH_POS;
+
+/* Create an empty final dataset with the same structure as the summary tables */
+data WORK.CARDS_SMRYY;
+    length Trigger $32 CARD_TYPE1 $32 cust_count 8 NEXT_3MNTH_Int_Airlines-NEXT_3MNTH_High_Travel_Spend 8 credit_limit 8 OS_BALANCE 8;
+    if 0 then set FINAL_SUMMARY_CARDS; /* This creates the structure based on your source dataset */
+    stop;
+run;
+
+%macro create_summary(var);
+    proc sql;
+        create table WORK.CARDS_SMRYY_&var. AS
+        SELECT
+            &var. as Trigger,
+            CARD_TYPE1,
+            COUNT(APPL_USER_1) as cust_count,
+            SUM(NEXT_3MNTH_Int_Airlines) AS NEXT_3MNTH_Int_Airlines,
+            SUM(NEXT_3MNTH_Int_Hotels) AS NEXT_3MNTH_Int_Hotels,
+            SUM(NEXT_3MNTH_ECOM) AS NEXT_3MNTH_ECOM,
+            SUM(NEXT_3MNTH_POS) AS NEXT_3MNTH_POS,
+            SUM(NEXT_3MNTH_INTL_TRVL_OTH) AS NEXT_3MNTH_INTL_TRVL_OTH,
+            SUM(NEXT_High_AIR_Spend) AS NEXT_High_AIR_Spend,
+            SUM(NEXT_3MNTH_High_Hotel_Spend) AS NEXT_3MNTH_High_Hotel_Spend,
+            SUM(NEXT_3MNTH_High_Travel_Spend) AS NEXT_3MNTH_High_Travel_Spend,
+            SUM(CREDIT_LIMIT) as credit_limit,
+            SUM(OS_BAL) AS OS_BALANCE
+        FROM WORK.FINAL_SUMMARY_CARDS
+        WHERE &var. = 1
+        GROUP BY &var., CARD_TYPE1;
+    QUIT;
+
+    /* Append the data to a final dataset */
+    proc append base=WORK.CARDS_SMRYY data=WORK.CARDS_SMRYY_&var. force;
+    run;
+
+    /* Clean up the work table */
+    proc datasets lib=work nolist;
+        delete CARDS_SMRYY_&var.;
+    quit;
+%mend create_summary;
+
+%macro process_all_vars;
+    %let i = 1;
+    %let var = %scan(&varlist, &i);
+
+    %do %while (&var ne );
+        %create_summary(&var);
+        %let i = %eval(&i + 1);
+        %let var = %scan(&varlist, &i);
+    %end;
+%mend process_all_vars;
+
+/* Run the macro to process all variables */
+%process_all_vars;
+
+
+
+
+
+
 %macro create_summary(var);
     proc sql;
         create table WORK.CARDS_SMRYY_&var. AS
