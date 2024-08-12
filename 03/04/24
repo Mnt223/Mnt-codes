@@ -1,3 +1,131 @@
+CREATE TEMPORARY TABLE temp_credit_card_cdl AS
+SELECT
+    -- 1. acct_num: Direct mapping from cust_acct_id_num in CREDIT_CARD_ACCT_PRFL
+    prfl.cust_acct_id_num AS acct_num,
+    
+    -- 2. prod_cde: Direct mapping from prod_cde in CREDIT_CARD_ACCT_PRFL
+    prfl.prod_cde AS prod_cde,
+    
+    -- 3. cust_id_num: Direct mapping from cust_id_num in CREDIT_CARD_ACCT_PRFL
+    prfl.cust_id_num AS cust_id_num,
+    
+    -- 4. prod_name: Derived from PROD based on logo_cde in CREDIT_CARD_ACCT_PRFL
+    prod.prod_cat_type_cde AS prod_name,
+    
+    -- 5. acct_bal_lcl_crncy_amt: Latest balance from CUST_ACCT_DAILY_SNAP based on last_updt_ts
+    snap.cust_acct_lcy_bal_amt AS acct_bal_lcl_crncy_amt,
+    
+    -- 6. last_stmt_bal_amt: Sum of tran_lcy_amt from CREDIT_CARD_TRAN between last two stmt_last_dt in CUST_ACCT_DAILY_SNAP
+    tran_agg.last_stmt_bal_amt AS last_stmt_bal_amt,
+    
+    -- 7. credit_limit_amt: Direct mapping from credit_limit_amt in CREDIT_CARD_ACCT_PRFL
+    prfl.credit_limit_amt AS credit_limit_amt,
+    
+    -- 8. min_pymt_due_amt: Direct mapping from min_pymt_due_amt in CREDIT_CARD_ACCT_PRFL
+    prfl.min_pymt_due_amt AS min_pymt_due_amt,
+    
+    -- 9. int_rt: Latest promo interest rate from CREDIT_CARD_ACCT_PLAN based on EFF_start_ts
+    plan.credit_plan_promo_int_rt AS int_rt,
+    
+    -- 10. pymt_due_dt: Latest pymt_due_dt from CUST_ACCT_DAILY_SNAP based on snap_ts
+    pymt_due_dt_snap.pymt_due_dt AS pymt_due_dt,
+    
+    -- 11. last_stmt_dt: Latest stmt_last_dt from CUST_ACCT_DAILY_SNAP based on snap_ts
+    stmt_last_dt_snap.stmt_last_dt AS last_stmt_dt,
+    
+    -- 12. next_stmt_dt: Latest stmt_next_dt from CUST_ACCT_DAILY_SNAP based on snap_ts
+    next_stmt_dt_snap.stmt_next_dt AS next_stmt_dt
+
+FROM
+    -- Join the base profile table
+    hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824 prfl
+    
+    -- Join with the PROD table to get prod_name
+    LEFT JOIN hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_CDL_AUTH_VIEWS_PROD_IN_PROD.PROD prod
+        ON prfl.logo_cde = prod.prod_cde
+        
+    -- Join with the LatestSnap CTE to get the latest balance
+    LEFT JOIN LatestSnap snap
+        ON prfl.cust_acct_id_num = snap.cust_acct_id_num
+
+    LEFT JOIN (
+        SELECT cust_acct_id_num, SUM(tran_lcy_amt) AS last_stmt_bal_amt
+        FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_TRANCDL_070824 tran
+        WHERE tran.tran_post_dt BETWEEN (
+            SELECT MAX(stmt_last_dt)
+            FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824 snap1
+            WHERE snap1.cust_acct_id_num = tran.cust_acct_id_num
+            AND snap1.stmt_last_dt IS NOT NULL
+        ) AND (
+            SELECT MAX(stmt_last_dt)
+            FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824 snap2
+            WHERE snap2.cust_acct_id_num = tran.cust_acct_id_num
+            AND snap2.stmt_last_dt < (
+                SELECT MAX(stmt_last_dt)
+                FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824 snap1
+                WHERE snap1.cust_acct_id_num = tran.cust_acct_id_num
+            )
+        )
+        GROUP BY cust_acct_id_num
+    ) tran_agg ON prfl.cust_acct_id_num = tran_agg.cust_acct_id_num
+
+    LEFT JOIN (
+        SELECT cust_acct_id_num, pymt_due_dt
+        FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+        WHERE snap_ts = (
+            SELECT MAX(snap_ts)
+            FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+            WHERE cust_acct_id_num = prfl.cust_acct_id_num
+            AND pymt_due_dt IS NOT NULL
+        )
+    ) pymt_due_dt_snap ON prfl.cust_acct_id_num = pymt_due_dt_snap.cust_acct_id_num
+
+    LEFT JOIN (
+        SELECT cust_acct_id_num, stmt_last_dt
+        FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+        WHERE snap_ts = (
+            SELECT MAX(snap_ts)
+            FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+            WHERE cust_acct_id_num = prfl.cust_acct_id_num
+            AND stmt_last_dt IS NOT NULL
+        )
+    ) stmt_last_dt_snap ON prfl.cust_acct_id_num = stmt_last_dt_snap.cust_acct_id_num
+
+    LEFT JOIN (
+        SELECT cust_acct_id_num, stmt_next_dt
+        FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+        WHERE snap_ts = (
+            SELECT MAX(snap_ts)
+            FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+            WHERE cust_acct_id_num = prfl.cust_acct_id_num
+            AND stmt_next_dt IS NOT NULL
+        )
+    ) next_stmt_dt_snap ON prfl.cust_acct_id_num = next_stmt_dt_snap.cust_acct_id_num
+
+    -- Join with CREDIT_CARD_ACCT_PLAN to get the latest interest rate
+    LEFT JOIN (
+        SELECT cust_acct_id_num, credit_plan_promo_int_rt
+        FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PLANCDL_070824
+        WHERE credit_plan_type_cde = 'R'
+        AND credit_plan_sub_type_cde = '20001'
+        AND eff_start_ts = (
+            SELECT MAX(eff_start_ts)
+            FROM hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PLANCDL_070824
+            WHERE cust_acct_id_num = prfl.cust_acct_id_num
+        )
+    ) plan ON prfl.cust_acct_id_num = plan.cust_acct_id_num;
+
+
+
+
+
+
+
+
+
+
+
+
 WITH LatestSnap AS (
     SELECT 
         cust_acct_id_num, 
