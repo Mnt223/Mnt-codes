@@ -1,3 +1,134 @@
+WITH LatestSnap AS (
+    SELECT 
+        cust_acct_id_num, 
+        cust_acct_lcy_bal_amt, 
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY last_updt_ts DESC) AS rn_bal
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+),
+LatestStmtDt AS (
+    SELECT 
+        cust_acct_id_num, 
+        stmt_last_dt, 
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn_last_stmt
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824
+    WHERE 
+        stmt_last_dt IS NOT NULL
+),
+LatestNextStmtDt AS (
+    SELECT 
+        cust_acct_id_num, 
+        stmt_next_dt, 
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn_next_stmt
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824
+    WHERE 
+        stmt_next_dt IS NOT NULL
+),
+LatestPymtDueDt AS (
+    SELECT 
+        cust_acct_id_num, 
+        pymt_due_dt, 
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn_pymt_due
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824
+    WHERE 
+        pymt_due_dt IS NOT NULL
+),
+LatestIntRt AS (
+    SELECT 
+        cust_acct_id_num, 
+        credit_plan_promo_int_rt, 
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY eff_start_ts DESC) AS rn_int_rt
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PLANCDL_070824
+    WHERE 
+        credit_plan_type_cde = 'R' 
+        AND credit_plan_sub_type_cde = '20001'
+)
+SELECT 
+    tgt.acct_num,
+    CASE WHEN tgt.acct_num = src_acct.cust_acct_id_num THEN 1 ELSE 0 END AS acct_num_match,
+    CASE WHEN tgt.prod_cde = src_acct.prod_cde THEN 1 ELSE 0 END AS prod_cde_match,
+    CASE WHEN tgt.cust_id_num = src_acct.cust_id_num THEN 1 ELSE 0 END AS cust_id_num_match,
+    CASE WHEN tgt.prod_name = src_prod.prod_cat_type_cde THEN 1 ELSE 0 END AS prod_name_match,
+    CASE WHEN tgt.acct_bal_lcl_crncy_amt = snap_bal.cust_acct_lcy_bal_amt AND snap_bal.rn_bal = 1 THEN 1 ELSE 0 END AS acct_bal_lcl_crncy_amt_match,
+    -- Add the complex calculation for `last_stmt_bal_amt` here
+    CASE WHEN tgt.credit_limit_amt = src_acct.credit_limit_amt THEN 1 ELSE 0 END AS credit_limit_amt_match,
+    CASE WHEN tgt.min_pymt_due_amt = src_acct.min_pymt_due_amt THEN 1 ELSE 0 END AS min_pymt_due_amt_match,
+    CASE WHEN tgt.int_rt = int_rt.credit_plan_promo_int_rt AND int_rt.rn_int_rt = 1 THEN 1 ELSE 0 END AS int_rt_match,
+    CASE WHEN tgt.pymt_due_dt = pymt_due.pymt_due_dt AND pymt_due.rn_pymt_due = 1 THEN 1 ELSE 0 END AS pymt_due_dt_match,
+    CASE WHEN tgt.last_stmt_dt = stmt_dt.stmt_last_dt AND stmt_dt.rn_last_stmt = 1 THEN 1 ELSE 0 END AS last_stmt_dt_match,
+    CASE WHEN tgt.next_stmt_dt = next_stmt.stmt_next_dt AND next_stmt.rn_next_stmt = 1 THEN 1 ELSE 0 END AS next_stmt_dt_match,
+    -- Summarizing the results
+    COUNT(*) AS total_records,
+    SUM(CASE WHEN tgt.acct_num = src_acct.cust_acct_id_num THEN 1 ELSE 0 END) AS acct_num_matches,
+    SUM(CASE WHEN tgt.prod_cde = src_acct.prod_cde THEN 1 ELSE 0 END) AS prod_cde_matches,
+    SUM(CASE WHEN tgt.cust_id_num = src_acct.cust_id_num THEN 1 ELSE 0 END) AS cust_id_num_matches,
+    SUM(CASE WHEN tgt.prod_name = src_prod.prod_cat_type_cde THEN 1 ELSE 0 END) AS prod_name_matches,
+    SUM(CASE WHEN tgt.acct_bal_lcl_crncy_amt = snap_bal.cust_acct_lcy_bal_amt AND snap_bal.rn_bal = 1 THEN 1 ELSE 0 END) AS acct_bal_lcl_crncy_amt_matches,
+    SUM(CASE WHEN tgt.credit_limit_amt = src_acct.credit_limit_amt THEN 1 ELSE 0 END) AS credit_limit_amt_matches,
+    SUM(CASE WHEN tgt.min_pymt_due_amt = src_acct.min_pymt_due_amt THEN 1 ELSE 0 END) AS min_pymt_due_amt_matches,
+    SUM(CASE WHEN tgt.int_rt = int_rt.credit_plan_promo_int_rt AND int_rt.rn_int_rt = 1 THEN 1 ELSE 0 END) AS int_rt_matches,
+    SUM(CASE WHEN tgt.pymt_due_dt = pymt_due.pymt_due_dt AND pymt_due.rn_pymt_due = 1 THEN 1 ELSE 0 END) AS pymt_due_dt_matches,
+    SUM(CASE WHEN tgt.last_stmt_dt = stmt_dt.stmt_last_dt AND stmt_dt.rn_last_stmt = 1 THEN 1 ELSE 0 END) AS last_stmt_dt_matches,
+    SUM(CASE WHEN tgt.next_stmt_dt = next_stmt.stmt_next_dt AND next_stmt.rn_next_stmt = 1 THEN 1 ELSE 0 END) AS next_stmt_dt_matches
+FROM 
+    hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824 tgt
+JOIN 
+    hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824 src_acct 
+ON 
+    tgt.acct_num = src_acct.cust_acct_id_num
+JOIN 
+    hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_CDL_AUTH_VIEWS_PROD_IN_PROD.PROD src_prod 
+ON 
+    src_acct.logo_cde = src_prod.prod_cde
+LEFT JOIN 
+    LatestSnap snap_bal 
+ON 
+    tgt.acct_num = snap_bal.cust_acct_id_num AND snap_bal.rn_bal = 1
+LEFT JOIN 
+    LatestStmtDt stmt_dt 
+ON 
+    tgt.acct_num = stmt_dt.cust_acct_id_num AND stmt_dt.rn_last_stmt = 1
+LEFT JOIN 
+    LatestNextStmtDt next_stmt 
+ON 
+    tgt.acct_num = next_stmt.cust_acct_id_num AND next_stmt.rn_next_stmt = 1
+LEFT JOIN 
+    LatestPymtDueDt pymt_due 
+ON 
+    tgt.acct_num = pymt_due.cust_acct_id_num AND pymt_due.rn_pymt_due = 1
+LEFT JOIN 
+    LatestIntRt int_rt 
+ON 
+    tgt.acct_num = int_rt.cust_acct_id_num AND int_rt.rn_int_rt = 1
+GROUP BY 
+    tgt.acct_num,
+    tgt.prod_cde,
+    tgt.cust_id_num,
+    tgt.prod_name,
+    tgt.acct_bal_lcl_crncy_amt,
+    tgt.credit_limit_amt,
+    tgt.min_pymt_due_amt,
+    tgt.int_rt,
+    tgt.pymt_due_dt,
+    tgt.last_stmt_dt,
+    tgt.next_stmt_dt;
+
+
+
+
+
+
+
+
+
+
+
+
+
 BEGIN
   -- Create the Latest_Snap table to capture the latest balance amount per account
   CREATE OR REPLACE TABLE project.dataset.Latest_Snap AS
