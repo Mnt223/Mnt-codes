@@ -1,3 +1,45 @@
+WITH Transformed_CDL AS (
+    SELECT 
+        ADS_REAL_CUST_ID AS cust_id_num,
+        STRING_AGG(CAST(SUM(ADS_TRAN_AMT) AS STRING), '|' ORDER BY ADS_TRAN_POST_DT) AS transformed_value
+    FROM 
+        `hsbc-12010747-ihubinmodli-prod.ADSFCT_INM_PROD.ADS_MBASE_TRAN_CARD_MSTR_FCT_DAILY`
+    WHERE 
+        ADS_TRAN_ACTV_GRP_CDE IN ('1', '2')
+        AND DATE_TRUNC(ADS_TRAN_POST_DT, MONTH) BETWEEN DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH), MONTH) AND DATE_TRUNC(CURRENT_DATE(), MONTH)
+    GROUP BY 
+        ADS_REAL_CUST_ID, 
+        DATE_TRUNC(ADS_TRAN_POST_DT, MONTH)
+    ORDER BY 
+        ADS_REAL_CUST_ID, 
+        DATE_TRUNC(ADS_TRAN_POST_DT, MONTH)
+)
+
+SELECT 
+    m.cust_id, 
+    c.cust_id_num, 
+    c.transformed_value
+FROM 
+    `your_project.your_dataset.msd` m
+JOIN 
+    Transformed_CDL c
+ON 
+    m.cust_id = c.cust_id_num
+WHERE 
+    m.cust_id != c.transformed_value;
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* List of variables to be processed */
 %let varlist = LST_3MNTH_Int_Airlines LST_3MNTH_INTL_TRVL_OTH LST_3MNTH_ECOM LST_3MNTH_POS
                LST_3MNTH_High_AIR_Spend LST_3MNTH_High_Hotel_Spend LST_3MNTH_High_Travel_Spend
