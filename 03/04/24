@@ -7,6 +7,54 @@ WITH Latest_Snap AS (
     FROM 
         `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAP`
 )
+
+-- Here we are creating a temporary table, but in BigQuery, instead of CREATE OR REPLACE,
+-- we use a SELECT INTO statement to create a new table.
+-- If temp_cdl_table already exists, you may need to DROP it first.
+
+-- First, DROP the existing table if it exists (optional, depending on your setup)
+DROP TABLE IF EXISTS `project.dataset.temp_cdl_table`;
+
+-- Now, create the table
+CREATE TABLE `project.dataset.temp_cdl_table` AS
+SELECT 
+    pr.CUST_ACCT_ID_NUM AS ACCT_NUM,       -- Direct Map from CREDIT_CARD_ACCT_PRFL.CUST_ACCT_ID_NUM
+    pr.PROD_CDE,                           -- Direct Map from CREDIT_CARD_ACCT_PRFL.PROD_CDE
+    pr.CUST_ID_NUM,                        -- Direct Map from CREDIT_CARD_ACCT_PRFL.CUST_ID_NUM
+    prod.PROD_CAT_TYPE_CDE AS PROD_NAME,   -- Map PROD_NAME by joining with PROD table on LOGO_CDE
+    ls.CUST_ACCT_LCY_BAL_AMT AS ACCT_BAL_LCL_CRNCY_AMT,  -- Latest balance amount
+    pr.CREDIT_LIMIT_AMT,                   -- Direct Map from CREDIT_CARD_ACCT_PRFL.CREDIT_LIMIT_AMT
+    pr.MIN_PYMT_DUE_AMT                    -- Direct Map from CREDIT_CARD_ACCT_PRFL.MIN_PYMT_DUE_AMT
+FROM 
+    `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFL` pr
+LEFT JOIN 
+    Latest_Snap ls
+ON 
+    pr.CUST_ACCT_ID_NUM = ls.CUST_ACCT_ID_NUM 
+    AND ls.rn = 1
+LEFT JOIN 
+    `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.PROD` prod
+ON 
+    pr.LOGO_CDE = prod.PROD_CDE;
+
+
+
+
+
+
+
+
+
+
+-- Step 1: Creating the temp_cdl_table with correct transformations
+WITH Latest_Snap AS (
+    SELECT 
+        CUST_ACCT_ID_NUM,
+        CUST_ACCT_LCY_BAL_AMT,
+        ROW_NUMBER() OVER (PARTITION BY CUST_ACCT_ID_NUM ORDER BY LAST_UPDT_TS DESC) AS rn
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAP`
+)
 CREATE OR REPLACE TABLE project.dataset.temp_cdl_table AS
 SELECT 
     pr.CUST_ACCT_ID_NUM AS ACCT_NUM,       -- Direct Map from CREDIT_CARD_ACCT_PRFL.CUST_ACCT_ID_NUM
