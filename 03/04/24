@@ -1,3 +1,50 @@
+WITH Aggregated_Amounts AS (
+    SELECT 
+        ADS_REAL_CUST_ID AS cust_id_num,
+        DATE_TRUNC(ADS_TRAN_POST_DT, MONTH) AS tran_month,
+        SUM(ADS_TRAN_AMT) AS total_amt
+    FROM 
+        `hsbc-12010747-ihubinmodli-prod.ADSFCT_INM_PROD.ADS_MBASE_TRAN_CARD_MSTR_FCT_DAILY`
+    WHERE 
+        ADS_TRAN_ACTV_GRP_CDE IN ('1', '2')
+        AND DATE_TRUNC(ADS_TRAN_POST_DT, MONTH) BETWEEN DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH), MONTH) AND DATE_TRUNC(CURRENT_DATE(), MONTH)
+    GROUP BY 
+        ADS_REAL_CUST_ID, 
+        DATE_TRUNC(ADS_TRAN_POST_DT, MONTH)
+),
+Transformed_CDL AS (
+    SELECT 
+        cust_id_num,
+        STRING_AGG(CAST(total_amt AS STRING), '|' ORDER BY tran_month) AS transformed_value
+    FROM 
+        Aggregated_Amounts
+    GROUP BY 
+        cust_id_num
+)
+
+SELECT 
+    m.cust_id, 
+    c.cust_id_num, 
+    c.transformed_value
+FROM 
+    `your_project.your_dataset.msd` m
+JOIN 
+    Transformed_CDL c
+ON 
+    m.cust_id = c.cust_id_num
+WHERE 
+    m.cust_id != c.transformed_value;
+
+
+
+
+
+
+
+
+
+
+
 WITH Transformed_CDL AS (
     SELECT 
         ADS_REAL_CUST_ID AS cust_id_num,
