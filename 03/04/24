@@ -1,3 +1,210 @@
+Certainly! Below are the SQL queries for each variable:
+
+### 1. **`acct_num`**
+   - **Direct Mapping**:
+   ```sql
+   SELECT COUNT(*) 
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824` AS src
+   ON tgt.acct_num = src.cust_acct_id_num
+   WHERE tgt.acct_num != src.cust_acct_id_num;
+   ```
+
+### 2. **`prod_cde`**
+   - **Direct Mapping**:
+   ```sql
+   SELECT COUNT(*) 
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824` AS src
+   ON tgt.prod_cde = src.prod_cde
+   WHERE tgt.prod_cde != src.prod_cde;
+   ```
+
+### 3. **`cust_id_num`**
+   - **Direct Mapping**:
+   ```sql
+   SELECT COUNT(*) 
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824` AS src
+   ON tgt.cust_id_num = src.cust_id_num
+   WHERE tgt.cust_id_num != src.cust_id_num;
+   ```
+
+### 4. **`prod_name`**
+   - **Mapping with Conditional Logic**:
+   ```sql
+   SELECT COUNT(*)
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824` AS src
+   ON src.logo_cde = prod.prod_cde
+   JOIN `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_CDL_AUTH_VIEWS_PROD_IN_PROD.PROD` AS prod
+   ON prod.prod_cde = src.logo_cde
+   WHERE tgt.prod_name != prod.prod_cat_type_cde;
+   ```
+
+### 5. **`acct_bal_lcl_crncy_amt`**
+   - **Mapping Based on Latest Image**:
+   ```sql
+   WITH latest_snapshot AS (
+       SELECT 
+           cust_acct_id_num, 
+           cust_acct_lcy_bal_amt, 
+           ROW_NUMBER() OVER(PARTITION BY cust_acct_id_num ORDER BY last_updt_ts DESC) AS rn
+       FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824`
+   )
+   SELECT COUNT(*)
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN latest_snapshot AS src
+   ON tgt.acct_num = src.cust_acct_id_num
+   WHERE tgt.acct_bal_lcl_crncy_amt != src.cust_acct_lcy_bal_amt
+   AND src.rn = 1;
+   ```
+
+### 6. **`last_stmt_bal_amt`**
+   - **Aggregating Based on Date**:
+   ```sql
+   WITH latest_stmt_dates AS (
+       SELECT 
+           cust_acct_id_num, 
+           stmt_last_dt, 
+           ROW_NUMBER() OVER(PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn
+       FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824`
+       WHERE stmt_last_dt IS NOT NULL
+   ),
+   relevant_trans AS (
+       SELECT 
+           cust_acct_id_num, 
+           SUM(tran_lcy_amt) AS total_amt
+       FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_TRANCDL_070824`
+       WHERE tran_post_dt BETWEEN (
+           SELECT MIN(stmt_last_dt) FROM latest_stmt_dates WHERE rn <= 2
+       ) AND (
+           SELECT MAX(stmt_last_dt) FROM latest_stmt_dates WHERE rn <= 2
+       )
+       GROUP BY cust_acct_id_num
+   )
+   SELECT COUNT(*)
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN relevant_trans AS src
+   ON tgt.acct_num = src.cust_acct_id_num
+   WHERE tgt.last_stmt_bal_amt != src.total_amt;
+   ```
+
+### 7. **`credit_limit_amt`**
+   - **Direct Mapping**:
+   ```sql
+   SELECT COUNT(*) 
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824` AS src
+   ON tgt.credit_limit_amt = src.credit_limit_amt
+   WHERE tgt.credit_limit_amt != src.credit_limit_amt;
+   ```
+
+### 8. **`min_pymt_due_amt`**
+   - **Direct Mapping**:
+   ```sql
+   SELECT COUNT(*) 
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824` AS src
+   ON tgt.min_pymt_due_amt = src.min_pymt_due_amt
+   WHERE tgt.min_pymt_due_amt != src.min_pymt_due_amt;
+   ```
+
+### 9. **`int_rt`**
+   - **Mapping Based on Conditions**:
+   ```sql
+   WITH latest_plan AS (
+       SELECT 
+           cust_acct_id_num, 
+           credit_plan_promo_int_rt, 
+           ROW_NUMBER() OVER(PARTITION BY cust_acct_id_num ORDER BY eff_start_ts DESC) AS rn
+       FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PLANCDL_070824`
+       WHERE credit_plan_type_cde = 'R' AND credit_plan_sub_type_cde = '20001'
+   )
+   SELECT COUNT(*)
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN latest_plan AS src
+   ON tgt.acct_num = src.cust_acct_id_num
+   WHERE tgt.int_rt != src.credit_plan_promo_int_rt
+   AND src.rn = 1;
+   ```
+
+### 10. **`pymt_due_dt`**
+   - **Mapping Based on Latest Snapshot**:
+   ```sql
+   WITH latest_snapshot AS (
+       SELECT 
+           cust_acct_id_num, 
+           pymt_due_dt, 
+           ROW_NUMBER() OVER(PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn
+       FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824`
+       WHERE pymt_due_dt IS NOT NULL
+   )
+   SELECT COUNT(*)
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN latest_snapshot AS src
+   ON tgt.acct_num = src.cust_acct_id_num
+   WHERE tgt.pymt_due_dt != src.pymt_due_dt
+   AND src.rn = 1;
+   ```
+
+### 11. **`last_stmt_dt`**
+   - **Mapping Based on Latest Snapshot**:
+   ```sql
+   WITH latest_snapshot AS (
+       SELECT 
+           cust_acct_id_num, 
+           stmt_last_dt, 
+           ROW_NUMBER() OVER(PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn
+       FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824`
+       WHERE stmt_last_dt IS NOT NULL
+   )
+   SELECT COUNT(*)
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN latest_snapshot AS src
+   ON tgt.acct_num = src.cust_acct_id_num
+   WHERE tgt.last_stmt_dt != src.stmt_last_dt
+   AND src.rn = 1;
+   ```
+
+### 12. **`next_stmt_dt`**
+   - **Mapping Based on Latest Snapshot**:
+   ```sql
+   WITH latest_snapshot AS (
+       SELECT 
+           cust_acct_id_num, 
+           stmt_next_dt, 
+           ROW_NUMBER() OVER(PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn
+       FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824`
+       WHERE stmt_next_dt IS NOT NULL
+   )
+   SELECT COUNT(*)
+   FROM `hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` AS tgt
+   JOIN latest_snapshot AS src
+   ON tgt.acct_num = src.cust_acct_id_num
+   WHERE tgt.next_stmt_dt != src.stmt_next_dt
+   AND src.rn = 1;
+   ```
+
+These queries are set to verify each target column in `CREDIT_CARD_PROD_DETL` against the source columns from the respective tables based on the specified transformation logic.
+
+Would you like any further modifications or assistance in running these queries?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Here's how you can construct the SQL queries for BigQuery based on the paths provided:
 
 ### 1. **Direct Mapping (Steps 1, 2, 3, 7, 8)**
