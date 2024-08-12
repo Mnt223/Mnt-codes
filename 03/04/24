@@ -111,6 +111,155 @@ temp_cdl_table AS (
         pr.CUST_ACCT_ID_NUM = cad.CUST_ACCT_ID_NUM
 )
 SELECT 
+    COUNT(*) AS total_records,
+    COUNT(CASE WHEN msd.ACCT_NUM != cdl.ACCT_NUM THEN 1 END) AS acct_num_mismatch_count,
+    COUNT(CASE WHEN msd.PROD_CDE != cdl.PROD_CDE THEN 1 END) AS prod_cde_mismatch_count,
+    COUNT(CASE WHEN msd.CUST_ID_NUM != cdl.CUST_ID_NUM THEN 1 END) AS cust_id_num_mismatch_count,
+    COUNT(CASE WHEN msd.LAST_STMT_DT != cdl.LAST_STMT_DT THEN 1 END) AS last_stmt_dt_mismatch_count,
+    COUNT(CASE WHEN msd.NEXT_STMT_DT != cdl.NEXT_STMT_DT THEN 1 END) AS next_stmt_dt_mismatch_count,
+    COUNT(CASE WHEN msd.DATA_INSRT_DT != cdl.DATA_INSRT_DT THEN 1 END) AS data_insrt_dt_mismatch_count,
+    COUNT(CASE WHEN msd.INT_RT != cdl.INT_RT THEN 1 END) AS int_rt_mismatch_count,
+    COUNT(CASE WHEN msd.PYMT_DUE_DT != cdl.PYMT_DUE_DT THEN 1 END) AS pymt_due_dt_mismatch_count,
+    COUNT(CASE WHEN msd.LAST_STMT_BAL_AMT != cdl.LAST_STMT_BAL_AMT THEN 1 END) AS last_stmt_bal_amt_mismatch_count,
+    COUNT(CASE WHEN msd.CREDIT_LIMIT_AMT != cdl.CREDIT_LIMIT_AMT THEN 1 END) AS credit_limit_amt_mismatch_count,
+    COUNT(CASE WHEN msd.MIN_PYMT_DUE_AMT != cdl.MIN_PYMT_DUE_AMT THEN 1 END) AS min_pymt_due_amt_mismatch_count,
+    COUNT(CASE WHEN msd.PROD_NAME != cdl.PROD_NAME THEN 1 END) AS prod_name_mismatch_count,
+    COUNT(CASE WHEN msd.ACCT_BAL_LCL_CRNCY_AMT != cdl.ACCT_BAL_LCL_CRNCY_AMT THEN 1 END) AS acct_bal_lcl_crncy_amt_mismatch_count,
+    COUNT(CASE WHEN msd.LAST_UPDT_TS != cdl.LAST_UPDT_TS THEN 1 END) AS last_updt_ts_mismatch_count,
+    COUNT(CASE WHEN msd.TRAN_LCY_AMT != cdl.TRAN_LCY_AMT THEN 1 END) AS tran_lcy_amt_mismatch_count
+FROM 
+    `hsbc-10505826-inmdsw-prod.DS_IN_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD_070824` msd
+FULL OUTER JOIN 
+    temp_cdl_table cdl
+ON 
+    msd.ACCT_NUM = cdl.ACCT_NUM
+    AND msd.PROD_CDE = cdl.PROD_CDE
+    AND msd.CUST_ID_NUM = cdl.CUST_ID_NUM;
+
+
+
+
+
+
+
+
+
+
+
+
+WITH Filtered_Stmt_Last_DT AS (
+    SELECT 
+        CUST_ACCT_ID_NUM,
+        STMT_LAST_DT,
+        ROW_NUMBER() OVER (PARTITION BY CUST_ACCT_ID_NUM ORDER BY SNAP_TS DESC) AS rn
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_DAILY_SNAP`
+    WHERE 
+        STMT_LAST_DT IS NOT NULL
+),
+Filtered_Stmt_Next_DT AS (
+    SELECT 
+        CUST_ACCT_ID_NUM,
+        STMT_NEXT_DT,
+        ROW_NUMBER() OVER (PARTITION BY CUST_ACCT_ID_NUM ORDER BY SNAP_TS DESC) AS rn
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_DAILY_SNAP`
+    WHERE 
+        STMT_NEXT_DT IS NOT NULL
+),
+Latest_Plan AS (
+    SELECT 
+        CUST_ACCT_ID_NUM,
+        CREDIT_PLAN_PROMO_INT_RT AS INT_RT,
+        ROW_NUMBER() OVER (PARTITION BY CUST_ACCT_ID_NUM ORDER BY EFF_START_TS DESC) AS rn
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PLAN`
+    WHERE 
+        CREDIT_PLAN_TYPE_CDE = 'R'
+        AND CREDIT_PLAN_SUB_TYPE_CDE = '20001'
+),
+Summed_Transactions AS (
+    SELECT 
+        t.CUST_ACCT_ID_NUM,
+        SUM(t.TRAN_LCY_AMT) AS LAST_STMT_BAL_AMT
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_TRAN` t
+    JOIN 
+        Filtered_Stmt_Last_DT f
+    ON 
+        t.CUST_ACCT_ID_NUM = f.CUST_ACCT_ID_NUM
+    AND 
+        t.TRAN_POST_DT BETWEEN f.STMT_LAST_DT - INTERVAL 1 MONTH AND f.STMT_LAST_DT
+    GROUP BY 
+        t.CUST_ACCT_ID_NUM
+),
+Filtered_Pymt_Due_DT AS (
+    SELECT 
+        d.CUST_ACCT_ID_NUM,
+        d.PYMT_DUE_DT,
+        ROW_NUMBER() OVER (PARTITION BY d.CUST_ACCT_ID_NUM ORDER BY d.SNAP_TS DESC) AS rn
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_DAILY_SNAP` d
+    WHERE 
+        d.PYMT_DUE_DT IS NOT NULL
+),
+temp_cdl_table AS (
+    SELECT 
+        pr.CUST_ACCT_ID_NUM AS ACCT_NUM,
+        pr.PROD_CDE,
+        pr.CUST_ID_NUM,
+        p.INT_RT,
+        py.PYMT_DUE_DT,
+        s.LAST_STMT_BAL_AMT,
+        fsl.STMT_LAST_DT AS LAST_STMT_DT,
+        fsn.STMT_NEXT_DT AS NEXT_STMT_DT,
+        CURRENT_DATE('Hongkong') AS DATA_INSRT_DT,
+        pr.CREDIT_LIMIT_AMT,
+        pr.MIN_PYMT_DUE_AMT,
+        cpl.LOGO_CDE AS PROD_NAME,
+        cad.ACCT_BAL_LCL_CRNCY_AMT,
+        cad.LAST_UPDT_TS,
+        cad.TRAN_LCY_AMT
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFL` pr
+    LEFT JOIN 
+        (SELECT CUST_ACCT_ID_NUM, STMT_LAST_DT 
+         FROM Filtered_Stmt_Last_DT 
+         WHERE rn = 1) fsl
+    ON 
+        pr.CUST_ACCT_ID_NUM = fsl.CUST_ACCT_ID_NUM
+    LEFT JOIN 
+        (SELECT CUST_ACCT_ID_NUM, STMT_NEXT_DT 
+         FROM Filtered_Stmt_Next_DT 
+         WHERE rn = 1) fsn
+    ON 
+        pr.CUST_ACCT_ID_NUM = fsn.CUST_ACCT_ID_NUM
+    LEFT JOIN 
+        (SELECT CUST_ACCT_ID_NUM, INT_RT 
+         FROM Latest_Plan 
+         WHERE rn = 1) p
+    ON 
+        pr.CUST_ACCT_ID_NUM = p.CUST_ACCT_ID_NUM
+    LEFT JOIN 
+        (SELECT CUST_ACCT_ID_NUM, PYMT_DUE_DT 
+         FROM Filtered_Pymt_Due_DT 
+         WHERE rn = 1) py
+    ON 
+        pr.CUST_ACCT_ID_NUM = py.CUST_ACCT_ID_NUM
+    LEFT JOIN 
+        Summed_Transactions s
+    ON 
+        pr.CUST_ACCT_ID_NUM = s.CUST_ACCT_ID_NUM
+    LEFT JOIN 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PLAN` cpl
+    ON 
+        pr.CUST_ACCT_ID_NUM = cpl.CUST_ACCT_ID_NUM
+    LEFT JOIN 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_TRAN` cad
+    ON 
+        pr.CUST_ACCT_ID_NUM = cad.CUST_ACCT_ID_NUM
+)
+SELECT 
     msd.ACCT_NUM AS msd_ACCT_NUM,
     cdl.ACCT_NUM AS cdl_ACCT_NUM,
     msd.PROD_CDE AS msd_PROD_CDE,
