@@ -1,3 +1,109 @@
+CREATE TEMPORARY TABLE comparison_results AS
+WITH latest_acct_bal AS (
+    SELECT
+        CUST_ACCT_ID_NUM,
+        CUST_ACCT_LCY_BAL_AMT,
+        ROW_NUMBER() OVER (PARTITION BY CUST_ACCT_ID_NUM ORDER BY LAST_UPDT_TS DESC) AS rn
+    FROM
+        `your_project.your_dataset.CUST_ACCT_DAILY_SNAP`
+),
+tran_lcy_amt_sum AS (
+    SELECT
+        CUST_ACCT_ID_NUM,
+        SUM(TRAN_LCY_AMT) AS total_tran_amt
+    FROM
+        `your_project.your_dataset.CREDIT_CARD_TRAN`
+    WHERE
+        TRAN_POST_DT BETWEEN (
+            SELECT MIN(STMT_LAST_DT)
+            FROM `your_project.your_dataset.CREDIT_CARD_ACCT_DAILY_SNAP`
+            WHERE STMT_LAST_DT IS NOT NULL
+            AND CUST_ACCT_ID_NUM = <corresponding_account_id>
+        ) AND (
+            SELECT MAX(STMT_LAST_DT)
+            FROM `your_project.your_dataset.CREDIT_CARD_ACCT_DAILY_SNAP`
+            WHERE STMT_LAST_DT IS NOT NULL
+            AND CUST_ACCT_ID_NUM = <corresponding_account_id>
+        )
+    GROUP BY
+        CUST_ACCT_ID_NUM
+),
+latest_credit_plan AS (
+    SELECT
+        CUST_ACCT_ID_NUM,
+        CREDIT_PLAN_PROMO_INT_RT,
+        ROW_NUMBER() OVER (PARTITION BY CUST_ACCT_ID_NUM ORDER BY EFF_START_TS DESC) AS rn
+    FROM
+        `your_project.your_dataset.CREDIT_CARD_ACCT_PLAN`
+    WHERE
+        CREDIT_PLAN_TYPE_CDE = 'R'
+        AND CREDIT_PLAN_SUB_TYPE_CDE = '20001'
+)
+
+SELECT 
+    m.ACCT_NUM AS msd_acct_num,
+    c1.CUST_ACCT_ID_NUM AS cdl_acct_num,
+    m.PROD_CDE AS msd_prod_cde,
+    c1.PROD_CDE AS cdl_prod_cde,
+    m.CUST_ID_NUM AS msd_cust_id_num,
+    c2.CUST_ID_NUM AS cdl_cust_id_num,
+    m.PROD_NAME AS msd_prod_name,
+    c2.LOGO_CDE AS cdl_prod_name,
+    m.ACCT_BAL_LCL_CRNCY_AMT AS msd_acct_bal_lcl_crncy_amt,
+    l1.CUST_ACCT_LCY_BAL_AMT AS cdl_acct_bal_lcl_crncy_amt,
+    t1.total_tran_amt AS cdl_total_tran_amt,
+    l2.CREDIT_PLAN_PROMO_INT_RT AS cdl_credit_plan_promo_int_rt,
+    CASE 
+        WHEN m.ACCT_NUM = c1.CUST_ACCT_ID_NUM THEN 'Match' ELSE 'Unmatch' END AS acct_num_comparison,
+    CASE 
+        WHEN m.PROD_CDE = c1.PROD_CDE THEN 'Match' ELSE 'Unmatch' END AS prod_cde_comparison,
+    CASE 
+        WHEN m.CUST_ID_NUM = c2.CUST_ID_NUM THEN 'Match' ELSE 'Unmatch' END AS cust_id_num_comparison,
+    CASE 
+        WHEN m.PROD_NAME = c2.LOGO_CDE THEN 'Match' ELSE 'Unmatch' END AS prod_name_comparison,
+    CASE 
+        WHEN m.ACCT_BAL_LCL_CRNCY_AMT = l1.CUST_ACCT_LCY_BAL_AMT THEN 'Match' ELSE 'Unmatch' END AS acct_bal_comparison,
+    CASE 
+        WHEN m.B IS NOT NULL THEN 'Direct' ELSE 'N/A' END AS b_comparison -- Assuming "B" has a direct mapping
+FROM
+    `your_project.your_dataset.msd` m
+JOIN 
+    `your_project.your_dataset.CREDIT_CARD_ACCT_PREL` c1
+ON 
+    m.CUST_ID_NUM = c1.CUST_ACCT_ID_NUM
+JOIN 
+    `your_project.your_dataset.CREDIT_CARD_ACCT_PRFL` c2
+ON 
+    m.CUST_ID_NUM = c2.CUST_ID_NUM
+LEFT JOIN 
+    latest_acct_bal l1
+ON 
+    m.CUST_ID_NUM = l1.CUST_ACCT_ID_NUM
+    AND l1.rn = 1
+LEFT JOIN 
+    tran_lcy_amt_sum t1
+ON 
+    m.CUST_ID_NUM = t1.CUST_ACCT_ID_NUM
+LEFT JOIN 
+    latest_credit_plan l2
+ON 
+    m.CUST_ID_NUM = l2.CUST_ACCT_ID_NUM
+    AND l2.rn = 1;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 WITH latest_acct_bal AS (
     SELECT
         CUST_ACCT_ID_NUM,
