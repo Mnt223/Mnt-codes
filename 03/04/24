@@ -1,3 +1,90 @@
+-- Step 1: Creating the temp_cdl_table with correct transformations
+WITH Latest_Snap AS (
+    SELECT 
+        CUST_ACCT_ID_NUM,
+        CUST_ACCT_LCY_BAL_AMT,
+        ROW_NUMBER() OVER (PARTITION BY CUST_ACCT_ID_NUM ORDER BY LAST_UPDT_TS DESC) AS rn
+    FROM 
+        `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAP`
+)
+CREATE OR REPLACE TABLE project.dataset.temp_cdl_table AS
+SELECT 
+    pr.CUST_ACCT_ID_NUM AS ACCT_NUM,       -- Direct Map from CREDIT_CARD_ACCT_PRFL.CUST_ACCT_ID_NUM
+    pr.PROD_CDE,                           -- Direct Map from CREDIT_CARD_ACCT_PRFL.PROD_CDE
+    pr.CUST_ID_NUM,                        -- Direct Map from CREDIT_CARD_ACCT_PRFL.CUST_ID_NUM
+    prod.PROD_CAT_TYPE_CDE AS PROD_NAME,   -- Map PROD_NAME by joining with PROD table on LOGO_CDE
+    ls.CUST_ACCT_LCY_BAL_AMT AS ACCT_BAL_LCL_CRNCY_AMT,  -- Latest balance amount
+    pr.CREDIT_LIMIT_AMT,                   -- Direct Map from CREDIT_CARD_ACCT_PRFL.CREDIT_LIMIT_AMT
+    pr.MIN_PYMT_DUE_AMT                    -- Direct Map from CREDIT_CARD_ACCT_PRFL.MIN_PYMT_DUE_AMT
+FROM 
+    `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFL` pr
+LEFT JOIN 
+    Latest_Snap ls
+ON 
+    pr.CUST_ACCT_ID_NUM = ls.CUST_ACCT_ID_NUM  -- Correct Join on Account Number
+LEFT JOIN 
+    `hsbc-10505826-indsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.PROD` prod
+ON 
+    pr.LOGO_CDE = prod.PROD_CDE;
+
+-- Step 2: Count mismatches between msd and temp_cdl_table
+SELECT 
+    COUNT(*) AS total_records,
+    COUNT(CASE WHEN msd.ACCT_NUM != cdl.ACCT_NUM THEN 1 END) AS acct_num_mismatch_count,
+    COUNT(CASE WHEN msd.PROD_CDE != cdl.PROD_CDE THEN 1 END) AS prod_cde_mismatch_count,
+    COUNT(CASE WHEN msd.CUST_ID_NUM != cdl.CUST_ID_NUM THEN 1 END) AS cust_id_num_mismatch_count,
+    COUNT(CASE WHEN msd.PROD_NAME != cdl.PROD_NAME THEN 1 END) AS prod_name_mismatch_count,
+    COUNT(CASE WHEN msd.ACCT_BAL_LCL_CRNCY_AMT != cdl.ACCT_BAL_LCL_CRNCY_AMT THEN 1 END) AS acct_bal_lcl_crncy_amt_mismatch_count,
+    COUNT(CASE WHEN msd.CREDIT_LIMIT_AMT != cdl.CREDIT_LIMIT_AMT THEN 1 END) AS credit_limit_amt_mismatch_count,
+    COUNT(CASE WHEN msd.MIN_PYMT_DUE_AMT != cdl.MIN_PYMT_DUE_AMT THEN 1 END) AS min_pymt_due_amt_mismatch_count
+FROM 
+    `hsbc-10505826-indsw-prod.DS_IN_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD` msd
+FULL OUTER JOIN 
+    project.dataset.temp_cdl_table cdl
+ON 
+    msd.ACCT_NUM = cdl.ACCT_NUM;
+
+-- Step 3: Value comparison between msd and temp_cdl_table
+SELECT 
+    msd.ACCT_NUM AS msd_ACCT_NUM,
+    cdl.ACCT_NUM AS cdl_ACCT_NUM,
+    msd.PROD_CDE AS msd_PROD_CDE,
+    cdl.PROD_CDE AS cdl_PROD_CDE,
+    msd.CUST_ID_NUM AS msd_CUST_ID_NUM,
+    cdl.CUST_ID_NUM AS cdl_CUST_ID_NUM,
+    msd.PROD_NAME AS msd_PROD_NAME,
+    cdl.PROD_NAME AS cdl_PROD_NAME,
+    msd.ACCT_BAL_LCL_CRNCY_AMT AS msd_ACCT_BAL_LCL_CRNCY_AMT,
+    cdl.ACCT_BAL_LCL_CRNCY_AMT AS cdl_ACCT_BAL_LCL_CRNCY_AMT,
+    msd.CREDIT_LIMIT_AMT AS msd_CREDIT_LIMIT_AMT,
+    cdl.CREDIT_LIMIT_AMT AS cdl_CREDIT_LIMIT_AMT,
+    msd.MIN_PYMT_DUE_AMT AS msd_MIN_PYMT_DUE_AMT,
+    cdl.MIN_PYMT_DUE_AMT AS cdl_MIN_PYMT_DUE_AMT
+FROM 
+    `hsbc-10505826-indsw-prod.DS_IN_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_PROD_DETLMSD` msd
+FULL OUTER JOIN 
+    project.dataset.temp_cdl_table cdl
+ON 
+    msd.ACCT_NUM = cdl.ACCT_NUM
+WHERE 
+    msd.ACCT_NUM IS DISTINCT FROM cdl.ACCT_NUM OR
+    msd.PROD_CDE IS DISTINCT FROM cdl.PROD_CDE OR
+    msd.CUST_ID_NUM IS DISTINCT FROM cdl.CUST_ID_NUM OR
+    msd.PROD_NAME IS DISTINCT FROM cdl.PROD_NAME OR
+    msd.ACCT_BAL_LCL_CRNCY_AMT IS DISTINCT FROM cdl.ACCT_BAL_LCL_CRNCY_AMT OR
+    msd.CREDIT_LIMIT_AMT IS DISTINCT FROM cdl.CREDIT_LIMIT_AMT OR
+    msd.MIN_PYMT_DUE_AMT IS DISTINCT FROM cdl.MIN_PYMT_DUE_AMT;
+
+
+
+
+
+
+
+
+
+
+
 WITH Filtered_Stmt_Last_DT AS (
     SELECT 
         CUST_ACCT_ID_NUM,
