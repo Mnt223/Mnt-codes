@@ -1,3 +1,119 @@
+WITH LatestSnap AS (
+    SELECT 
+        cust_acct_id_num, 
+        cust_acct_lcy_bal_amt,
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY last_updt_ts DESC) AS rn
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+),
+LatestStmtLastDt AS (
+    SELECT 
+        cust_acct_id_num, 
+        stmt_last_dt,
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+    WHERE 
+        stmt_last_dt IS NOT NULL
+),
+LatestPymtDueDt AS (
+    SELECT 
+        cust_acct_id_num, 
+        pymt_due_dt,
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+    WHERE 
+        pymt_due_dt IS NOT NULL
+),
+LatestNextStmtDt AS (
+    SELECT 
+        cust_acct_id_num, 
+        stmt_next_dt,
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY snap_ts DESC) AS rn
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CUST_ACCT_DAILY_SNAPCDL_070824
+    WHERE 
+        stmt_next_dt IS NOT NULL
+),
+LatestIntRt AS (
+    SELECT 
+        cust_acct_id_num, 
+        credit_plan_promo_int_rt,
+        ROW_NUMBER() OVER (PARTITION BY cust_acct_id_num ORDER BY eff_start_ts DESC) AS rn
+    FROM 
+        hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PLANCDL_070824
+    WHERE 
+        credit_plan_type_cde = 'R'
+        AND credit_plan_sub_type_cde = '20001'
+)
+
+CREATE TEMPORARY TABLE temp_credit_card_cdl AS
+SELECT
+    prfl.cust_acct_id_num AS acct_num,
+    prfl.prod_cde AS prod_cde,
+    prfl.cust_id_num AS cust_id_num,
+    prod.prod_cat_type_cde AS prod_name,
+    snap.cust_acct_lcy_bal_amt AS acct_bal_lcl_crncy_amt,
+    tran_agg.last_stmt_bal_amt AS last_stmt_bal_amt,
+    prfl.credit_limit_amt AS credit_limit_amt,
+    prfl.min_pymt_due_amt AS min_pymt_due_amt,
+    int_rt.credit_plan_promo_int_rt AS int_rt,
+    pymt_due_dt.pymt_due_dt AS pymt_due_dt,
+    stmt_last_dt.stmt_last_dt AS last_stmt_dt,
+    next_stmt_dt.stmt_next_dt AS next_stmt_dt
+
+FROM
+    hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_ACCT_PRFLCDL_070824 prfl
+    
+    LEFT JOIN hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_CDL_AUTH_VIEWS_PROD_IN_PROD.PROD prod
+        ON prfl.logo_cde = prod.prod_cde
+        
+    LEFT JOIN LatestSnap snap
+        ON prfl.cust_acct_id_num = snap.cust_acct_id_num AND snap.rn = 1
+
+    LEFT JOIN (
+        SELECT 
+            cust_acct_id_num, 
+            SUM(tran_lcy_amt) AS last_stmt_bal_amt
+        FROM 
+            hsbc-10505826-inmdsw-prod.DS_INM_WPB_DNA_MSD_PRE_PROD.CREDIT_CARD_TRANCDL_070824 tran
+        WHERE 
+            tran_post_dt BETWEEN (
+                SELECT MAX(stmt_last_dt)
+                FROM LatestStmtLastDt
+                WHERE rn = 1 AND cust_acct_id_num = tran.cust_acct_id_num
+            ) AND (
+                SELECT MAX(stmt_last_dt)
+                FROM LatestStmtLastDt
+                WHERE rn = 2 AND cust_acct_id_num = tran.cust_acct_id_num
+            )
+        GROUP BY 
+            cust_acct_id_num
+    ) tran_agg ON prfl.cust_acct_id_num = tran_agg.cust_acct_id_num
+
+    LEFT JOIN LatestPymtDueDt pymt_due_dt
+        ON prfl.cust_acct_id_num = pymt_due_dt.cust_acct_id_num AND pymt_due_dt.rn = 1
+
+    LEFT JOIN LatestStmtLastDt stmt_last_dt
+        ON prfl.cust_acct_id_num = stmt_last_dt.cust_acct_id_num AND stmt_last_dt.rn = 1
+
+    LEFT JOIN LatestNextStmtDt next_stmt_dt
+        ON prfl.cust_acct_id_num = next_stmt_dt.cust_acct_id_num AND next_stmt_dt.rn = 1
+
+    LEFT JOIN LatestIntRt int_rt
+        ON prfl.cust_acct_id_num = int_rt.cust_acct_id_num AND int_rt.rn = 1;
+
+
+
+
+
+
+
+
+
+
+
 CREATE TEMPORARY TABLE temp_credit_card_cdl AS
 SELECT
     -- 1. acct_num: Direct mapping from cust_acct_id_num in CREDIT_CARD_ACCT_PRFL
