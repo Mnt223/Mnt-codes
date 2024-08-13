@@ -1,3 +1,45 @@
+WITH monthly_sums AS (
+    SELECT 
+        ADS_REAL_CUST_ID,
+        FORMAT_TIMESTAMP('%Y-%m', ADS_TRAN_POST_DT) AS month_year,
+        SUM(ADS_TRAN_AMT) AS monthly_amt
+    FROM `hsbc-12010747-ihubinmcd|1-prod.ADSFCT_INM_PROD.ADS_MBASE_TRAN_CARD_MSTR_FCT_DAILY`
+    WHERE ADS_TRAN_ACTV_GRP_CDE IN ('1', '2')
+        AND ADS_TRAN_POST_DT >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH), MONTH)
+    GROUP BY ADS_REAL_CUST_ID, month_year
+    ORDER BY ADS_REAL_CUST_ID, month_year
+),
+concatenated_results AS (
+    SELECT 
+        ADS_REAL_CUST_ID,
+        STRING_AGG(CAST(monthly_amt AS STRING), '|' ORDER BY month_year) AS calculated_purchase_amt
+    FROM monthly_sums
+    GROUP BY ADS_REAL_CUST_ID
+)
+SELECT 
+    tgt.cust_id AS cust_id,
+    tgt.purchase_amt AS target_purchase_amt,
+    src.calculated_purchase_amt AS calculated_purchase_amt,
+    CASE
+        WHEN tgt.purchase_amt = src.calculated_purchase_amt THEN 'Match'
+        ELSE 'Mismatch'
+    END AS comparison_result
+FROM `your_project.your_dataset.cust_cc_data` AS tgt
+LEFT JOIN concatenated_results AS src
+ON tgt.cust_id = src.ADS_REAL_CUST_ID
+WHERE tgt.purchase_amt != src.calculated_purchase_amt;
+
+
+
+
+
+
+
+
+
+
+
+
 Certainly! Below are the SQL queries for each variable:
 
 ### 1. **`acct_num`**
