@@ -1,3 +1,123 @@
+import os
+import requests
+from bs4 import BeautifulSoup
+import re
+import paramiko
+import subprocess
+import time
+
+# Function to download files that start with "India" followed by a date in yyyymmdd format and include a dot in the name
+def download_files(url, download_path, log_file, start_file=None):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # Regex pattern to match file names starting with "India." followed by a date in yyyymmdd format
+    file_pattern = re.compile(r'^India\.\d{8}')
+    
+    links = soup.find_all('a')
+    new_files = []
+
+    if os.path.exists(log_file):
+        with open(log_file, 'r') as file:
+            downloaded_files = set(file.read().splitlines())
+    else:
+        downloaded_files = set()
+
+    start_downloading = False
+
+    for link in links:
+        file_name = link.get('href')
+        if file_pattern.match(file_name) and file_name not in downloaded_files:
+            # Check if we've reached the start file for the first run
+            if start_file and not start_downloading:
+                if file_name == start_file:
+                    start_downloading = True
+                else:
+                    continue  # Skip files until we reach the start file
+
+            # Download the file
+            file_url = os.path.join(url, file_name)
+            file_response = requests.get(file_url)
+            file_path = os.path.join(download_path, file_name)
+            with open(file_path, 'wb') as f:
+                f.write(file_response.content)
+            new_files.append(file_name)
+            print(f"Downloaded: {file_name}")
+
+    with open(log_file, 'a') as file:
+        for file_name in new_files:
+            file.write(file_name + '\n')
+
+    return new_files
+
+# Function to transfer files to WinSCP server
+def transfer_to_server(local_dir, sas_dir, filenames, server_ip, username, password):
+    transport = paramiko.Transport((server_ip, 22))
+    transport.connect(None, username, password)
+    sftp = paramiko.SFTPClient.from_transport(transport)
+    
+    try:
+        for filename in filenames:
+            print(f"Uploading file {filename} from local machine to server...")
+            local_filepath = os.path.join(local_dir, filename)
+            remote_filepath = os.path.join(sas_dir, filename)
+            sftp.put(local_filepath, remote_filepath)
+            print(f"File {filename} successfully uploaded to {sas_dir}")
+    except Exception as e:
+        print(f"Error uploading file: {e}")
+    finally:
+        sftp.close()
+        transport.close()
+
+# Function to run the SAS script
+def run_sas_script(sas_script_path):
+    subprocess.run(["sas", sas_script_path], check=True)
+    print("SAS script executed.")
+
+# Main function to execute the entire process
+def main():
+    # Variables for the operation
+    url = "http://example.com/files"            # Set the URL where the files are located
+    download_path = "/path/to/downloads"        # Set the local path where files will be downloaded
+    log_file = "download_log.txt"               # Set the log file path
+    remote_path = "/remote/path"                # Set the remote path on the server
+    server_ip = "server_ip_address"             # Set the server IP address
+    username = "username"                       # Set the server username
+    password = "password"                       # Set the server password
+    sas_script_path = "/path/to/script.sas"     # Set the path to the SAS script
+    start_file = "India.20240801.txt"           # Specify the file name from which to start downloading for the first run
+    
+    # Step 1: Download new files from the website starting from 'start_file'
+    new_files = download_files(url, download_path, log_file, start_file=start_file)
+    
+    # Step 2: Transfer all new files to the WinSCP server
+    if new_files:
+        transfer_to_server(download_path, remote_path, new_files, server_ip, username, password)
+    
+        # Step 3: Run the SAS script on the server
+        run_sas_script(sas_script_path)
+    
+    else:
+        print("No new files to transfer or process.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 WITH overseas_spend_calc AS (
     SELECT 
         temp.ADS_REAL_CUST_ID, 
