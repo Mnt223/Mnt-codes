@@ -1,3 +1,29 @@
+Here’s a revised version of the email:
+
+---
+
+**Subject:** International Spend Data Analysis - Summary Attached
+
+Hi Panuwan,
+
+PFA the international spend summary. In this analysis, we've compared data from past months to identify key trends and insights for certain triggers. The results are promising and indicate some actionable opportunities.
+
+I would like to walk you through the findings at your convenience. Please let me know your availability so we can schedule a meeting.
+
+Additionally, Prateek has requested that we conduct a similar analysis for a 2-month period, following our standard approach in the Pega system.
+
+Looking forward to your feedback.
+
+Best regards,  
+[Your Name]
+
+---
+
+This version aligns with the style you’re aiming for.
+
+
+
+
 import os
 import requests
 from bs4 import BeautifulSoup
