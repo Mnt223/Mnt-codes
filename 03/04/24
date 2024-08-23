@@ -1,3 +1,19 @@
+git clone https://github.com/username/destination-repo.git
+cd destination-repo
+git remote add source https://github.com/username/source-repo.git
+git fetch source
+git checkout source/branch-name -- notebook
+git add notebook
+git commit -m "Moved notebook folder from source-repo"
+git push origin main
+
+
+
+
+
+
+
+
 WITH overseas_spend_calc AS (
     SELECT 
         temp.ADS_REAL_CUST_ID, 
