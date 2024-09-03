@@ -1,3 +1,22 @@
+proc sgplot;
+    vbox CIBIL_Score / category='Paisa Bazar' datalabel='Paisa Bazar' data=paisa_bazar;
+    vbox CIBIL_Score / category='Bank Bazar' datalabel='Bank Bazar' data=bank_bazar;
+    vbox CIBIL_Score / category='HDFC Bank' datalabel='HDFC Bank' data=hdfc_bank;
+    title "Comparison of CIBIL Scores by Source";
+    xaxis label="Source";
+    yaxis label="CIBIL Score";
+run;
+
+
+
+
+
+
+
+
+
+
+
 WITH date_range AS (
     -- Generate the last 12 months as a reference table
     SELECT 
