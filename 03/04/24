@@ -1,3 +1,62 @@
+WITH date_range AS (
+    -- Generate the last 12 months as a reference table
+    SELECT 
+        FORMAT_DATE('%Y-%m', DATE_SUB(CURRENT_DATE(), INTERVAL n MONTH)) AS month_year
+    FROM 
+        UNNEST(GENERATE_ARRAY(0, 11)) AS n
+),
+overseas_spend_calc AS (
+    SELECT 
+        a.ADS_REAL_CUST_ID,
+        month_year,
+        COALESCE(SUM(
+            CASE
+                WHEN ADS_MRCH_CTRY_CDE IS NULL OR ADS_MRCH_CTRY_CDE IN ('IN') THEN 0
+                ELSE ADS_TRAN_AMT
+            END
+        ), 0) AS monthly_overseas_amt
+    FROM date_range
+    LEFT JOIN `hsbc-12010747-ihubinmcd|1-prod.ADSFCT_INM_PROD.ADS_MBASE_TRAN_CARD_MSTR_FCT_DAILY` a
+        ON FORMAT_TIMESTAMP('%Y-%m', a.ADS_TRAN_POST_DT) = date_range.month_year
+    LEFT JOIN `hsbc-12010747-ihubinmcd|1-prod.ADSFTR_INM_PROD.CREDIT_CARD_TRAN_DAILY_SNAP` b
+        ON a.ADS_TRAN_ID_NUM = b.CREDIT_CARD_TRAN_ID_NUM
+    WHERE a.ADS_TRAN_POST_DT >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH), MONTH)
+      AND a.ADS_TRAN_ACTV_GRP_CDE IN ('1', '2')
+    GROUP BY a.ADS_REAL_CUST_ID, month_year
+),
+concatenated_results AS (
+    SELECT 
+        ADS_REAL_CUST_ID,
+        STRING_AGG(CAST(monthly_overseas_amt AS STRING), '|' ORDER BY month_year) AS calculated_overseas_spend
+    FROM overseas_spend_calc
+    GROUP BY ADS_REAL_CUST_ID
+)
+SELECT 
+    tgt.cust_id AS cust_id,
+    tgt.overseas_spend AS target_overseas_spend,
+    src.calculated_overseas_spend AS calculated_overseas_spend,
+    CASE
+        WHEN tgt.overseas_spend = src.calculated_overseas_spend THEN 'Match'
+        ELSE 'Mismatch'
+    END AS comparison_result
+FROM `your_project.your_dataset.cust_cc_data` AS tgt
+LEFT JOIN concatenated_results AS src
+ON tgt.cust_id = src.ADS_REAL_CUST_ID
+WHERE tgt.overseas_spend != src.calculated_overseas_spend;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 git clone https://github.com/username/destination-repo.git
 cd destination-repo
 git remote add source https://github.com/username/source-repo.git
