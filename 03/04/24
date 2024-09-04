@@ -1,4 +1,105 @@
 import pandas as pd
+import plotly.graph_objects as go
+
+# Load Excel file and sheets into DataFrames
+file_path = 'path_to_your_excel_file.xlsx'  # Replace with your file path
+paisa_bazar_df = pd.read_excel(file_path, sheet_name='Paisa Bazar')
+bank_bazar_df = pd.read_excel(file_path, sheet_name='Bank Bazar')
+hdfc_bank_df = pd.read_excel(file_path, sheet_name='HDFC Bank')
+
+# Extract CIBIL scores and customer counts for Paisa Bazar and Bank Bazar
+paisa_scores = paisa_bazar_df['CIBIL_Score']
+paisa_counts = paisa_bazar_df['Customer_Count']
+
+bank_scores = bank_bazar_df['CIBIL_Score']
+bank_counts = bank_bazar_df['Customer_Count']
+
+# Plot histograms using Plotly
+fig = go.Figure()
+
+# Add histograms for Paisa Bazar and Bank Bazar
+fig.add_trace(go.Histogram(
+    x=paisa_scores, 
+    y=paisa_counts, 
+    name='Paisa Bazar', 
+    nbinsx=19, 
+    histfunc='sum'
+))
+
+fig.add_trace(go.Histogram(
+    x=bank_scores, 
+    y=bank_counts, 
+    name='Bank Bazar', 
+    nbinsx=19, 
+    histfunc='sum'
+))
+
+# Add histograms for each card type in HDFC Bank
+card_types = hdfc_bank_df['card_type1'].unique()  # Assuming column is named 'card_type1'
+
+for card_type in card_types:
+    hdfc_filtered = hdfc_bank_df[hdfc_bank_df['card_type1'] == card_type]
+    fig.add_trace(go.Histogram(
+        x=hdfc_filtered['CIBIL_Score'],
+        y=hdfc_filtered['Customer_Count'],
+        name=f'HDFC Bank - {card_type}',
+        nbinsx=19,
+        histfunc='sum'
+    ))
+
+# Update layout for interactivity
+fig.update_layout(
+    title='Interactive CIBIL Score Distribution Comparison',
+    xaxis_title='CIBIL Score',
+    yaxis_title='Customer Count',
+    barmode='overlay',
+    legend_title='Source',
+    template='plotly',
+    updatemenus=[{
+        'buttons': [
+            {'label': 'All',
+             'method': 'update',
+             'args': [{'visible': [True] * (2 + len(card_types))},
+                      {'title': 'All Data'}]},
+            *[
+                {'label': card_type,
+                 'method': 'update',
+                 'args': [{'visible': [True, True] + [card == card_type for card in card_types]},
+                          {'title': f'{card_type} Card Data'}]}
+                for card_type in card_types
+            ]
+        ],
+        'direction': 'down',
+        'showactive': True,
+    }]
+)
+
+fig.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load Excel file and sheets into DataFrames
