@@ -1,3 +1,53 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Load Excel file and sheets into DataFrames
+file_path = 'path_to_your_excel_file.xlsx'
+paisa_bazar_df = pd.read_excel(file_path, sheet_name='Paisa Bazar')
+bank_bazar_df = pd.read_excel(file_path, sheet_name='Bank Bazar')
+hdfc_bank_df = pd.read_excel(file_path, sheet_name='HDFC Bank')
+
+# Assuming the Excel sheets have columns named 'CIBIL_Score' and 'Customer_Count'
+paisa_scores = paisa_bazar_df['CIBIL_Score']
+paisa_counts = paisa_bazar_df['Customer_Count']
+
+bank_scores = bank_bazar_df['CIBIL_Score']
+bank_counts = bank_bazar_df['Customer_Count']
+
+hdfc_scores = hdfc_bank_df['CIBIL_Score']
+hdfc_counts = hdfc_bank_df['Customer_Count']
+
+# Plot histograms
+plt.figure(figsize=(10, 6))
+
+# Updated bin range to cover 0 to 900
+bin_edges = range(0, 951, 50)
+
+plt.hist(paisa_scores, bins=bin_edges, weights=paisa_counts, alpha=0.5, label='Paisa Bazar', edgecolor='black')
+plt.hist(bank_scores, bins=bin_edges, weights=bank_counts, alpha=0.5, label='Bank Bazar', edgecolor='black')
+plt.hist(hdfc_scores, bins=bin_edges, weights=hdfc_counts, alpha=0.5, label='HDFC Bank', edgecolor='black')
+
+plt.title('CIBIL Score Distribution Comparison')
+plt.xlabel('CIBIL Score')
+plt.ylabel('Customer Count')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 proc sgplot;
     vbox CIBIL_Score / category='Paisa Bazar' datalabel='Paisa Bazar' data=paisa_bazar;
     vbox CIBIL_Score / category='Bank Bazar' datalabel='Bank Bazar' data=bank_bazar;
