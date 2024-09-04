@@ -14,6 +14,139 @@ paisa_counts = paisa_bazar_df['Customer_Count']
 bank_scores = bank_bazar_df['CIBIL_Score']
 bank_counts = bank_bazar_df['Customer_Count']
 
+# Unique card types from HDFC Bank
+card_types = hdfc_bank_df['card_type1'].unique()
+
+# Create a figure with Plotly
+fig = go.Figure()
+
+# Add histograms for Paisa Bazar and Bank Bazar with vibrant colors
+fig.add_trace(go.Histogram(
+    x=paisa_scores, 
+    y=paisa_counts, 
+    name='Paisa Bazar', 
+    nbinsx=19, 
+    histfunc='sum',
+    opacity=0.6,
+    marker=dict(color='rgba(0, 128, 255, 0.7)', line=dict(width=2, color='rgb(0, 0, 0)'))
+))
+
+fig.add_trace(go.Histogram(
+    x=bank_scores, 
+    y=bank_counts, 
+    name='Bank Bazar', 
+    nbinsx=19, 
+    histfunc='sum',
+    opacity=0.6,
+    marker=dict(color='rgba(255, 140, 0, 0.7)', line=dict(width=2, color='rgb(0, 0, 0)'))
+))
+
+# Add histograms for each card type in HDFC Bank with gradient colors
+colors = ['rgba(255, 99, 71, 0.7)', 'rgba(144, 238, 144, 0.7)', 'rgba(173, 216, 230, 0.7)', 'rgba(255, 182, 193, 0.7)']
+for i, card_type in enumerate(card_types):
+    hdfc_filtered = hdfc_bank_df[hdfc_bank_df['card_type1'] == card_type]
+    fig.add_trace(go.Histogram(
+        x=hdfc_filtered['CIBIL_Score'],
+        y=hdfc_filtered['Customer_Count'],
+        name=f'HDFC Bank - {card_type}',
+        nbinsx=19,
+        histfunc='sum',
+        opacity=0.6,
+        marker=dict(color=colors[i % len(colors)], line=dict(width=2, color='rgb(0, 0, 0)'))
+    ))
+
+# Update layout for a modern, attractive look
+fig.update_layout(
+    title={
+        'text': 'Interactive CIBIL Score Distribution Comparison',
+        'y':0.9,
+        'x':0.5,
+        'xanchor': 'center',
+        'yanchor': 'top',
+        'font': {'size': 28, 'color': 'white'}
+    },
+    xaxis=dict(
+        title='CIBIL Score',
+        gridcolor='rgba(255, 255, 255, 0.2)',
+        zerolinecolor='rgba(255, 255, 255, 0.3)',
+        color='white'
+    ),
+    yaxis=dict(
+        title='Customer Count',
+        gridcolor='rgba(255, 255, 255, 0.2)',
+        zerolinecolor='rgba(255, 255, 255, 0.3)',
+        color='white'
+    ),
+    paper_bgcolor='rgba(0, 0, 0, 1)',
+    plot_bgcolor='rgba(0, 0, 0, 0.9)',
+    barmode='overlay',
+    legend=dict(
+        title='Source',
+        x=1,
+        y=1,
+        font=dict(size=16, color='white')
+    ),
+    updatemenus=[{
+        'buttons': [
+            {'label': 'All',
+             'method': 'update',
+             'args': [{'visible': [True] * (2 + len(card_types))},
+                      {'title': 'All Data'}]},
+            *[
+                {'label': card_type,
+                 'method': 'update',
+                 'args': [{'visible': [True, True] + [card == card_type for card in card_types]},
+                          {'title': f'{card_type} Card Data'}]}
+                for card_type in card_types
+            ]
+        ],
+        'direction': 'down',
+        'x': 0.17,
+        'y': 1.15,
+        'showactive': True,
+        'bgcolor': 'rgba(0,0,0,0.6)',
+        'font': {'color': 'white'}
+    }],
+    hovermode='closest'
+)
+
+# Add animation transition for smooth effect
+fig.update_layout(
+    transition_duration=500
+)
+
+# Show the figure
+fig.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objects as go
+
+# Load Excel file and sheets into DataFrames
+file_path = 'path_to_your_excel_file.xlsx'  # Replace with your file path
+paisa_bazar_df = pd.read_excel(file_path, sheet_name='Paisa Bazar')
+bank_bazar_df = pd.read_excel(file_path, sheet_name='Bank Bazar')
+hdfc_bank_df = pd.read_excel(file_path, sheet_name='HDFC Bank')
+
+# Extract CIBIL scores and customer counts for Paisa Bazar and Bank Bazar
+paisa_scores = paisa_bazar_df['CIBIL_Score']
+paisa_counts = paisa_bazar_df['Customer_Count']
+
+bank_scores = bank_bazar_df['CIBIL_Score']
+bank_counts = bank_bazar_df['Customer_Count']
+
 # Plot histograms using Plotly
 fig = go.Figure()
 
