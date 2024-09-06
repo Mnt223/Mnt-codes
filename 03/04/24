@@ -1,3 +1,47 @@
+proc sql;
+    create table filtered_data as
+    /* Step 1: Select customers who have HDFC bank in their records */
+    select *
+    from customer_data
+    where bank_name = 'HDFC Bank'
+    group by customer_id
+
+    union all
+
+    /* Step 2: Select the first record for customers who do not have HDFC Bank in their records */
+    select *
+    from customer_data as t1
+    where not exists (
+        select 1 
+        from customer_data as t2
+        where t1.customer_id = t2.customer_id 
+        and t2.bank_name = 'HDFC Bank'
+    )
+    group by t1.customer_id
+    having min(credit_line_active) = credit_line_active; /* Assuming the first record is based on some field like `credit_line_active` */
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import plotly.graph_objects as go
 
