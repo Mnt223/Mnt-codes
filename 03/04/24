@@ -1,4 +1,46 @@
 proc sql;
+    /* Step 1: Select customers with HDFC Bank and only HDFC Bank records */
+    create table hdfc_customers as
+    select *
+    from customer_data
+    where customer_id in (
+        select customer_id
+        from customer_data
+        where bank_name = 'HDFC Bank'
+    )
+    and bank_name = 'HDFC Bank';
+
+    /* Step 2: Select the first record for customers without HDFC Bank */
+    create table non_hdfc_customers as
+    select *
+    from customer_data as t1
+    where not exists (
+        select 1 
+        from customer_data as t2
+        where t1.customer_id = t2.customer_id
+        and t2.bank_name = 'HDFC Bank'
+    )
+    group by t1.customer_id
+    having min(credit_line_active) = credit_line_active; /* Or whichever field determines the "first" record */
+
+    /* Step 3: Combine both datasets */
+    create table final_data as
+    select * from hdfc_customers
+    union all
+    select * from non_hdfc_customers;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+proc sql;
     create table filtered_data as
     /* Step 1: Select customers who have HDFC bank in their records */
     select *
