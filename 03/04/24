@@ -1,3 +1,34 @@
+PROC SQL;
+    CREATE TABLE chosen_output AS 
+    SELECT 
+        customer_id,
+        -- Case 1: All outputs are the same for a customer (only one distinct output)
+        CASE 
+            WHEN COUNT(DISTINCT output) = 1 THEN MAX(output)
+            
+            -- Case 2: Two outputs are the same, select the majority output
+            WHEN COUNT(DISTINCT output) = 2 THEN
+                (SELECT output 
+                 FROM customer_outputs co2
+                 WHERE co2.customer_id = co.customer_id
+                 GROUP BY output
+                 ORDER BY COUNT(output) DESC
+                 LIMIT 1)
+        END AS final_output
+    FROM customer_outputs co
+    GROUP BY customer_id;
+QUIT;
+
+
+
+
+
+
+
+
+
+
+
 proc sql;
     /* Step 1: Select customers with HDFC Bank and only HDFC Bank records */
     create table hdfc_customers as
