@@ -1,3 +1,12 @@
+%let start_date = %sysfunc(mdy(9, 1, 2023));
+%let end_date = %sysfunc(mdy(8, 31, 2024));
+
+%put Start Date: &start_date;
+%put End Date: &end_date;
+
+
+
+
 PROC SQL;
     CREATE TABLE chosen_output AS 
     SELECT 
