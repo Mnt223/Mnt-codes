@@ -1,3 +1,31 @@
+/* Step 1: Define the start and end date macro variables as numeric values */
+data _null_;
+   call symput("start_date", put(mdy(9, 1, 2023), yymmddn8.)); /* 1st September 2023 */
+   call symput("end_date", put(mdy(8, 31, 2024), yymmddn8.));  /* 31st August 2024 */
+run;
+
+/* Step 2: Use the macro variables in a PROC SQL statement, comparing numeric SAS date field */
+proc sql;
+   create table kyc as
+   select ZGDCB,
+          ZGDCS,
+          ZGKYCD as LAST_KYC_DATE,  /* Renamed for clarity */
+          ZGNKCD as NEXT_KYC_DATE
+   from HUBDLY.SSCUETP
+   where ZGMDFL ne 'S'
+   and _KYC_date between &start_date and &end_date;  /* Numeric comparison of SAS dates */
+quit;
+
+/* Step 3: Print the values of the macro variables */
+%put Start Date: &start_date;
+%put End Date: &end_date;
+
+
+
+
+
+
+
 %let start_date = %sysfunc(mdy(9, 1, 2023));
 %let end_date = %sysfunc(mdy(8, 31, 2024));
 
