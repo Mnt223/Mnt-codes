@@ -1,3 +1,65 @@
+Sub CreateWatermarkedInvoices()
+    Dim wsInvoice As Worksheet
+    Dim wsCustomers As Worksheet
+    Dim customerName As String
+    Dim invoiceFileName As String
+    Dim i As Long
+    Dim lastRow As Long
+    
+    ' Set the worksheets
+    Set wsInvoice = ThisWorkbook.Sheets("Invoice") ' Your invoice sheet name
+    Set wsCustomers = ThisWorkbook.Sheets("Customers") ' Your customers list sheet name
+    
+    ' Find the last row with customer names
+    lastRow = wsCustomers.Cells(wsCustomers.Rows.Count, "A").End(xlUp).Row
+    
+    ' Loop through each customer
+    For i = 2 To lastRow ' Assuming header is in row 1
+        customerName = wsCustomers.Cells(i, 1).Value
+        
+        ' Add a watermark text box with customer name
+        Dim shp As Shape
+        Set shp = wsInvoice.Shapes.AddTextBox(msoTextOrientationHorizontal, 100, 100, 400, 50)
+        With shp
+            .TextFrame.Characters.Text = customerName
+            .TextFrame.Characters.Font.Size = 50
+            .TextFrame.Characters.Font.Color = RGB(200, 200, 200) ' Light gray color
+            .Rotation = 45 ' Rotate diagonally
+            .Fill.Transparency = 0.5 ' Make it semi-transparent
+            .Line.Visible = msoFalse ' No border
+        End With
+        
+        ' Save the invoice with the customer name
+        invoiceFileName = "Invoice_" & customerName & ".xlsx"
+        wsInvoice.Copy
+        ActiveWorkbook.SaveAs invoiceFileName
+        ActiveWorkbook.Close SaveChanges:=False
+        
+        ' Delete the shape after saving to add new for the next customer
+        shp.Delete
+    Next i
+    
+    MsgBox "Invoices created successfully!"
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Define the start and end date macro variables as numeric values */
 data _null_;
    call symput("start_date", put(mdy(9, 1, 2023), yymmddn8.)); /* 1st September 2023 */
