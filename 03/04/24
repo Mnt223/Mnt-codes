@@ -1,3 +1,89 @@
+Sub CreateWatermarkedInvoicesInWord()
+    Dim wsCustomers As Worksheet
+    Dim wordApp As Object
+    Dim wordDoc As Object
+    Dim customerName As String
+    Dim invoiceFileName As String
+    Dim i As Long
+    Dim lastRow As Long
+    Dim templatePath As String
+    Dim saveFolderPath As String
+    
+    ' Set the worksheet
+    Set wsCustomers = ThisWorkbook.Sheets("Customers")
+    
+    ' Get the last row of the customer list
+    lastRow = wsCustomers.Cells(wsCustomers.Rows.Count, 1).End(xlUp).Row
+    
+    ' Set the template path (update this to your actual path)
+    templatePath = "C:\YourPath\InvoiceTemplate.docx"
+    
+    ' Set the save folder path (update this to your desired save folder)
+    saveFolderPath = "C:\YourPath\Invoices\"
+    
+    ' Create a Word application object
+    Set wordApp = CreateObject("Word.Application")
+    wordApp.Visible = False ' Set to True if you want to see the process
+    
+    ' Loop through each customer
+    For i = 2 To lastRow ' Assuming the first row is a header
+        customerName = wsCustomers.Cells(i, 1).Value
+        
+        ' Open the template in Word
+        Set wordDoc = wordApp.Documents.Open(templatePath)
+        
+        ' Add watermark
+        With wordDoc.Sections(1).Headers(1)
+            .Shapes.AddTextEffect _
+                (PresetTextEffect:=msoTextEffect1, _
+                 Text:=customerName, _
+                 FontName:="Arial", _
+                 FontSize:=48, _
+                 FontBold:=msoTrue, _
+                 FontItalic:=msoFalse, _
+                 Left:=100, Top:=100).Select
+                
+            With wordApp.Selection.ShapeRange
+                .Fill.ForeColor.RGB = RGB(200, 200, 200) ' Light gray color
+                .Rotation = 45 ' Diagonal angle
+                .LockAspectRatio = msoTrue
+                .Transparency = 0.5 ' Semi-transparent
+                .WrapFormat.Type = 3 ' Place behind text
+            End With
+        End With
+        
+        ' Save the document with the customer's name
+        invoiceFileName = saveFolderPath & "Invoice_" & customerName & ".docx"
+        wordDoc.SaveAs2 invoiceFileName
+        
+        ' Close the document
+        wordDoc.Close SaveChanges:=False
+    Next i
+    
+    ' Quit Word
+    wordApp.Quit
+    
+    ' Clean up
+    Set wordDoc = Nothing
+    Set wordApp = Nothing
+    
+    MsgBox "Invoices created successfully in Word!"
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Sub CreateWatermarkedInvoices()
     Dim wsInvoice As Worksheet
     Dim wsCustomers As Worksheet
