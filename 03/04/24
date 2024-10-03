@@ -1,3 +1,23 @@
+SELECT 
+    DATE_TRUNC('month', date_field) AS month,
+    STRING_AGG(DISTINCT customer_id::TEXT, ', ') AS unique_customers,
+    outcome_field
+FROM 
+    your_table
+WHERE 
+    outcome_field = 'delivered'
+    AND date_field BETWEEN '2023-11-01' AND '2024-08-31'
+GROUP BY 
+    month, outcome_field
+ORDER BY 
+    month;
+
+
+
+
+
+
+
 Sub CreateWatermarkedInvoicesInWord()
     Dim wsCustomers As Worksheet
     Dim wordApp As Object
