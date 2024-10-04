@@ -1,3 +1,50 @@
+Private Sub Worksheet_Change(ByVal Target As Range)
+    Dim cell As Range
+    If Not Intersect(Target, Me.Range("J2:J1000")) Is Nothing Then
+        Application.EnableEvents = False
+        For Each cell In Target
+            ' Check for NonContactable
+            If cell.Value = "NonContactable" Then
+                Me.Cells(cell.Row, "L").Locked = False
+                Me.Cells(cell.Row, "M").Locked = True
+                Me.Cells(cell.Row, "N").Locked = True
+            ' Check for Not Interested
+            ElseIf cell.Value = "NotInterested" Then
+                Me.Cells(cell.Row, "L").Locked = True
+                Me.Cells(cell.Row, "M").Locked = False
+                Me.Cells(cell.Row, "N").Locked = True
+            ' Check for Not Eligible
+            ElseIf cell.Value = "NotEligible" Then
+                Me.Cells(cell.Row, "L").Locked = True
+                Me.Cells(cell.Row, "M").Locked = True
+                Me.Cells(cell.Row, "N").Locked = False
+            Else
+                ' If none match, lock all reason columns
+                Me.Cells(cell.Row, "L").Locked = True
+                Me.Cells(cell.Row, "M").Locked = True
+                Me.Cells(cell.Row, "N").Locked = True
+            End If
+        Next cell
+        Application.EnableEvents = True
+    End If
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 04-october-2024
 
 import pandas as pd
