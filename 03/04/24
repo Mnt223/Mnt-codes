@@ -1,3 +1,79 @@
+/* Step 1: Import existing data from the 'inapp' sheet */
+proc import out=existing_inapp_data
+    datafile="C:\path_to_your_excel\yourfile.xlsx"
+    dbms=xlsx replace;
+    sheet="inapp";
+    getnames=yes;
+run;
+
+/* Step 2: Concatenate the existing data with the new data for inapp */
+data combined_inapp_data;
+    set existing_inapp_data inapp_data;
+run;
+
+/* Step 3: Export the combined data back to the 'inapp' sheet */
+proc export data=combined_inapp_data
+    outfile="C:\path_to_your_excel\yourfile.xlsx"
+    dbms=xlsx replace;
+    sheet="inapp";
+run;
+
+/* Repeat the process for 'email' and 'sms' sheets */
+
+/* Import existing data from the 'email' sheet */
+proc import out=existing_email_data
+    datafile="C:\path_to_your_excel\yourfile.xlsx"
+    dbms=xlsx replace;
+    sheet="email";
+    getnames=yes;
+run;
+
+/* Concatenate the existing data with the new data for email */
+data combined_email_data;
+    set existing_email_data email_data;
+run;
+
+/* Export the combined data back to the 'email' sheet */
+proc export data=combined_email_data
+    outfile="C:\path_to_your_excel\yourfile.xlsx"
+    dbms=xlsx replace;
+    sheet="email";
+run;
+
+/* Import existing data from the 'sms' sheet */
+proc import out=existing_sms_data
+    datafile="C:\path_to_your_excel\yourfile.xlsx"
+    dbms=xlsx replace;
+    sheet="sms";
+    getnames=yes;
+run;
+
+/* Concatenate the existing data with the new data for sms */
+data combined_sms_data;
+    set existing_sms_data sms_data;
+run;
+
+/* Export the combined data back to the 'sms' sheet */
+proc export data=combined_sms_data
+    outfile="C:\path_to_your_excel\yourfile.xlsx"
+    dbms=xlsx replace;
+    sheet="sms";
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Subject: Request for Backup Storage Space to Ensure Data Integrity in Dashboard Process
 
 Dear Smriti and Gopal,
