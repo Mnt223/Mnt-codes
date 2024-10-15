@@ -1,3 +1,36 @@
+Subject: Request for Backup Storage Space to Ensure Data Integrity in Dashboard Process
+
+Dear Smriti and Gopal,
+
+I hope this email finds you well. I am writing to bring to your attention a critical issue we are facing with our current process of creating the dashboard. At present, we are appending daily data to a consolidated monthly dataset using SAS code. However, this approach presents significant risks.
+
+During the process, if any issue arises—whether due to code errors, network problems, or other disruptions—it directly impacts the dataset, causing the data to get damaged. Unfortunately, we do not have a backup for the consolidated data, making it impossible to repair the damaged file. In such cases, we need to rerun the entire process to recreate the consolidated data, which takes approximately 2 to 3 days. This lengthy turnaround is not feasible and poses challenges for timely dashboard updates.
+
+To address this, I propose that we allocate space to create a backup of the data. Having a backup in place will allow us to resume the process smoothly and avoid extensive delays in case any file gets corrupted or damaged.
+
+Your support in providing the necessary backup storage space will greatly help in ensuring the efficiency and reliability of the dashboard creation process.
+
+Please let me know if you need any further details or if we can discuss this in a meeting.
+
+Best regards,
+[Your Name]
+[Your Position]
+[Your Contact Information]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Private Sub Worksheet_Change(ByVal Target As Range)
     Dim cell As Range
     
