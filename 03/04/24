@@ -1,3 +1,74 @@
+/* Step 1: Left join on custid */
+proc sql;
+    create table custid_join as
+    select 
+        A.*, 
+        B.CUS_SGMT,
+        B.SUPRESS_MKT_EXCL_FLAG,
+        B.VALID_MOBILE_FLAG,
+        B.VALID_EMAIL_FLAG,
+        B.NDNC_1,
+        B.DNC_1,
+        B.RM_NAME,
+        B.RM_MVP_FLAG,
+        B.RM_BRANCH,
+        B.RM_CLUSTER,
+        B.map_branch,
+        B.map_cluster,
+        B.EMP_NAME,
+        B.AGE as AGE1,
+        B.TRUE_PREMIER_BY_MORTGAGE_FLAG,
+        B.TRUE_PREMIER_BY_TRB_FLAG,
+        B.TRUE_PREMIER_BY_SALARY_FLAG,
+        B.TRUE_PREMIER_FLAG,
+        'custid' as match_type
+    from BUREAU.FINAL_WATERFALL_16OCT24 A
+    left join RJ.SERVICE_BASE_14OCT24 B
+    on A.CUSID = B.CUSID;
+quit;
+
+/* Step 2: Left join on soleid for records not already matched by custid */
+proc sql;
+    create table soleid_join as
+    select 
+        A.*, 
+        coalesce(B.CUS_SGMT, A.CUS_SGMT) as CUS_SGMT, /* Prioritize custid match */
+        coalesce(B.SUPRESS_MKT_EXCL_FLAG, A.SUPRESS_MKT_EXCL_FLAG) as SUPRESS_MKT_EXCL_FLAG,
+        coalesce(B.VALID_MOBILE_FLAG, A.VALID_MOBILE_FLAG) as VALID_MOBILE_FLAG,
+        coalesce(B.VALID_EMAIL_FLAG, A.VALID_EMAIL_FLAG) as VALID_EMAIL_FLAG,
+        coalesce(B.NDNC_1, A.NDNC_1) as NDNC_1,
+        coalesce(B.DNC_1, A.DNC_1) as DNC_1,
+        coalesce(B.RM_NAME, A.RM_NAME) as RM_NAME,
+        coalesce(B.RM_MVP_FLAG, A.RM_MVP_FLAG) as RM_MVP_FLAG,
+        coalesce(B.RM_BRANCH, A.RM_BRANCH) as RM_BRANCH,
+        coalesce(B.RM_CLUSTER, A.RM_CLUSTER) as RM_CLUSTER,
+        coalesce(B.map_branch, A.map_branch) as map_branch,
+        coalesce(B.map_cluster, A.map_cluster) as map_cluster,
+        coalesce(B.EMP_NAME, A.EMP_NAME) as EMP_NAME,
+        coalesce(B.AGE, A.AGE) as AGE1,
+        coalesce(B.TRUE_PREMIER_BY_MORTGAGE_FLAG, A.TRUE_PREMIER_BY_MORTGAGE_FLAG) as TRUE_PREMIER_BY_MORTGAGE_FLAG,
+        coalesce(B.TRUE_PREMIER_BY_TRB_FLAG, A.TRUE_PREMIER_BY_TRB_FLAG) as TRUE_PREMIER_BY_TRB_FLAG,
+        coalesce(B.TRUE_PREMIER_BY_SALARY_FLAG, A.TRUE_PREMIER_BY_SALARY_FLAG) as TRUE_PREMIER_BY_SALARY_FLAG,
+        coalesce(B.TRUE_PREMIER_FLAG, A.TRUE_PREMIER_FLAG) as TRUE_PREMIER_FLAG,
+        'soleid' as match_type
+    from custid_join as A
+    left join RJ.SERVICE_BASE_14OCT24 B
+    on A.CUSID = B.SOLEID
+    where A.match_type is missing; /* Only take soleid where no custid match */
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Import existing data from the 'inapp' sheet */
 proc import out=existing_inapp_data
     datafile="C:\path_to_your_excel\yourfile.xlsx"
