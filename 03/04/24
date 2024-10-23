@@ -1,3 +1,97 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import re
+import time
+import random
+
+# URLs for MCC codes from known sources
+mcc_websites = [
+    "https://usa.visa.com/support/small-business/operations/procurement-cards.html",
+    "https://www.mastercard.us/en-us.html",
+    "https://www.npci.org.in",
+    "https://www.enkash.com",
+    "https://www.classification.codes",
+    "https://www.merchantstronghold.com"
+]
+
+# Function to fetch and parse page content
+def fetch_page_content(url):
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return response.text
+        else:
+            print(f"Failed to access {url}, status code {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Error accessing {url}: {e}")
+        return None
+
+# Function to parse MCC data from HTML content
+def parse_mcc_data(content):
+    soup = BeautifulSoup(content, 'html.parser')
+    mcc_list = []
+    
+    # Regular expression to find MCC codes (usually 4 digits)
+    mcc_pattern = re.compile(r'\b\d{4}\b')
+    
+    # Search for any table, list, or paragraph that may contain MCC codes
+    for section in soup.find_all(['p', 'li', 'tr']):
+        text = section.get_text(separator=' ').strip()
+        mcc_code = mcc_pattern.search(text)
+        if mcc_code:
+            merchant_info = text.split(mcc_code.group())[1].strip() if len(text.split(mcc_code.group())) > 1 else "N/A"
+            mcc_list.append({
+                "MCC Code": mcc_code.group(),
+                "Merchant Info": merchant_info
+            })
+    
+    return mcc_list
+
+# Function to save data to CSV
+def save_to_csv(data, filename):
+    df = pd.DataFrame(data)
+    df.to_csv(filename, index=False)
+    print(f"Data saved to {filename}")
+
+# Main function to scrape MCC codes from all URLs
+def scrape_mcc_codes():
+    all_mcc_data = []
+    for url in mcc_websites:
+        print(f"Scraping {url}...")
+        content = fetch_page_content(url)
+        if content:
+            mcc_data = parse_mcc_data(content)
+            if mcc_data:
+                all_mcc_data.extend(mcc_data)
+            # Pause between requests to avoid getting blocked
+            time.sleep(random.uniform(2, 5))
+    
+    if all_mcc_data:
+        save_to_csv(all_mcc_data, 'mcc_codes_scraped.csv')
+    else:
+        print("No MCC data scraped.")
+
+# Run the scraping process
+if __name__ == "__main__":
+    scrape_mcc_codes()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Left join on custid */
 proc sql;
     create table custid_join as
