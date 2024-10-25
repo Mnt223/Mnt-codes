@@ -121,6 +121,100 @@ print("Node indices:", node_indices)
 links = []
 for cust_id in df['Customer'].unique():
     cust_data = df[df['Customer'] == cust_id].sort_values('Transaction_Rank')
+    print(f"Customer: {cust_id}")
+    print(cust_data[['Transaction_Rank', 'Sector', 'Node']])
+    for i in range(len(cust_data) - 1):
+        source_node = cust_data.iloc[i]['Node']
+        target_node = cust_data.iloc[i + 1]['Node']
+        source_index = node_indices[source_node]
+        target_index = node_indices[target_node]
+        links.append((source_index, target_index))
+
+# Check if links are getting populated
+print("Links:", links)
+
+# Aggregate the links to count each unique transition
+link_df = pd.DataFrame(links, columns=['source', 'target'])
+link_df['value'] = 1
+link_df = link_df.groupby(['source', 'target']).sum().reset_index()
+
+# Debugging step: Check link data
+print("Link DataFrame:", link_df)
+
+# Step 3: Prepare data for Sankey plot
+source_indices = link_df['source'].tolist()
+target_indices = link_df['target'].tolist()
+values = link_df['value'].tolist()
+
+# Debugging step: Check if source, target, and values are populated correctly
+print("Source indices:", source_indices)
+print("Target indices:", target_indices)
+print("Values:", values)
+
+# Sankey chart node labels
+node_labels = unique_nodes
+
+# Step 4: Create the Sankey chart
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=15,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=node_labels
+    ),
+    link=dict(
+        source=source_indices,
+        target=target_indices,
+        value=values
+    )
+))
+
+fig.update_layout(title_text="Customer Transaction Flow Across Sectors", font_size=10)
+fig.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objects as go
+
+# Sample data
+data = {
+    'Customer': ['Cust_1', 'Cust_1', 'Cust_1', 'Cust_1', 'Cust_1',
+                 'Cust_2', 'Cust_2', 'Cust_2', 'Cust_2'],
+    'Transaction_Rank': [1, 2, 3, 4, 5, 1, 2, 3, 4],
+    'Sector': ['Electronics', 'Fashion', 'Food', 'Electronics', 'Travel',
+               'Food', 'Travel', 'Electronics', 'Food'],
+    'Amount': [200, 150, 100, 300, 250, 80, 90, 200, 120]
+}
+df = pd.DataFrame(data)
+
+# Step 1: Define nodes (unique Transaction_Rank + Sector combinations)
+df['Node'] = df['Transaction_Rank'].astype(str) + '_' + df['Sector']
+
+# Get unique nodes and assign them an index for the Sankey chart
+unique_nodes = list(df['Node'].unique())
+node_indices = {node: i for i, node in enumerate(unique_nodes)}
+
+# Debugging step: Check unique nodes and node indices
+print("Unique nodes:", unique_nodes)
+print("Node indices:", node_indices)
+
+# Step 2: Create links for the Sankey chart (transitions between transaction ranks for each customer)
+links = []
+for cust_id in df['Customer'].unique():
+    cust_data = df[df['Customer'] == cust_id].sort_values('Transaction_Rank')
     for i in range(len(cust_data) - 1):
         source_node = cust_data.iloc[i]['Node']
         target_node = cust_data.iloc[i + 1]['Node']
