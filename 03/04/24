@@ -1,6 +1,88 @@
 import pandas as pd
 import plotly.graph_objects as go
 
+# Step 1: Load the Excel file
+# Make sure to provide the correct file path and sheet name
+file_path = 'your_file_path.xlsx'  # Replace with your actual file path
+df = pd.read_excel(file_path, sheet_name='Sheet1')  # Adjust the sheet name if needed
+
+# Step 2: Ensure columns match the expected structure
+# Assuming your Excel has columns: 'Customer', 'Transaction_Rank', 'Sector', 'Amount'
+# If column names differ, rename them accordingly:
+# df.rename(columns={'Your_Cust_Col': 'Customer', 'Your_Rank_Col': 'Transaction_Rank', ...}, inplace=True)
+
+# Step 3: Aggregate transitions from one Transaction_Rank to another
+df['Next_Sector'] = df.groupby('Customer')['Sector'].shift(-1)
+df['Next_Transaction_Rank'] = df.groupby('Customer')['Transaction_Rank'].shift(-1)
+
+# Drop rows where there is no next transaction (i.e., at the end of the sequence)
+df = df.dropna(subset=['Next_Sector', 'Next_Transaction_Rank'])
+
+# Step 4: Summarize the transitions between sectors
+transition_summary = df.groupby(['Transaction_Rank', 'Sector', 'Next_Transaction_Rank', 'Next_Sector']).size().reset_index(name='Count')
+
+# Step 5: Define nodes (unique Transaction_Rank + Sector combinations)
+df['Node'] = df['Transaction_Rank'].astype(str) + '_' + df['Sector']
+df['Next_Node'] = df['Next_Transaction_Rank'].astype(str) + '_' + df['Next_Sector']
+
+# Get unique nodes and assign them an index for the Sankey chart
+unique_nodes = pd.concat([df['Node'], df['Next_Node']]).unique()
+node_indices = {node: i for i, node in enumerate(unique_nodes)}
+
+# Step 6: Create links for the Sankey chart based on the summary
+transition_summary['source'] = transition_summary['Transaction_Rank'].astype(str) + '_' + transition_summary['Sector']
+transition_summary['target'] = transition_summary['Next_Transaction_Rank'].astype(str) + '_' + transition_summary['Next_Sector']
+
+# Map source and target to indices
+transition_summary['source_index'] = transition_summary['source'].map(node_indices)
+transition_summary['target_index'] = transition_summary['target'].map(node_indices)
+
+# Step 7: Prepare data for Sankey plot
+source_indices = transition_summary['source_index'].tolist()
+target_indices = transition_summary['target_index'].tolist()
+values = transition_summary['Count'].tolist()
+
+# Sankey chart node labels
+node_labels = list(unique_nodes)
+
+# Step 8: Create the Sankey chart
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=15,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=node_labels
+    ),
+    link=dict(
+        source=source_indices,
+        target=target_indices,
+        value=values
+    )
+))
+
+fig.update_layout(title_text="Summarized Customer Transaction Flow Across Sectors", font_size=10)
+fig.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objects as go
+
 # Sample data
 data = {
     'Customer': ['Cust_1', 'Cust_1', 'Cust_1', 'Cust_1', 'Cust_1',
