@@ -1,3 +1,114 @@
+-- Step 1: Aggregate the data to create a sector-level summary for each customer
+WITH sector_summary AS (
+    SELECT
+        ACCT AS custid,
+        Sector,
+        SUM(TRAN_AMT) AS total_transaction_amount  -- Total amount spent in each sector
+    FROM
+        `your_project.your_dataset.transactional_data`
+    GROUP BY
+        ACCT, Sector
+),
+
+-- Step 2: Calculate user-user similarity using cosine similarity
+user_sector AS (
+    SELECT
+        custid,
+        Sector,
+        total_transaction_amount
+    FROM
+        sector_summary
+),
+user_pair AS (
+    SELECT
+        a.custid AS user_1,
+        b.custid AS user_2,
+        SUM(a.total_transaction_amount * b.total_transaction_amount) AS dot_product,
+        SQRT(SUM(a.total_transaction_amount * a.total_transaction_amount)) AS magnitude_1,
+        SQRT(SUM(b.total_transaction_amount * b.total_transaction_amount)) AS magnitude_2
+    FROM
+        user_sector a
+    JOIN
+        user_sector b
+    ON
+        a.Sector = b.Sector
+    WHERE
+        a.custid != b.custid  -- Exclude self-similarity
+    GROUP BY
+        a.custid, b.custid
+),
+user_similarity AS (
+    SELECT
+        user_1,
+        user_2,
+        dot_product / (magnitude_1 * magnitude_2) AS cosine_similarity
+    FROM
+        user_pair
+    WHERE
+        magnitude_1 != 0 AND magnitude_2 != 0
+),
+
+-- Step 3: Calculate sector scores for each user based on similar users
+candidate_sector_scores AS (
+    SELECT
+        a.user_1 AS custid,  -- The target user
+        c.Sector,
+        SUM(c.total_transaction_amount * b.cosine_similarity) AS score
+    FROM
+        user_similarity b
+    JOIN
+        user_sector c
+    ON
+        b.user_2 = c.custid  -- Use sector data from similar users
+    LEFT JOIN
+        user_sector a
+    ON
+        a.custid = b.user_1 AND a.Sector = c.Sector  -- Include all sectors
+    GROUP BY
+        a.user_1, c.Sector
+),
+
+-- Step 4: Rank all seven sectors for each customer
+ranked_data AS (
+    SELECT
+        custid,
+        Sector,
+        score,
+        RANK() OVER (PARTITION BY custid ORDER BY score DESC) AS sector_rank  -- Ranking sectors for each customer
+    FROM
+        candidate_sector_scores
+)
+
+-- Step 5: Pivot the ranked data to display sectors as columns
+SELECT
+    custid,
+    MAX(CASE WHEN Sector = 'Travel' THEN sector_rank END) AS Travel,
+    MAX(CASE WHEN Sector = 'Electronics' THEN sector_rank END) AS Electronics,
+    MAX(CASE WHEN Sector = 'Groceries' THEN sector_rank END) AS Groceries,
+    MAX(CASE WHEN Sector = 'Dining' THEN sector_rank END) AS Dining,
+    MAX(CASE WHEN Sector = 'Healthcare' THEN sector_rank END) AS Healthcare,
+    MAX(CASE WHEN Sector = 'Entertainment' THEN sector_rank END) AS Entertainment,
+    MAX(CASE WHEN Sector = 'Fuel' THEN sector_rank END) AS Fuel
+FROM
+    ranked_data
+GROUP BY
+    custid
+ORDER BY
+    custid;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import plotly.graph_objects as go
 
