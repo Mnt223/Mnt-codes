@@ -5,6 +5,94 @@ import plotly.graph_objects as go
 file_path = 'your_file_path.xlsx'  # Replace with your actual file path
 df = pd.read_excel(file_path, sheet_name='Sheet1')  # Adjust the sheet name if needed
 
+# Debugging step: Check the data to ensure it has been loaded correctly
+print("Initial data sample:")
+print(df.head())
+
+# Step 1: Filter out customers who have fewer than 2 transactions
+customer_transaction_counts = df.groupby('Customer').size()
+customers_with_multiple_transactions = customer_transaction_counts[customer_transaction_counts > 1].index
+df = df[df['Customer'].isin(customers_with_multiple_transactions)]
+
+# Step 2: Sort the data by Customer and Transaction_Rank to maintain order
+df = df.sort_values(by=['Customer', 'Transaction_Rank'])
+
+# Step 3: Create the next sector and next transaction rank columns for each customer
+df['Next_Sector'] = df.groupby('Customer')['Sector'].shift(-1)
+df['Next_Transaction_Rank'] = df.groupby('Customer')['Transaction_Rank'].shift(-1)
+
+# Step 4: Drop rows where there is no next transaction (i.e., the last transaction for each customer)
+df = df.dropna(subset=['Next_Sector', 'Next_Transaction_Rank'])
+
+# Debugging step: Show data after shift operation
+print("Data after creating Next_Sector and Next_Transaction_Rank:")
+print(df.head(20))
+
+# Step 5: Summarize the transitions between sectors
+transition_summary = df.groupby(['Transaction_Rank', 'Sector', 'Next_Transaction_Rank', 'Next_Sector']).size().reset_index(name='Count')
+
+# Step 6: Define nodes (unique Transaction_Rank + Sector combinations)
+df['Node'] = df['Transaction_Rank'].astype(str) + '_' + df['Sector']
+df['Next_Node'] = df['Next_Transaction_Rank'].astype(str) + '_' + df['Next_Sector']
+
+# Get unique nodes and assign them an index for the Sankey chart
+unique_nodes = pd.concat([df['Node'], df['Next_Node']]).unique()
+node_indices = {node: i for i, node in enumerate(unique_nodes)}
+
+# Step 7: Create links for the Sankey chart based on the summarized transitions
+transition_summary['source'] = transition_summary['Transaction_Rank'].astype(str) + '_' + transition_summary['Sector']
+transition_summary['target'] = transition_summary['Next_Transaction_Rank'].astype(str) + '_' + transition_summary['Next_Sector']
+
+# Map source and target to indices
+transition_summary['source_index'] = transition_summary['source'].map(node_indices)
+transition_summary['target_index'] = transition_summary['target'].map(node_indices)
+
+# Step 8: Prepare data for the Sankey plot
+source_indices = transition_summary['source_index'].tolist()
+target_indices = transition_summary['target_index'].tolist()
+values = transition_summary['Count'].tolist()
+
+# Sankey chart node labels
+node_labels = list(unique_nodes)
+
+# Step 9: Create the Sankey chart
+fig = go.Figure(go.Sankey(
+    node=dict(
+        pad=15,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=node_labels
+    ),
+    link=dict(
+        source=source_indices,
+        target=target_indices,
+        value=values
+    )
+))
+
+fig.update_layout(title_text="Customer Transaction Flow Across Sectors", font_size=10)
+fig.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import plotly.graph_objects as go
+
+# Load your Excel file
+file_path = 'your_file_path.xlsx'  # Replace with your actual file path
+df = pd.read_excel(file_path, sheet_name='Sheet1')  # Adjust the sheet name if needed
+
 # Step 1: Create the next sector and next transaction rank columns for each customer
 df['Next_Sector'] = df.groupby('Customer')['Sector'].shift(-1)
 df['Next_Transaction_Rank'] = df.groupby('Customer')['Transaction_Rank'].shift(-1)
