@@ -1,3 +1,128 @@
+-- Step 1: Split data into training and test sets based on a date
+WITH data_split AS (
+    SELECT
+        *,
+        CASE
+            WHEN Date < '2023-01-01' THEN 'train'  -- Transactions before 2023 go to the training set
+            ELSE 'test'  -- Transactions from 2023 onwards go to the test set
+        END AS dataset
+    FROM
+        `your_project.your_dataset.transactional_data`
+),
+
+-- Step 2: Aggregate the training data to create a sector-level summary
+sector_summary AS (
+    SELECT
+        ACCT AS custid,
+        Sector,
+        SUM(TRAN_AMT) AS total_transaction_amount  -- Total amount spent in each sector
+    FROM
+        data_split
+    WHERE
+        dataset = 'train'
+    GROUP BY
+        ACCT, Sector
+),
+
+-- Step 3: Calculate user-user similarity using the training data
+user_sector AS (
+    SELECT
+        custid,
+        Sector,
+        total_transaction_amount
+    FROM
+        sector_summary
+),
+user_pair AS (
+    SELECT
+        a.custid AS user_1,
+        b.custid AS user_2,
+        SUM(a.total_transaction_amount * b.total_transaction_amount) AS dot_product,
+        SQRT(SUM(a.total_transaction_amount * a.total_transaction_amount)) AS magnitude_1,
+        SQRT(SUM(b.total_transaction_amount * b.total_transaction_amount)) AS magnitude_2
+    FROM
+        user_sector a
+    JOIN
+        user_sector b
+    ON
+        a.Sector = b.Sector
+    WHERE
+        a.custid != b.custid  -- Exclude self-similarity
+    GROUP BY
+        a.custid, b.custid
+),
+user_similarity AS (
+    SELECT
+        user_1,
+        user_2,
+        dot_product / (magnitude_1 * magnitude_2) AS cosine_similarity
+    FROM
+        user_pair
+    WHERE
+        magnitude_1 != 0 AND magnitude_2 != 0
+),
+
+-- Step 4: Calculate predicted sector scores for each user in the test set
+candidate_sector_scores AS (
+    SELECT
+        user_similarity.user_1 AS custid,  -- The target user
+        user_sector.Sector,
+        SUM(user_sector.total_transaction_amount * user_similarity.cosine_similarity) AS score
+    FROM
+        user_similarity
+    JOIN
+        user_sector
+    ON
+        user_similarity.user_2 = user_sector.custid  -- Use sector data from similar users
+    GROUP BY
+        user_similarity.user_1, user_sector.Sector
+),
+
+-- Step 5: Rank all sectors for each test set customer based on predicted scores
+ranked_data AS (
+    SELECT
+        test_data.ACCT AS custid,
+        candidate_sector_scores.Sector,
+        candidate_sector_scores.score,
+        RANK() OVER (PARTITION BY test_data.ACCT ORDER BY candidate_sector_scores.score DESC) AS sector_rank
+    FROM
+        data_split AS test_data
+    JOIN
+        candidate_sector_scores
+    ON
+        test_data.ACCT = candidate_sector_scores.custid
+    WHERE
+        test_data.dataset = 'test'  -- Only predicting for test set customers
+)
+
+-- Step 6: Pivot the ranked data to display sectors as columns
+SELECT
+    custid,
+    MAX(CASE WHEN Sector = 'Travel' THEN sector_rank END) AS Travel,
+    MAX(CASE WHEN Sector = 'Electronics' THEN sector_rank END) AS Electronics,
+    MAX(CASE WHEN Sector = 'Groceries' THEN sector_rank END) AS Groceries,
+    MAX(CASE WHEN Sector = 'Dining' THEN sector_rank END) AS Dining,
+    MAX(CASE WHEN Sector = 'Healthcare' THEN sector_rank END) AS Healthcare,
+    MAX(CASE WHEN Sector = 'Entertainment' THEN sector_rank END) AS Entertainment,
+    MAX(CASE WHEN Sector = 'Fuel' THEN sector_rank END) AS Fuel
+FROM
+    ranked_data
+GROUP BY
+    custid
+ORDER BY
+    custid;
+
+
+
+
+
+
+
+
+
+
+
+
 -- Step 1: Aggregate the data to create a sector-level summary for each customer
 WITH sector_summary AS (
     SELECT
