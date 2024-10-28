@@ -10,6 +10,134 @@ WITH data_split AS (
         `your_project.your_dataset.transactional_data`
 ),
 
+-- Step 2: Aggregate the training data to create sector-level summaries for both frequency and amount
+sector_summary AS (
+    SELECT
+        ACCT AS custid,
+        Sector,
+        COUNT(*) AS transaction_frequency,  -- Number of transactions in each sector
+        SUM(TRAN_AMT) AS total_transaction_amount  -- Total amount spent in each sector
+    FROM
+        data_split
+    WHERE
+        dataset = 'train'
+    GROUP BY
+        ACCT, Sector
+),
+
+-- Step 3: Calculate a combined metric using both frequency and amount
+combined_user_sector AS (
+    SELECT
+        custid,
+        Sector,
+        -- Here, we calculate a combined score using a weighted sum of frequency and amount
+        -- You can adjust the weights as needed
+        (0.5 * transaction_frequency + 0.5 * total_transaction_amount) AS combined_score
+    FROM
+        sector_summary
+),
+
+-- Step 4: Calculate user-user similarity using the combined score
+user_pair AS (
+    SELECT
+        a.custid AS user_1,
+        b.custid AS user_2,
+        SUM(a.combined_score * b.combined_score) AS dot_product,
+        SQRT(SUM(a.combined_score * a.combined_score)) AS magnitude_1,
+        SQRT(SUM(b.combined_score * b.combined_score)) AS magnitude_2
+    FROM
+        combined_user_sector a
+    JOIN
+        combined_user_sector b
+    ON
+        a.Sector = b.Sector
+    WHERE
+        a.custid != b.custid  -- Exclude self-similarity
+    GROUP BY
+        a.custid, b.custid
+),
+user_similarity AS (
+    SELECT
+        user_1,
+        user_2,
+        dot_product / (magnitude_1 * magnitude_2) AS cosine_similarity
+    FROM
+        user_pair
+    WHERE
+        magnitude_1 != 0 AND magnitude_2 != 0
+),
+
+-- Step 5: Calculate predicted sector scores for each user in the test set
+candidate_sector_scores AS (
+    SELECT
+        user_similarity.user_1 AS custid,  -- The target user
+        combined_user_sector.Sector,
+        SUM(combined_user_sector.combined_score * user_similarity.cosine_similarity) AS score
+    FROM
+        user_similarity
+    JOIN
+        combined_user_sector
+    ON
+        user_similarity.user_2 = combined_user_sector.custid  -- Use sector data from similar users
+    GROUP BY
+        user_similarity.user_1, combined_user_sector.Sector
+),
+
+-- Step 6: Rank all sectors for each test set customer based on predicted scores
+ranked_data AS (
+    SELECT
+        test_data.ACCT AS custid,
+        candidate_sector_scores.Sector,
+        candidate_sector_scores.score,
+        RANK() OVER (PARTITION BY test_data.ACCT ORDER BY candidate_sector_scores.score DESC) AS sector_rank
+    FROM
+        data_split AS test_data
+    JOIN
+        candidate_sector_scores
+    ON
+        test_data.ACCT = candidate_sector_scores.custid
+    WHERE
+        test_data.dataset = 'test'  -- Only predicting for test set customers
+)
+
+-- Step 7: Pivot the ranked data to display sectors as columns
+SELECT
+    custid,
+    MAX(CASE WHEN Sector = 'Travel' THEN sector_rank END) AS Travel,
+    MAX(CASE WHEN Sector = 'Electronics' THEN sector_rank END) AS Electronics,
+    MAX(CASE WHEN Sector = 'Groceries' THEN sector_rank END) AS Groceries,
+    MAX(CASE WHEN Sector = 'Dining' THEN sector_rank END) AS Dining,
+    MAX(CASE WHEN Sector = 'Healthcare' THEN sector_rank END) AS Healthcare,
+    MAX(CASE WHEN Sector = 'Entertainment' THEN sector_rank END) AS Entertainment,
+    MAX(CASE WHEN Sector = 'Fuel' THEN sector_rank END) AS Fuel
+FROM
+    ranked_data
+GROUP BY
+    custid
+ORDER BY
+    custid;
+
+
+
+
+
+
+
+
+
+old
+-- Step 1: Split data into training and test sets based on a date
+WITH data_split AS (
+    SELECT
+        *,
+        CASE
+            WHEN Date < '2023-01-01' THEN 'train'  -- Transactions before 2023 go to the training set
+            ELSE 'test'  -- Transactions from 2023 onwards go to the test set
+        END AS dataset
+    FROM
+        `your_project.your_dataset.transactional_data`
+),
+
 -- Step 2: Aggregate the training data to create a sector-level summary
 sector_summary AS (
     SELECT
