@@ -1,3 +1,117 @@
+
+
+
+
+
+Email_02_09_24
+Email_04_09_24
+Email_05_09_24
+Email_06_09_24
+Email_07_09_24
+Email_11_09_24
+Email_17_09_24
+Email_19_09_24
+Email_20_09_24
+Email_24_09_24
+Email_25_09_24
+Email_29_09_24
+Email_30_09_24
+
+
+
+Re-push is required for these files
+
+
+
+
+For July 
+
+Files 
+
+Email_03_07_24 - 23kb 
+Email_19_07_24  - No file
+Email_30_07_24 - 0kb
+
+
+
+For June 
+
+
+Email_04_06_24 -23kb
+Email_05_06_24 -23kb
+Email_06_06_24 -23kb
+Email_11_06_24 - 23kb
+Email_17_06_24 - 0kb
+Email_26_06_24 - no file
+Email_30_06_24 - no file
+
+
+
+
+Email_03_08_24 - no file
+Email_08_08_24 - not able to open
+Email_09_08_24 - 0kb
+Email_10_08_24 - 0kb
+Email_11_08_24 - not able to open
+Email_13_08_24 - 0kb
+Email_14_08_24 - 0kb
+Email_16_08_24 - not able to open 
+Email_17_08_24 - 0kb
+Email_19_08_24 - not file 
+Email_20_08_24 -not able to open
+Email_24_08_24 - 0kb
+Email_28_08_24- 0kb
+Email_29_08_24 - not able to open 
+Email_30_08_24- no file
+Email_31_08_24 - 0kb
+
+
+
+
+
+Email_01_10_24 - 0kb
+Email_03_10_24 - not able to open 
+Email_04_10_24- not able to open 
+Email_05_10_24 -  0kb
+Email_06_10_24 - not able to open 
+Email_08_10_24 - 0kb
+Email_09_10_24 - not able to open 
+Email_13_10_24 - no file for this date 
+Email_14_10_24 - not able to open
+Email_16_10_24 to email_19_10_24 - 0kb
+Email_21_10_24 - 23kb
+Email_25_10_24- 23kb
+Email_26_10_24-  23kb
+
+
+
+
+There are a few questions. 
+
+1. Size 0kb and 23kb files are coming due to no comms sent on that day or there is any other issue ?
+
+
+2. Re-push is required for the files which I'm not able to open , throwing an error while opening
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- Step 1: Split data into training and test sets based on a date
 WITH data_split AS (
     SELECT
