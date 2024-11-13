@@ -1,3 +1,140 @@
+%let path_sms = /path/to/sftp/sms;
+%let path_email = /path/to/sftp/email;
+%let path_whatsapp = /path/to/sftp/whatsapp;
+%let log_file = /path/to/log_file.txt;
+
+/* Step 1: Define macros to list files, with recursive listing for email folder only */
+%macro list_files(path, outds);
+    filename mypipe pipe "ls -t &path"; /* List files by modified time, latest first */
+    data &outds;
+        infile mypipe truncover;
+        input filename $256.;
+    run;
+%mend list_files;
+
+%macro list_files_recursive(path, outds);
+    filename mypipe pipe "find &path -type f -print"; /* List files recursively */
+    data &outds;
+        infile mypipe truncover;
+        input filepath $256.;
+        filename = scan(filepath, -1, '/'); /* Extract file name */
+        folder_path = substr(filepath, 1, length(filepath) - length(filename) - 1); /* Extract folder path */
+    run;
+%mend list_files_recursive;
+
+/* Step 2: Run macros to get file lists for each folder */
+%list_files(&path_sms, sms_files); /* Non-recursive */
+%list_files_recursive(&path_email, email_files); /* Recursive for email folder */
+%list_files(&path_whatsapp, whatsapp_files); /* Non-recursive */
+
+/* Step 3: Load the previous log file to compare, creating if non-existent */
+data prev_log;
+    if fileexist("&log_file") then do;
+        infile "&log_file" truncover;
+        input folder $50. filename $256. folder_path $256.;
+    end;
+    else call symputx('log_exists', 'NO');
+run;
+
+%if &log_exists = NO %then %do;
+    /* Initialize log file if it does not exist */
+    data _null_;
+        file "&log_file";
+        put 'folder $50. filename $256. folder_path $256.';
+    run;
+%end;
+
+/* Step 4: Check for new files */
+data sms_new email_new whatsapp_new;
+    length folder $50. filename $256. folder_path $256.;
+
+    /* SMS Folder - No subfolders */
+    merge sms_files(in=sms) prev_log(in=log_sms where=(folder="sms"));
+    if sms and not log_sms then do;
+        folder = "sms";
+        folder_path = "&path_sms";
+        output sms_new;
+    end;
+
+    /* Email Folder - Includes subfolders */
+    merge email_files(in=email) prev_log(in=log_email where=(folder="email" and folder_path=email_files.folder_path));
+    if email and not log_email then do;
+        folder = "email";
+        output email_new;
+    end;
+
+    /* WhatsApp Folder - No subfolders */
+    merge whatsapp_files(in=whatsapp) prev_log(in=log_whatsapp where=(folder="whatsapp"));
+    if whatsapp and not log_whatsapp then do;
+        folder = "whatsapp";
+        folder_path = "&path_whatsapp";
+        output whatsapp_new;
+    end;
+run;
+
+/* Step 5: Generate notification message if there are new files */
+%macro check_and_notify(ds, folder_name);
+    %if %sysfunc(exist(&ds)) %then %do;
+        data _null_;
+            file "/path/to/email_notification.txt" mod; /* Append mode */
+            put "New files found in &folder_name folder:";
+            set &ds;
+            put folder_path= filename=;
+        run;
+    %end;
+%mend check_and_notify;
+
+%check_and_notify(sms_new, SMS);
+%check_and_notify(email_new, Email);
+%check_and_notify(whatsapp_new, WhatsApp);
+
+/* Step 6: Send Email Notification if any new files are detected */
+%macro send_email;
+    filename mymail email
+        to="recipient@example.com"
+        subject="New Files in SFTP Folders";
+    
+    data _null_;
+        file mymail;
+        %if %sysfunc(exist(sms_new)) %then %do;
+            put "There are new files in the SMS folder:";
+            set sms_new;
+            put folder_path= filename=;
+        %end;
+        %if %sysfunc(exist(email_new)) %then %do;
+            put "There are new files in the Email folder:";
+            set email_new;
+            put folder_path= filename=;
+        %end;
+        %if %sysfunc(exist(whatsapp_new)) %then %do;
+            put "There are new files in the WhatsApp folder:";
+            set whatsapp_new;
+            put folder_path= filename=;
+        %end;
+    run;
+%mend send_email;
+
+%send_email;
+
+/* Step 7: Update the log file with current files */
+data _null_;
+    file "&log_file" mod; /* Append mode for each run */
+    set sms_files(in=sms) email_files(in=email) whatsapp_files(in=whatsapp);
+    if sms then put "sms " filename " " folder_path;
+    if email then put "email " filename " " folder_path;
+    if whatsapp then put "whatsapp " filename " " folder_path;
+run;
+
+
+
+
+
+
+
+
+
+
+
 Here are 3-4 pointers summarizing your contribution to the NPS journey project:
 
 	1.	Development of RNPS and JNPS Journeys: Created robust coding for RNPS (Relationship NPS) and JNPS (Journey NPS) workflows, enabling efficient tracking and analysis of customer feedback.
