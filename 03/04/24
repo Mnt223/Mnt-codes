@@ -1,3 +1,124 @@
+import pandas as pd
+import numpy as np
+from scipy.sparse import csr_matrix
+from implicit.als import AlternatingLeastSquares
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Function to create a sparse matrix from customer-sector data
+def create_sparse_matrix(data, customer_map, sector_map):
+    data['customer_idx'] = data['customer_id'].map(customer_map)
+    data['sector_idx'] = data['sector_id'].map(sector_map)
+    return csr_matrix((data['total_spend'], (data['customer_idx'], data['sector_idx'])))
+
+# Step 1: Initial Training on Historical Data
+historical_data = pd.read_csv('historical_transaction_data.csv')
+historical_data = historical_data.groupby(['customer_id', 'sector_id']).agg(
+    total_spend=('transaction_amount', 'sum'),
+    transaction_frequency=('transaction_amount', 'count')
+).reset_index()
+
+# Map customers and sectors to integer indices for matrix creation
+customer_map = {id: idx for idx, id in enumerate(historical_data['customer_id'].unique())}
+sector_map = {id: idx for idx, id in enumerate(historical_data['sector_id'].unique())}
+
+# Create sparse matrix for ALS training
+historical_customer_sector_matrix = create_sparse_matrix(historical_data, customer_map, sector_map)
+
+# Initialize and train ALS model
+als_model = AlternatingLeastSquares(factors=20, regularization=0.1, iterations=20)
+als_model.fit(historical_customer_sector_matrix.T)
+
+# Calculate User Similarity Matrix for User-Based Recommendations
+customer_dense_matrix = historical_customer_sector_matrix.toarray()
+user_similarity = cosine_similarity(customer_dense_matrix)
+
+# Step 2: Incremental Update with New Data
+def incremental_update(new_data, als_model, customer_map, sector_map):
+    # Combine historical and new customer maps, sector maps
+    for customer_id in new_data['customer_id'].unique():
+        if customer_id not in customer_map:
+            customer_map[customer_id] = len(customer_map)
+
+    for sector_id in new_data['sector_id'].unique():
+        if sector_id not in sector_map:
+            sector_map[sector_id] = len(sector_map)
+
+    # Create new customer-sector sparse matrix
+    new_customer_sector_matrix = create_sparse_matrix(new_data, customer_map, sector_map)
+
+    # Perform incremental ALS training (assumes warm_start is supported)
+    als_model.fit(new_customer_sector_matrix.T, warm_start=True)
+
+    # Update similarity matrix if necessary
+    global user_similarity
+    customer_dense_matrix = new_customer_sector_matrix.toarray()
+    user_similarity = cosine_similarity(customer_dense_matrix)
+
+# Hybrid Recommendation Function combining ALS and User-Based Recommendations
+def user_based_recommend(customer_id, top_n=5):
+    customer_idx = customer_map.get(customer_id)
+    if customer_idx is None:
+        return []  # Cold start fallback to popular sectors
+
+    similar_customers = user_similarity[customer_idx]
+    similar_customer_indices = np.argsort(similar_customers)[-top_n-1:-1]
+    recommended_sectors = {}
+    for idx in similar_customer_indices:
+        similar_customer_sectors = historical_customer_sector_matrix[idx].indices
+        for sector in similar_customer_sectors:
+            recommended_sectors[sector] = recommended_sectors.get(sector, 0) + similar_customers[idx]
+
+    sorted_sectors = sorted(recommended_sectors.items(), key=lambda x: x[1], reverse=True)
+    return [list(sector_map.keys())[sec[0]] for sec in sorted_sectors[:top_n]]
+
+def hybrid_recommend(customer_id, als_model, top_n=5, weight_user=0.4, weight_item=0.6):
+    customer_idx = customer_map.get(customer_id)
+    if customer_idx is None:
+        return cold_start_recommend()
+
+    item_recs = als_model.recommend(customer_idx, historical_customer_sector_matrix[customer_idx], N=top_n)
+    item_based_recs = {sector[0]: sector[1] * weight_item for sector in item_recs}
+
+    user_based_recs = user_based_recommend(customer_id, top_n=top_n)
+    user_based_recs = {sector: score * weight_user for sector, score in enumerate(user_based_recs)}
+
+    combined_recs = {}
+    for sector, score in {**item_based_recs, **user_based_recs}.items():
+        combined_recs[sector] = combined_recs.get(sector, 0) + score
+
+    sorted_recs = sorted(combined_recs.items(), key=lambda x: x[1], reverse=True)
+    return [list(sector_map.keys())[sec[0]] for sec in sorted_recs[:top_n]]
+
+# Cold Start Recommendation Fallback
+popular_sectors = historical_data.groupby('sector_id')['total_spend'].sum().nlargest(5).index.tolist()
+def cold_start_recommend():
+    return popular_sectors
+
+# Example of Running the Model with New Data
+new_data = pd.read_csv('new_transaction_data.csv')
+
+# Incremental Update
+incremental_update(new_data, als_model, customer_map, sector_map)
+
+# Generate Recommendations for All Customers in New Data
+recommendations = {}
+for customer_id in new_data['customer_id'].unique():
+    recommendations[customer_id] = hybrid_recommend(customer_id, als_model, top_n=5)
+
+# Save Recommendations to File
+recommendation_df = pd.DataFrame([(cust, rec) for cust, rec in recommendations.items()],
+                                 columns=['customer_id', 'recommended_sectors'])
+recommendation_df.to_csv('incremental_recommendations.csv', index=False)
+
+
+
+
+
+
+
+
+
+
 %let path_sms = /path/to/sftp/sms;
 %let path_email = /path/to/sftp/email;
 %let path_whatsapp = /path/to/sftp/whatsapp;
