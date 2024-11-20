@@ -1,3 +1,66 @@
+%let folder_path = /path/to/your/folder; /* Path to the folder */
+%let log_file = /path/to/log_file.log;  /* Path to store the log */
+%let threshold = 200;                  /* Threshold size in KB */
+%let spoc_email = spoc@example.com;    /* SPOC Email Address */
+
+/* Check the size of each file in the folder */
+filename filelist pipe "ls -l &folder_path.";
+data files;
+    infile filelist truncover;
+    input file_info $256.;
+    if file_info ne "" then do;
+        length file_name $100 file_size 8.;
+        file_name = scan(file_info, -1, ' '); /* Extract file name */
+        file_size = input(scan(file_info, 5, ' '), best32.); /* Extract file size in bytes */
+        file_size_kb = file_size / 1024; /* Convert to KB */
+        if file_size_kb < &threshold. then output;
+    end;
+run;
+
+/* Log files below the threshold */
+data _null_;
+    file "&log_file." mod;
+    set files;
+    dt = datetime();
+    put "Log DateTime: " dt datetime19.;
+    put "File Below Threshold: " file_name " Size: " file_size_kb " KB";
+run;
+
+/* Send an alert if there are files below the threshold */
+%macro alert_if_needed;
+    %let dsid = %sysfunc(open(files));
+    %let nobs = %sysfunc(attrn(&dsid, nobs));
+    %let rc = %sysfunc(close(&dsid));
+
+    %if &nobs. > 0 %then %do;
+        filename sendMail email
+            to="&spoc_email."
+            subject="File Size Alert"
+            type="text/plain";
+        data _null_;
+            file sendMail;
+            put "The following files are below the threshold of &threshold. KB:";
+            set files;
+            put "File: " file_name " | Size: " file_size_kb " KB";
+        run;
+        filename sendMail clear;
+    %end;
+%mend;
+
+%alert_if_needed;
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from scipy.sparse import csr_matrix
