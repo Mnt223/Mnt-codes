@@ -1,6 +1,78 @@
 import pandas as pd
 import numpy as np
 from scipy.sparse import csr_matrix
+from sklearn.neighbors import NearestNeighbors
+from implicit.als import AlternatingLeastSquares
+
+# Step 1: Preprocess Data
+historical_data = pd.read_csv('historical_transaction_data.csv')
+aggregated_data = historical_data.groupby(['customer_id', 'sector_id']).agg(
+    total_spend=('transaction_amount', 'sum')
+).reset_index()
+
+# Map customers and sectors to integer indices
+customer_map = {id: idx for idx, id in enumerate(aggregated_data['customer_id'].unique())}
+sector_map = {id: idx for idx, id in enumerate(aggregated_data['sector_id'].unique())}
+
+# Create sparse matrix
+customer_sector_matrix = csr_matrix((aggregated_data['total_spend'], 
+                                      (aggregated_data['customer_id'].map(customer_map),
+                                       aggregated_data['sector_id'].map(sector_map))))
+
+# Step 2: Train ALS Model
+als_model = AlternatingLeastSquares(factors=20, regularization=0.1, iterations=20)
+als_model.fit(customer_sector_matrix.T)
+
+# Step 3: Train k-NN Model
+knn = NearestNeighbors(metric='cosine', algorithm='brute', n_neighbors=100)
+knn.fit(customer_sector_matrix)
+
+# Step 4: Hybrid Recommendations
+def hybrid_recommend(customer_id, als_model, knn, top_n=5, weight_user=0.4, weight_item=0.6):
+    customer_idx = customer_map.get(customer_id)
+    if customer_idx is None:
+        return cold_start_recommend()
+
+    # ALS Recommendations
+    item_recs = als_model.recommend(customer_idx, customer_sector_matrix[customer_idx], N=top_n)
+    item_based_recs = {sector: score * weight_item for sector, score in item_recs}
+
+    # k-NN Recommendations
+    distances, indices = knn.kneighbors(customer_sector_matrix[customer_idx], n_neighbors=top_n)
+    user_based_recs = {}
+    for neighbor_idx in indices[0]:
+        similar_sectors = customer_sector_matrix[neighbor_idx].indices
+        for sector in similar_sectors:
+            user_based_recs[sector] = user_based_recs.get(sector, 0) + 1 * weight_user
+
+    # Combine Recommendations
+    combined_recs = {}
+    for sector, score in {**item_based_recs, **user_based_recs}.items():
+        combined_recs[sector] = combined_recs.get(sector, 0) + score
+
+    sorted_recs = sorted(combined_recs.items(), key=lambda x: x[1], reverse=True)
+    return [list(sector_map.keys())[sec[0]] for sec in sorted_recs[:top_n]]
+
+# Cold Start Fallback
+def cold_start_recommend():
+    popular_sectors = aggregated_data.groupby('sector_id')['total_spend'].sum().nlargest(5).index.tolist()
+    return popular_sectors
+
+# Generate Recommendations
+new_data = pd.read_csv('new_transaction_data.csv')
+recommendations = {customer_id: hybrid_recommend(customer_id, als_model, knn) for customer_id in new_data['customer_id'].unique()}
+
+# Save Recommendations
+pd.DataFrame.from_dict(recommendations, orient='index', columns=['recommended_sectors']).to_csv('recommendations.csv')
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from scipy.sparse import csr_matrix
 from implicit.als import AlternatingLeastSquares
 from sklearn.neighbors import NearestNeighbors
 import os
