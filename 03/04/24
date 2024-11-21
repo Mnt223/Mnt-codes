@@ -1,3 +1,9 @@
+Year = YEAR('TableName'[Date])
+Quarter = "Q" & QUARTER('TableName'[Date])
+Month = FORMAT('TableName'[Date], "MMMM") // or use "MM" for numeric format
+
+
+
 chunking 
 import pandas as pd
 import numpy as np
