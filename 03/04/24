@@ -1,3 +1,63 @@
+%let path1 = /path/to/zip/folder; /* Path to the folder containing the ZIP file */
+%let email_to = recipient@example.com; /* Email recipient */
+%let subject = "File Size Alert";
+%let threshold = 200; /* Threshold size in KB */
+
+/* Step 1: Generate D-1 Date */
+data _null_;
+    d1_date = intnx('day', today(), -1); /* Yesterday's date */
+    call symputx('file_date', put(d1_date, yymmddn8.)); /* Format as YYYYMMDD */
+run;
+
+%let zip_file = &file_date..zip; /* Construct the ZIP file name (e.g., 20241101.zip) */
+%put ZIP File Name: &zip_file;
+
+/* Step 2: List contents of the ZIP file */
+filename zip pipe "unzip -l &path1./&zip_file.";
+data zip_contents;
+    infile zip truncover;
+    input line $100.;
+    if prxmatch('/^\s*\d+\s+\d{2}-\d{2}-\d{2}/', line) then do;
+        /* Parse file size and file name */
+        length file_name $50.;
+        file_size = input(scan(line, 1, ' '), 8.);
+        file_name = scan(line, -1, ' ');
+        /* Check for specific file (if needed) */
+        if upcase(file_name) = "&file_date..csv" then do;
+            size_kb = file_size / 1024; /* Convert to KB */
+            call symputx('file_size', size_kb);
+        end;
+    end;
+run;
+
+%put File size is &file_size. KB;
+
+/* Step 3: Send email alert if file size is below threshold */
+%macro check_and_alert();
+    %if &file_size. < &threshold. %then %do;
+        filename mail email "&email_to.";
+        data _null_;
+            file mail
+                to="&email_to."
+                subject="&subject.";
+            put "Alert: The file size of the CSV inside the ZIP archive is less than &threshold. KB.";
+            put "File size: &file_size. KB.";
+        run;
+    %end;
+%mend;
+
+%check_and_alert();
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from scipy.sparse import csr_matrix
