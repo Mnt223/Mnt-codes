@@ -1,0 +1,97 @@
+import pandas as pd
+import re
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+from rapidfuzz import process, fuzz
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import DBSCAN
+import numpy as np
+
+# Load datasets
+df_master = pd.read_csv('master_file.csv')
+df = pd.read_csv('unstructured_file.csv')
+
+# Define preprocessing helpers
+synonym_map = {
+    "pvt ltd": "private limited",
+    "ltd": "limited",
+    "corp": "corporation",
+    "intl": "international",
+    "inc": "incorporated",
+    "solutions": "solution",
+    "services": "service"
+}
+suffixes = ['limited', 'private', 'corporation', 'group', 'company', 'solution', 'service']
+
+def preprocess(data, column_name):
+    data[column_name] = data[column_name].str.lower()  # Convert to lowercase
+    data[column_name] = data[column_name].str.replace(r"[^a-z0-9 ]", " ", regex=True)  # Remove special chars
+    data[column_name] = data[column_name].apply(lambda x: replace_synonyms(x, synonym_map))  # Replace synonyms
+    data[column_name] = data[column_name].apply(lambda x: remove_suffixes(x, suffixes))  # Remove suffixes
+    data[column_name] = data[column_name].str.replace(r" +", " ", regex=True).str.strip()  # Normalize spaces
+    return data
+
+def replace_synonyms(text, synonym_map):
+    for key, value in synonym_map.items():
+        text = text.replace(key, value)
+    return text
+
+def remove_suffixes(text, suffixes):
+    for suffix in suffixes:
+        text = re.sub(rf"\b{suffix}\b", "", text)
+    return text.strip()
+
+# Preprocess data
+df = preprocess(df, 'company_check')
+df_master = preprocess(df_master, 'company_List')
+
+# Step 1: Semantic Similarity (Sentence Transformers)
+model = SentenceTransformer('all-MiniLM-L6-v2')
+master_embeddings = model.encode(df_master['company_List'].tolist(), show_progress_bar=True)
+unstructured_embeddings = model.encode(df['company_check'].tolist(), show_progress_bar=True)
+
+def get_best_matches(similarity_matrix, unstructured_list, master_list, threshold=0.8):
+    matches = []
+    for i, row in enumerate(similarity_matrix):
+        best_idx = np.argmax(row)
+        best_score = row[best_idx]
+        matches.append({
+            "Unstructured employer": unstructured_list[i],
+            "Structured employer": master_list[best_idx] if best_score >= threshold else None,
+            "Confidence": best_score
+        })
+    return matches
+
+similarity_matrix = cosine_similarity(unstructured_embeddings, master_embeddings)
+semantic_matches = get_best_matches(similarity_matrix, df['company_check'].tolist(), df_master['company_List'].tolist())
+
+# Step 2: Clustering (DBSCAN)
+all_names = df_master['company_List'].tolist() + df['company_check'].tolist()
+vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(3, 3))
+X = vectorizer.fit_transform(all_names)
+clustering = DBSCAN(eps=0.5, min_samples=2, metric='cosine').fit(X)
+clustered_df = pd.DataFrame({'Name': all_names, 'Cluster': clustering.labels_})
+
+# Step 3: Hybrid Matching
+def hybrid_match(unstructured_name, master_list, master_embeddings, threshold=0.8):
+    tfidf_match, tfidf_score = process.extractOne(unstructured_name, master_list, scorer=fuzz.ratio)
+    embedding_score = cosine_similarity(model.encode([unstructured_name]), master_embeddings).max()
+    combined_score = 0.6 * tfidf_score + 0.4 * embedding_score
+    return (tfidf_match if combined_score >= threshold else None, combined_score)
+
+hybrid_results = []
+for name in df['company_check']:
+    match, score = hybrid_match(name, df_master['company_List'].tolist(), master_embeddings)
+    hybrid_results.append({
+        "Unstructured employer": name,
+        "Structured employer": match,
+        "Confidence": score
+    })
+
+# Combine all results
+semantic_df = pd.DataFrame(semantic_matches)
+hybrid_df = pd.DataFrame(hybrid_results)
+final_results = pd.concat([semantic_df, hybrid_df], ignore_index=True).drop_duplicates()
+
+# Export results
+final_results.to_csv('enhanced_matched_employers.csv', index=False, sep='|')
