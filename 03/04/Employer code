@@ -1,4 +1,89 @@
 from polyfuzz import PolyFuzz
+from polyfuzz.models import TFIDF
+import pandas as pd
+import re
+
+# Function to replace synonyms in text
+def replace_synonyms(text, synonym_map):
+    if not isinstance(text, str):  # Handle non-string values
+        return text
+    for key, value in synonym_map.items():
+        text = text.replace(key, value)
+    return text
+
+# Function to preprocess the columns
+def preprocess_column(data, column_name, list_space_cmp, synonym_map):
+    # Ensure all values are strings and handle NaN values
+    data[column_name] = data[column_name].astype(str).fillna("").str.upper()  # Convert to uppercase
+    # Replace synonyms
+    data[column_name] = data[column_name].apply(lambda x: replace_synonyms(x, synonym_map))
+    # Remove special characters
+    data[column_name] = data[column_name].apply(lambda x: re.sub(r"[^A-Z0-9]", " ", x))
+    # Remove common suffixes
+    for cmp in list_space_cmp:
+        data[column_name] = data[column_name].str.replace(cmp, " ", regex=False)
+    # Normalize spaces
+    data[column_name] = data[column_name].str.replace(r" +", " ", regex=True).str.strip()
+    return data
+
+# Synonym mapping for replacement
+synonym_map = {
+    "PVT LTD": "PRIVATE LIMITED",
+    "LTD": "LIMITED",
+    "CORP": "CORPORATION",
+    "INTL": "INTERNATIONAL",
+    "INC": "INCORPORATED",
+    "SOLUTIONS": "SOLUTION",
+    "SERVICES": "SERVICE"
+}
+
+# List of suffixes to remove
+list_space_cmp = [
+    "SOLUTIONS", "SOLUTION", "SERVICES", "SERVICE", "PVTLTD", "PVT LTD",
+    "PRIVATELIMITED", "PRIVATE", "PRIVAT", "LTD", "PVT", "LLP", "INTL", 
+    "LIMITED", "LIMTED", "LIMITE", "CORPORATE", "INC", "GROUP", "ENTERPRISE",
+    "CORPORATION", "CORP", "COMPANY"
+]
+
+# Load datasets
+df = pd.read_csv('file_company.csv')  # Unstructured employer names
+df_master = pd.read_csv('file_master.csv')  # Structured employer names
+
+# Drop missing values
+df = df.dropna(subset=['company_check'])  # Ensure no missing values in relevant columns
+df_master = df_master.dropna(subset=['company_List'])
+
+# Preprocess columns
+df = preprocess_column(df, 'company_check', list_space_cmp, synonym_map)
+df_master = preprocess_column(df_master, 'company_List', list_space_cmp, synonym_map)
+
+# Initialize PolyFuzz model with TF-IDF
+tfidf = TFIDF(n_gram_range=(3, 3), min_similarity=0.7)
+model = PolyFuzz(tfidf)
+
+# Perform matching
+from_list = df['company_check'].tolist()
+to_list = df_master['company_List'].tolist()
+model.match(from_list, to_list)
+
+# Get results and save to CSV
+result = model.get_matches()
+result[['From', 'To', 'Similarity']].to_csv('matched_employers.csv', index=False, sep='|')
+
+print("Matching completed! Results saved to 'matched_employers.csv'.")
+
+
+
+
+
+
+
+
+
+
+
+
+from polyfuzz import PolyFuzz
 from polyfuzz.models import TFIDF, RapidFuzz, EditDistance
 import pandas as pd
 import re
