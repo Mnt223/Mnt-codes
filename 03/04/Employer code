@@ -4,6 +4,101 @@ import pandas as pd
 import re
 from jellyfish import jaro_winkler_similarity
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+
+
+# Function for preprocessing
+def preprocess(df, column_name, list_space_cmp):
+    # Convert to uppercase
+    df[column_name] = df[column_name].apply(lambda x: str(x).upper())
+    # Remove suffixes
+    for cmp in list_space_cmp:
+        df[column_name] = df[column_name].str.replace(cmp, " ", regex=False)
+    # Remove special characters and normalize spaces
+    df[column_name] = df[column_name].apply(lambda x: re.sub(r"[^A-Z0-9]", " ", x))
+    df[column_name] = df[column_name].apply(lambda x: re.sub(r" +", " ", x).strip())
+    return df
+
+
+# Function to process data in chunks with a progress bar
+def match_in_chunks(from_list, to_list, model, chunk_size=5000, algorithm_name="Algorithm"):
+    results = []
+    print(f"Running {algorithm_name} matching...")
+    for i in tqdm(range(0, len(from_list), chunk_size), desc=f"{algorithm_name} Progress"):
+        from_chunk = from_list[i:i + chunk_size]
+        model.match(from_chunk, to_list)
+        chunk_results = model.get_matches()
+        results.append(chunk_results)
+    return pd.concat(results, ignore_index=True)
+
+
+# Function to save precision-recall plots
+def save_precision_recall_plot(model, file_name):
+    print(f"Generating precision-recall plot for {file_name.split('_')[0]}...")
+    model.visualize_precision_recall()
+    plt.savefig(file_name)
+    print(f"Precision-recall plot saved as '{file_name}'.")
+
+
+# Load data
+df = pd.read_csv('file_company.csv')  # Unstructured employer names
+df_master = pd.read_csv('file_master.csv')  # Structured employer names
+
+# Drop missing values
+df = df.dropna()
+df_master = df_master.dropna()
+
+# List of suffixes to clean
+list_space_cmp = [
+    'SOLUTIONS', 'SOLUTION', 'SERVICES', 'SERVICE', 'PVTLTD',
+    'PVT LTD', 'PRIVATELIMITED', 'PRIVATE', 'PRIVAT', 'LTD',
+    'PVT', 'LLP', 'INTL', 'LIMTED', 'LIMITED', 'LIMITE',
+    'CORPORATE', 'INC', 'GROUP', 'ENTERPRISE', 'CORPORATION',
+    'CORP', 'COMPANY'
+]
+
+# Preprocess columns
+df = preprocess(df, 'company_check', list_space_cmp)
+df_master = preprocess(df_master, 'company_List', list_space_cmp)
+
+# Create lists for matching
+from_list = df['company_check'].tolist()
+to_list = df_master['company_List'].tolist()
+
+# TF-IDF Matching
+tfidf = TFIDF(n_gram_range=(3, 3), min_similarity=0)
+model_tfidf = PolyFuzz(tfidf)
+tfidf_results = match_in_chunks(from_list, to_list, model_tfidf, chunk_size=5000, algorithm_name="TF-IDF")
+tfidf_results[['From', 'To', 'Similarity']].to_csv('matched_employers_tfidf.csv', index=False, sep='|')
+save_precision_recall_plot(model_tfidf, "tfidf_precision_recall.png")
+
+# RapidFuzz Matching
+rapidfuzz_matcher = RapidFuzz(n_jobs=1)
+model_rapidfuzz = PolyFuzz(rapidfuzz_matcher)
+rapidfuzz_results = match_in_chunks(from_list, to_list, model_rapidfuzz, chunk_size=5000, algorithm_name="RapidFuzz")
+rapidfuzz_results[['From', 'To', 'Similarity']].to_csv('matched_employers_rapidfuzz.csv', index=False, sep='|')
+save_precision_recall_plot(model_rapidfuzz, "rapidfuzz_precision_recall.png")
+
+# Jellyfish Matching (Jaro-Winkler)
+jellyfish_matcher = EditDistance(n_jobs=1, scorer=jaro_winkler_similarity)
+model_jellyfish = PolyFuzz(jellyfish_matcher)
+jellyfish_results = match_in_chunks(from_list, to_list, model_jellyfish, chunk_size=5000, algorithm_name="Jellyfish")
+jellyfish_results[['From', 'To', 'Similarity']].to_csv('matched_employers_jellyfish.csv', index=False, sep='|')
+save_precision_recall_plot(model_jellyfish, "jellyfish_precision_recall.png")
+
+
+
+
+
+
+
+
+from polyfuzz import PolyFuzz
+from polyfuzz.models import TFIDF, RapidFuzz, EditDistance
+import pandas as pd
+import re
+from jellyfish import jaro_winkler_similarity
+from tqdm import tqdm
 
 # Load data
 df = pd.read_csv('file_company.csv')  # Unstructured employer names
