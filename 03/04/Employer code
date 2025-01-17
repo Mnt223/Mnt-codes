@@ -47,6 +47,110 @@ to_list = df_master['company_List_cln'].tolist()
 
 # Chunking for large datasets
 chunk_size = 5000  # Adjust chunk size based on system memory
+
+# TF-IDF Matching with Precision-Recall Visualization
+results = []
+tfidf = TFIDF(n_gram_range=(3, 3), min_similarity=0)
+model = PolyFuzz(tfidf)
+
+for i in range(0, len(from_list), chunk_size):
+    from_chunk = from_list[i:i + chunk_size]
+    model.match(from_chunk, to_list)
+    chunk_results = model.get_matches()
+    results.append(chunk_results)
+
+final_results = pd.concat(results, ignore_index=True)
+final_results[['From', 'To', 'Similarity']].to_csv('matched_employers_tfidf.csv', index=False, sep='|')
+model.visualize_precision_recall(save_as="tfidf_precision_recall.html")
+print("TF-IDF Matching completed and saved to 'matched_employers_tfidf.csv'.")
+
+# RapidFuzz Matching with Precision-Recall Visualization
+results = []
+rapidfuzz_matcher = RapidFuzz(n_jobs=1)
+model2 = PolyFuzz(rapidfuzz_matcher)
+
+for i in range(0, len(from_list), chunk_size):
+    from_chunk = from_list[i:i + chunk_size]
+    model2.match(from_chunk, to_list)
+    chunk_results = model2.get_matches()
+    results.append(chunk_results)
+
+final_results = pd.concat(results, ignore_index=True)
+final_results[['From', 'To', 'Similarity']].to_csv('matched_employers_rapidfuzz.csv', index=False, sep='|')
+model2.visualize_precision_recall(save_as="rapidfuzz_precision_recall.html")
+print("RapidFuzz Matching completed and saved to 'matched_employers_rapidfuzz.csv'.")
+
+# Jellyfish Matching with Precision-Recall Visualization
+results = []
+jellyfish_matcher = EditDistance(n_jobs=1, scorer=jaro_winkler_similarity)
+model3 = PolyFuzz(jellyfish_matcher)
+
+for i in range(0, len(from_list), chunk_size):
+    from_chunk = from_list[i:i + chunk_size]
+    model3.match(from_chunk, to_list)
+    chunk_results = model3.get_matches()
+    results.append(chunk_results)
+
+final_results = pd.concat(results, ignore_index=True)
+final_results[['From', 'To', 'Similarity']].to_csv('matched_employers_jellyfish.csv', index=False, sep='|')
+model3.visualize_precision_recall(save_as="jellyfish_precision_recall.html")
+print("Jellyfish (Jaro-Winkler) Matching completed and saved to 'matched_employers_jellyfish.csv'.")
+
+
+
+
+
+
+
+from polyfuzz import PolyFuzz
+from polyfuzz.models import TFIDF, RapidFuzz, EditDistance
+import pandas as pd
+import re
+from jellyfish import jaro_winkler_similarity
+from tqdm import tqdm
+
+# Load data
+df = pd.read_csv('file_company.csv')  # Unstructured employer names
+df_master = pd.read_csv('file_master.csv')  # Structured employer names
+
+# Drop missing values
+df = df.dropna()
+df_master = df_master.dropna()
+
+# Convert text to uppercase
+df['company_check'] = df['company_check'].apply(lambda x: str(x).upper())
+df_master['company_List'] = df_master['company_List'].apply(lambda x: str(x).upper())
+
+# List of suffixes to clean
+list_space_cmp = [
+    'SOLUTIONS', 'SOLUTION', 'SERVICES', 'SERVICE', 'PVTLTD',
+    'PVT LTD', 'PRIVATELIMITED', 'PRIVATE', 'PRIVAT', 'LTD',
+    'PVT', 'LLP', 'INTL', 'LIMTED', 'LIMITED', 'LIMITE',
+    'CORPORATE', 'INC', 'GROUP', 'ENTERPRISE', 'CORPORATION',
+    'CORP', 'COMPANY'
+]
+
+# Replace unwanted suffixes
+def replace_char(df_column, old_value):
+    return df_column.str.replace(old_value, ' ', regex=False)
+
+for cmp in list_space_cmp:
+    df['company_check'] = replace_char(df['company_check'], cmp)
+    df_master['company_List'] = replace_char(df_master['company_List'], cmp)
+
+# Remove non-alphanumeric characters and normalize spaces
+df['company_check_cln'] = df['company_check'].apply(lambda x: re.sub(r"[^a-zA-Z0-9]", " ", x))
+df['company_check_cln'] = df['company_check_cln'].apply(lambda x: re.sub(r" +", " ", x).strip())
+
+df_master['company_List_cln'] = df_master['company_List'].apply(lambda x: re.sub(r"[^a-zA-Z0-9]", " ", x))
+df_master['company_List_cln'] = df_master['company_List_cln'].apply(lambda x: re.sub(r" +", " ", x).strip())
+
+# Create lists for matching
+from_list = df['company_check_cln'].tolist()
+to_list = df_master['company_List_cln'].tolist()
+
+# Chunking for large datasets
+chunk_size = 5000  # Adjust chunk size based on system memory
 results = []
 
 # TF-IDF Matching
