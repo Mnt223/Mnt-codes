@@ -1,0 +1,115 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import time
+import random
+from tqdm import tqdm  # For progress bar
+
+def google_search_scrape(query):
+    """
+    Scrape Google search results for a given query.
+    Returns a list of snippets containing relevant text.
+    """
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+        }
+        # Construct the Google search URL
+        search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+        
+        # Send the GET request
+        response = requests.get(search_url, headers=headers)
+        response.raise_for_status()  # Raise an error for bad status codes
+
+        # Parse the HTML content
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        # Extract snippets from search results
+        snippets = []
+        for g in soup.find_all('div', class_='BNeawe s3v9rd AP7Wnd'):
+            snippets.append(g.text)
+
+        return snippets[:10]  # Return the first 10 snippets
+    except Exception as e:
+        print(f"Error during Google scraping: {e}")
+        return []
+
+def fetch_land_price_data_scrape(pincode, area, state):
+    """
+    Query Google for land price data using web scraping.
+    """
+    try:
+        query = f"land price per square foot {area} {state} {pincode}"
+        snippets = google_search_scrape(query)
+        
+        # Extract potential price information
+        prices = []
+        for snippet in snippets:
+            for word in snippet.split():
+                if '₹' in word or 'Rs' in word:
+                    try:
+                        price = float(word.replace('₹', '').replace('Rs', '').replace(',', '').strip())
+                        prices.append(price)
+                    except ValueError:
+                        continue
+        return prices
+    except Exception as e:
+        print(f"Error fetching land price data for {pincode}: {e}")
+        return []
+
+def calculate_percentiles(prices):
+    """
+    Calculate percentiles for a list of prices.
+    """
+    if not prices:
+        return None, None, None
+    median = pd.Series(prices).quantile(0.5)
+    seventy_fifth = pd.Series(prices).quantile(0.75)
+    maximum = max(prices)
+    return median, seventy_fifth, maximum
+
+def main():
+    # Sample pincode and area data
+    data = [
+        {"Pincode": "110001", "Area": "Connaught Place", "State": "Delhi"},
+        {"Pincode": "400001", "Area": "Nariman Point", "State": "Maharashtra"},
+        {"Pincode": "560001", "Area": "MG Road", "State": "Karnataka"}
+    ]
+
+    results = []
+
+    # Use tqdm for the progress bar
+    print("Fetching data...")
+    for entry in tqdm(data, desc="Progress", unit="entry"):
+        pincode = entry['Pincode']
+        area = entry['Area']
+        state = entry['State']
+
+        # Fetch land price data using Google search scraping
+        prices = fetch_land_price_data_scrape(pincode, area, state)
+
+        # Calculate percentiles
+        median, seventy_fifth, maximum = calculate_percentiles(prices)
+
+        # Append results
+        results.append({
+            "Pincode": pincode,
+            "Area": area,
+            "State": state,
+            "Median Price per Sqft": median,
+            "75th Percentile Price per Sqft": seventy_fifth,
+            "Maximum Price per Sqft": maximum
+        })
+
+        # Introduce a random delay to mimic human behavior
+        time.sleep(random.randint(2, 5))
+
+    # Create DataFrame from results
+    results_df = pd.DataFrame(results)
+
+    # Save to CSV
+    results_df.to_csv('google_scraped_land_prices.csv', index=False)
+    print("\nData saved to google_scraped_land_prices.csv")
+
+if __name__ == "__main__":
+    main()
