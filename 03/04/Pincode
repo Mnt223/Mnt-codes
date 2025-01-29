@@ -1,3 +1,181 @@
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+
+# Load the data
+df_city_level = pd.read_excel(r'C:\Users\45331629\Documents\NppScripts\city.xlsx')
+
+# Calculate mean and max values
+df_city_level['CASA_TD_Deposits_mean'] = df_city_level['CASA_TD_Deposits'].mean()
+df_city_level['HML_SNC_AMT_mean'] = df_city_level['HML_SNC_AMT'].mean()
+df_city_level['EA_TRADE_perc_mean'] = df_city_level['EA_TRADE_perc'].mean()
+
+df_city_level['CASA_TD_Deposits_max'] = df_city_level['CASA_TD_Deposits'].max()
+df_city_level['HML_SNC_AMT_max'] = df_city_level['HML_SNC_AMT'].max()
+df_city_level['EA_TRADE_perc_max'] = df_city_level['EA_TRADE_perc'].max()
+
+# Define the city of interest
+city = 'LUCKNOW'
+df_city_level1 = df_city_level[df_city_level["City"] == city]
+
+# Create mortgage amount bar chart
+fig_mtg_city = go.Figure(
+    data=[
+        go.Bar(
+            name=f"{city}",
+            y=df_city_level1["City"],
+            x=df_city_level1["HML_SNC_AMT"],
+            offsetgroup=2,
+            orientation='h',
+            marker_color="#18b8c2",
+            width=[0.2]
+        ),
+        go.Bar(
+            name="Mean(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["HML_SNC_AMT_mean"],
+            offsetgroup=1,
+            orientation='h',
+            marker_color="#6eba6e",
+            width=[0.2]
+        ),
+        go.Bar(
+            name="Max(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["HML_SNC_AMT_max"],
+            offsetgroup=0,
+            orientation='h',
+            marker_color="#f8b732",
+            width=[0.2]
+        )
+    ]
+)
+
+# Update layout for mortgage amount chart
+fig_mtg_city.update_layout(
+    title="Mortgage Amount",
+    font=dict(size=10, color="white"),
+    plot_bgcolor="#222222",
+    paper_bgcolor="#222222",
+    xaxis=dict(showgrid=False, showline=False, zeroline=False, color="white"),
+    yaxis=dict(showgrid=False, showline=False, zeroline=False, color="white", showticklabels=False),
+    barmode='stack',
+    bargap=0,
+    bargroupgap=0
+)
+
+# Create CASA TD Deposits bar chart
+fig_casa_city = go.Figure(
+    data=[
+        go.Bar(
+            name=f"{city}",
+            y=df_city_level["City"],
+            x=df_city_level["CASA_TD_Deposits"],
+            offsetgroup=2,
+            orientation='h',
+            marker_color="#18b8c2",
+            width=[0.2]
+        ),
+        go.Bar(
+            name="Mean(ALL Cities)",
+            y=df_city_level["City"],
+            x=df_city_level["CASA_TD_Deposits_mean"],
+            offsetgroup=1,
+            orientation='h',
+            marker_color="#6eba6e",
+            width=[0.2]
+        ),
+        go.Bar(
+            name="Max(ALL Cities)",
+            y=df_city_level["City"],
+            x=df_city_level["CASA_TD_Deposits_max"],
+            offsetgroup=0,
+            orientation='h',
+            marker_color="#087b22",
+            width=[0.2]
+        )
+    ]
+)
+
+# Update layout for CASA TD Deposits chart
+fig_casa_city.update_layout(
+    title="CASA & TD Amount",
+    font=dict(size=10, color="white"),
+    plot_bgcolor="#222222",
+    paper_bgcolor="#222222",
+    xaxis=dict(showgrid=False, showline=False, zeroline=False, color="white"),
+    yaxis=dict(showgrid=False, showline=False, zeroline=False, color="white", showticklabels=False),
+    margin=dict(t=30, b=5, l=0, r=0),
+    height=110,
+    barmode='stack',
+    bargap=0,
+    bargroupgap=0,
+    showlegend=False
+)
+
+# Create EA Trade percentage bar chart
+fig_eat_city = go.Figure(
+    data=[
+        go.Bar(
+            name=f"{city}",
+            y=df_city_level1["City"],
+            x=df_city_level1["EA_TRADE_perc"],
+            offsetgroup=2,
+            orientation='h',
+            marker_color="#18b8c2",
+            width=[0.2]
+        ),
+        go.Bar(
+            name="Mean(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["EA_TRADE_perc_mean"],
+            offsetgroup=1,
+            orientation='h',
+            marker_color="#6eba6e",
+            width=[0.2]
+        ),
+        go.Bar(
+            name="Max(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["EA_TRADE_perc_max"],
+            offsetgroup=0,
+            orientation='h',
+            marker_color="#087b22",
+            width=[0.2]
+        )
+    ]
+)
+
+# Update layout for EA Trade percentage chart
+fig_eat_city.update_layout(
+    title="Emerging Affluent Percentage",
+    font=dict(size=10, color="white"),
+    plot_bgcolor="#222222",
+    paper_bgcolor="#222222",
+    xaxis=dict(showgrid=False, showline=False, zeroline=False, color="white", tickformat='.0%', range=[0, 0.2]),
+    yaxis=dict(showgrid=False, showline=False, zeroline=False, color="white", showticklabels=False),
+    margin=dict(t=30, b=5, l=0, r=0),
+    height=110,
+    barmode='stack',
+    bargap=0,
+    bargroupgap=0,
+    showlegend=False
+)
+
+# Display the figures
+fig_mtg_city.show()
+fig_casa_city.show()
+fig_eat_city.show()
+
+
+
+
+
+
+
+
+
+
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
