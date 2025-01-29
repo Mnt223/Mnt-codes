@@ -1,3 +1,184 @@
+3.
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+
+# Load the data
+df_city_level = pd.read_excel(r'C:\Users\45331629\Documents\NppScripts\city.xlsx')
+
+# Calculate mean and max values
+df_city_level['CASA_TD_Deposits_mean'] = df_city_level['CASA_TD_Deposits'].mean()
+df_city_level['HML_SNC_AMT_mean'] = df_city_level['HML_SNC_AMT'].mean()
+df_city_level['EA_TRADE_perc_mean'] = df_city_level['EA_TRADE_perc'].mean()
+
+df_city_level['CASA_TD_Deposits_max'] = df_city_level['CASA_TD_Deposits'].max()
+df_city_level['HML_SNC_AMT_max'] = df_city_level['HML_SNC_AMT'].max()
+df_city_level['EA_TRADE_perc_max'] = df_city_level['EA_TRADE_perc'].max()
+
+# Define the city of interest
+city = 'LUCKNOW'
+df_city_level1 = df_city_level[df_city_level["City"] == city]  # Ensure filtering for selected city
+
+# 1️⃣ Mortgage Amount (HML)
+fig_mtg_city = go.Figure(
+    data=[
+        go.Bar(
+            name=f"{city}",
+            y=df_city_level1["City"],  
+            x=df_city_level1["HML_SNC_AMT"],
+            orientation='h',
+            marker_color="#18b8c2",
+            width=0.22
+        ),
+        go.Bar(
+            name="Mean(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["HML_SNC_AMT_mean"],
+            orientation='h',
+            marker_color="#6eba6e",
+            width=0.22
+        ),
+        go.Bar(
+            name="Max(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["HML_SNC_AMT_max"],
+            orientation='h',
+            marker_color="#f8b732",
+            width=0.22
+        )
+    ]
+)
+
+fig_mtg_city.update_layout(
+    title="Mortgage Amount",
+    font=dict(size=10, color="white"),
+    plot_bgcolor="#222222",
+    paper_bgcolor="#222222",
+    xaxis=dict(showgrid=False, showline=False, zeroline=False, color="white"),
+    yaxis=dict(showgrid=False, showline=False, zeroline=False, color="white", showticklabels=False),
+    margin=dict(l=0, r=0, t=30, b=5),  # Left margin set to 0
+    height=100,
+    barmode='group',
+    bargap=0,
+    bargroupgap=0,
+    showlegend=True
+)
+
+# 2️⃣ CASA & TD Amount
+fig_casa_city = go.Figure(
+    data=[
+        go.Bar(
+            name=f"{city}",
+            y=df_city_level1["City"],  # Only selected city
+            x=df_city_level1["CASA_TD_Deposits"],
+            orientation='h',
+            marker_color="#18b8c2",
+            width=0.22
+        ),
+        go.Bar(
+            name="Mean(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["CASA_TD_Deposits_mean"],
+            orientation='h',
+            marker_color="#6eba6e",
+            width=0.22
+        ),
+        go.Bar(
+            name="Max(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["CASA_TD_Deposits_max"],
+            orientation='h',
+            marker_color="#087b22",
+            width=0.22
+        )
+    ]
+)
+
+fig_casa_city.update_layout(
+    title="CASA & TD Amount",
+    font=dict(size=10, color="white"),
+    plot_bgcolor="#222222",
+    paper_bgcolor="#222222",
+    xaxis=dict(showgrid=False, showline=False, zeroline=False, color="white"),
+    yaxis=dict(showgrid=False, showline=False, zeroline=False, color="white", showticklabels=False),
+    margin=dict(l=0, r=0, t=30, b=5),  # Left margin set to 0
+    height=100,
+    barmode='group',
+    bargap=0,
+    bargroupgap=0,
+    showlegend=False
+)
+
+# 3️⃣ Emerging Affluent Percentage (EA) - Aligned & Percentage Fixed
+fig_eat_city = go.Figure(
+    data=[
+        go.Bar(
+            name=f"{city}",
+            y=df_city_level1["City"],  # Only selected city
+            x=df_city_level1["EA_TRADE_perc"] * 100,  # Convert decimal to percentage
+            orientation='h',
+            marker_color="#18b8c2",
+            width=0.22,
+            hoverinfo="x",  # Only show % value, no extra details
+            hovertemplate='%{x:.2f}%'  # Show actual percentage (e.g., 14% instead of 0.14)
+        ),
+        go.Bar(
+            name="Mean(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["EA_TRADE_perc_mean"] * 100,  # Convert decimal to percentage
+            orientation='h',
+            marker_color="#6eba6e",
+            width=0.22,
+            hoverinfo="x",
+            hovertemplate='%{x:.2f}%'
+        ),
+        go.Bar(
+            name="Max(ALL Cities)",
+            y=df_city_level1["City"],
+            x=df_city_level1["EA_TRADE_perc_max"] * 100,  # Convert decimal to percentage
+            orientation='h',
+            marker_color="#087b22",
+            width=0.22,
+            hoverinfo="x",
+            hovertemplate='%{x:.2f}%'
+        )
+    ]
+)
+
+fig_eat_city.update_layout(
+    title="Emerging Affluent Percentage",
+    font=dict(size=10, color="white"),
+    plot_bgcolor="#222222",
+    paper_bgcolor="#222222",
+    xaxis=dict(
+        showgrid=False, 
+        showline=False, 
+        zeroline=False, 
+        color="white", 
+        tickformat='.0f%',  # Ensures values show as 14% instead of 0.14
+        range=[0, 20],  # Adjusted to match percentage format
+        tickvals=[5, 10, 15, 20],  # Hides 0%
+    ),
+    yaxis=dict(showgrid=False, showline=False, zeroline=False, color="white", showticklabels=False),
+    margin=dict(l=0, r=0, t=30, b=5),  # Left margin set to 0
+    height=100,
+    barmode='group',
+    bargap=0,
+    bargroupgap=0,
+    showlegend=False
+)
+
+# Display the figures
+fig_mtg_city.show()
+fig_casa_city.show()
+fig_eat_city.show()
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
