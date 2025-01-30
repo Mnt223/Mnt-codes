@@ -1,0 +1,24 @@
+Hi [Manager’s Name]**,  
+
+As per our discussion yesterday, I’ll proceed with the following data preparation tasks:  
+
+1. **Taj Customers**  
+   - **Criteria**: TRB > ₹50 Lakh **and** Salary > ₹3.25 Lakh.  
+   - **Deliverables**: Separate files for **DOM** and **NR** customers.  
+
+2. **Premier Customers**  
+   - **Criteria**: TRB > ₹10 Lakh **and** Salary > ₹3 Lakh.  
+   - **Deliverables**: Separate files for **DOM** and **NR** customers.  
+
+3. **GPB (Global Premier Banking) Customers**  
+   - **Criteria**: *Same as Taj* (TRB > ₹50 Lakh **and** Salary > ₹3.25 Lakh).  
+   - **Deliverables**: Separate summary files for **DOM** and **NR** customers.  
+
+**Next Steps**:  
+- I’ll extract and segment the data for all three categories (Taj, Premier, GPB) as outlined above.  
+- Target completion: [Specify deadline, e.g., *by EOD Thursday, 5th Oct*].  
+
+**Confirmation Requested**:  
+Kindly confirm if the above aligns with your requirements or if any adjustments are needed.  
+
+Thank you!  
