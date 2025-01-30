@@ -1,3 +1,190 @@
+import cv2
+import pytesseract
+from pytesseract import Output
+import numpy as np
+import fitz  # PyMuPDF
+import os
+import threading
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from tqdm import tqdm
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+
+# Configure Tesseract OCR (update this if needed)
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+# ========================== IMAGE PROCESSING ========================== #
+
+def preprocess_image(image):
+    """Enhances image for OCR, handling noise, rotation, and low contrast."""
+    try:
+        # Convert CMYK to BGR if needed
+        if len(image.shape) == 2:  
+            gray = image
+        elif image.shape[2] == 4:  
+            gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+        elif image.shape[2] == 3:  
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            raise ValueError("Unsupported image format")
+
+        # Deskew the image (detects and corrects rotated text)
+        coords = np.column_stack(np.where(gray > 0))
+        angle = cv2.minAreaRect(coords)[-1]
+        if angle < -45:
+            angle = -(90 + angle)
+        else:
+            angle = -angle
+        (h, w) = gray.shape[:2]
+        center = (w // 2, h // 2)
+        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+        gray = cv2.warpAffine(gray, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+        # Contrast enhancement using CLAHE
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+
+        # Apply thresholding for OCR optimization
+        _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return thresh
+    except Exception as e:
+        raise RuntimeError(f"Image preprocessing failed: {str(e)}")
+
+# ========================== TABLE DETECTION ========================== #
+
+def detect_table(image):
+    """Detects tables in an image using contour & line detection."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=10)
+
+    if lines is not None:
+        horizontal, vertical = 0, 0
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            if abs(y2 - y1) < 10 and abs(x2 - x1) > 50:
+                horizontal += 1
+            elif abs(x2 - x1) < 10 and abs(y2 - y1) > 50:
+                vertical += 1
+        return horizontal > 3 and vertical > 3
+    return False
+
+# ========================== TEXT EXTRACTION ========================== #
+
+def get_text_from_image(image, lang="eng+hin"):
+    """Extracts text from an image using Tesseract OCR."""
+    try:
+        text = pytesseract.image_to_string(image, config="--oem 3 --psm 6", lang=lang).strip()
+        return text if text else "No text found."
+    except Exception as e:
+        raise RuntimeError(f"Text extraction failed: {str(e)}")
+
+# ========================== PDF PROCESSING ========================== #
+
+def process_pdf(file_path, progress_callback=None):
+    """Extracts text & images from PDFs, handling rotation & OCR if needed."""
+    extracted_content = []
+
+    try:
+        with fitz.open(file_path) as doc:
+            for page_num in tqdm(range(len(doc)), desc="Processing PDF", leave=False):
+                page = doc[page_num]
+
+                if page.rotation != 0:
+                    page.set_rotation(0)
+
+                text = page.get_text("text")
+                if text.strip():
+                    extracted_content.append(f"\nPage {page_num+1} Text:\n{text.strip()}")
+                else:
+                    image_list = page.get_images(full=True)
+                    for img_index, img in enumerate(image_list):
+                        xref = img[0]
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image["image"]
+                        nparr = np.frombuffer(image_bytes, np.uint8)
+                        img_np = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+                        if img_np is not None:
+                            processed_img = preprocess_image(img_np)
+                            img_text = get_text_from_image(processed_img)
+                            extracted_content.append(f"\nPage {page_num+1} Image {img_index+1}:\n{img_text}")
+
+                if progress_callback:
+                    progress_callback(page_num + 1, len(doc))
+
+        return '\n'.join(extracted_content) if extracted_content else "No text found."
+    except Exception as e:
+        raise RuntimeError(f"PDF processing failed: {str(e)}")
+
+# ========================== BATCH FILE PROCESSING ========================== #
+
+def process_files(file_paths):
+    """Processes multiple files concurrently using threading."""
+    results = {}
+
+    def process_single_file(file_path):
+        results[file_path] = process_pdf(file_path) if file_path.endswith(".pdf") else get_text_from_image(cv2.imread(file_path))
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        executor.map(process_single_file, file_paths)
+
+    return results
+
+# ========================== GUI ========================== #
+
+class TextExtractorApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Ultimate PDF & Image Text Extractor")
+        self.root.geometry("600x400")
+
+        self.select_button = tk.Button(root, text="Select Files", command=self.select_files)
+        self.select_button.pack(pady=5)
+
+        self.extract_button = tk.Button(root, text="Extract Text", command=self.extract_text, state=tk.DISABLED)
+        self.extract_button.pack(pady=5)
+
+        self.progress = ttk.Progressbar(root, orient="horizontal", length=400, mode="determinate")
+        self.progress.pack(pady=5)
+
+        self.result_text = tk.Text(root, height=15, width=70)
+        self.result_text.pack(pady=10)
+
+        self.file_paths = []
+
+    def select_files(self):
+        self.file_paths = filedialog.askopenfilenames(filetypes=[("PDF & Images", "*.pdf;*.png;*.jpg;*.jpeg;*.bmp")])
+        if self.file_paths:
+            self.extract_button.config(state=tk.NORMAL)
+
+    def extract_text(self):
+        self.progress["value"] = 0
+        self.result_text.delete("1.0", tk.END)
+
+        def run_extraction():
+            results = process_files(self.file_paths)
+            for file, text in results.items():
+                self.result_text.insert(tk.END, f"\nFile: {os.path.basename(file)}\n{text}\n")
+
+        threading.Thread(target=run_extraction, daemon=True).start()
+
+# ========================== RUN GUI ========================== #
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = TextExtractorApp(root)
+    root.mainloop()
+
+
+
+
+
+
+
+
+
 2.
 import cv2
 import pytesseract
