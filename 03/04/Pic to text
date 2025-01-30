@@ -2,6 +2,169 @@ import cv2
 import pytesseract
 from pytesseract import Output
 import numpy as np
+import fitz  # PyMuPDF
+import io
+import os
+import tempfile
+
+def preprocess_image(image):
+    """Enhances image for better OCR results."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    return thresh
+
+def get_words_from_image(image):
+    """Extracts words from image using Tesseract OCR."""
+    data = pytesseract.image_to_data(image, output_type=Output.DICT)
+    words = []
+    n_boxes = len(data['text'])
+    for i in range(n_boxes):
+        if int(data['conf'][i]) > 60:
+            text = data['text'][i].strip()
+            if text:
+                words.append({
+                    'text': text,
+                    'left': data['left'][i],
+                    'top': data['top'][i],
+                    'right': data['left'][i] + data['width'][i],
+                    'bottom': data['top'][i] + data['height'][i]
+                })
+    return words
+
+def get_words_from_pdf(page):
+    """Extracts words from PDF page with coordinates."""
+    words = page.get_text("words")
+    return [{
+        'text': word[4],
+        'left': word[0],
+        'top': word[1],
+        'right': word[2],
+        'bottom': word[3]
+    } for word in words if word[4].strip()]
+
+def group_into_rows(words, y_threshold=5):
+    """Groups words into rows based on vertical positions."""
+    if not words:
+        return []
+    sorted_words = sorted(words, key=lambda x: x['top'])
+    rows = []
+    current_row = [sorted_words[0]]
+    current_y = sorted_words[0]['top']
+    
+    for word in sorted_words[1:]:
+        if abs(word['top'] - current_y) <= y_threshold:
+            current_row.append(word)
+        else:
+            rows.append(current_row)
+            current_row = [word]
+            current_y = word['top']
+    rows.append(current_row)
+    return rows
+
+def group_into_cells(row, x_threshold=20):
+    """Groups words in a row into table cells."""
+    sorted_row = sorted(row, key=lambda x: x['left'])
+    cells = []
+    if not sorted_row:
+        return cells
+    current_text = sorted_row[0]['text']
+    current_right = sorted_row[0]['right']
+    
+    for word in sorted_row[1:]:
+        if word['left'] - current_right <= x_threshold:
+            current_text += ' ' + word['text']
+            current_right = word['right']
+        else:
+            cells.append(current_text)
+            current_text = word['text']
+            current_right = word['right']
+    cells.append(current_text)
+    return cells
+
+def is_table(rows, consistency=0.8):
+    """Determines if the structure resembles a table."""
+    if len(rows) < 1:
+        return False
+    cell_counts = [len(row) for row in rows]
+    max_count = max(set(cell_counts), key=cell_counts.count)
+    matches = sum(1 for count in cell_counts if count == max_count)
+    return (matches / len(cell_counts)) >= consistency
+
+def process_image(image_path):
+    """Processes an image file for text/table extraction."""
+    img = cv2.imread(image_path)
+    processed_img = preprocess_image(img)
+    words = get_words_from_image(processed_img)
+    rows = group_into_rows(words)
+    table_data = [group_into_cells(row) for row in rows]
+    
+    if is_table(table_data):
+        return '\n'.join([','.join(f'"{cell}"' for cell in row) for row in table_data])
+    else:
+        return pytesseract.image_to_string(processed_img).strip()
+
+def pdf_to_text(pdf_path):
+    """Extracts text and tables from PDF including embedded images."""
+    full_text = []
+    doc = fitz.open(pdf_path)
+    
+    for page_num, page in enumerate(doc):
+        # Process text layer
+        words = get_words_from_pdf(page)
+        rows = group_into_rows(words, y_threshold=2)  # Tighter threshold for PDF coordinates
+        table_data = [group_into_cells(row, x_threshold=10) for row in rows]
+        
+        if is_table(table_data):
+            full_text.append(f"\nPage {page_num+1} Table:\n")
+            full_text.append('\n'.join([','.join(f'"{cell}"' for cell in row) for row in table_data]))
+        else:
+            full_text.append(f"\nPage {page_num+1} Text:\n")
+            full_text.append(page.get_text().strip())
+        
+        # Process images in the PDF page
+        image_list = page.get_images()
+        for img_index, img in enumerate(image_list):
+            xref = img[0]
+            base_image = doc.extract_image(xref)
+            image_bytes = base_image["image"]
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+                temp_file.write(image_bytes)
+                temp_path = temp_file.name
+            
+            try:
+                img_text = process_image(temp_path)
+                full_text.append(f"\nPage {page_num+1} Image {img_index+1}:\n{img_text}")
+            finally:
+                os.remove(temp_path)
+    
+    return '\n'.join(full_text)
+
+def file_to_text(file_path):
+    """Main function that handles both images and PDFs."""
+    if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.tiff', '.bmp')):
+        return process_image(file_path)
+    elif file_path.lower().endswith('.pdf'):
+        return pdf_to_text(file_path)
+    else:
+        raise ValueError("Unsupported file format")
+
+# Example Usage
+result = file_to_text("path/to/your/file.pdf")  # or .png/.jpg
+print(result)
+
+
+
+
+
+
+
+
+
+import cv2
+import pytesseract
+from pytesseract import Output
+import numpy as np
 
 def preprocess_image(image_path):
     """Enhances image for better OCR results."""
