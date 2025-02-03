@@ -1,3 +1,108 @@
+%let zip_path = /your/sas/directory/;
+%let zip_name = daily_file.zip; /* Change to your ZIP file name */
+%let extracted_file_name = expected_file.csv; /* Change to your expected file */
+%let size_threshold = 102400; /* 100 KB in bytes */
+
+data _null_;
+    /* Check if ZIP file exists */
+    zip_exists = fileexist("&zip_path.&zip_name");
+    if zip_exists then do;
+        file_id = fopen("&zip_path.&zip_name", 'I');
+        zip_size = fsize(file_id);
+        rc = fclose(file_id);
+        call symputx('zip_size', zip_size);
+    end;
+    else call symputx('zip_size', 0);
+    call symputx('zip_exists', zip_exists);
+run;
+
+%macro check_zip_file;
+    %if &zip_exists = 0 %then %do;
+        /* ZIP file is missing - send email */
+        filename mail email 'your_email@domain.com'
+            subject="ZIP File Missing Alert: &zip_name"
+            type="text/plain";
+
+        data _null_;
+            file mail;
+            put "Alert: The ZIP file &zip_name is missing from &zip_path.";
+            put "Please check and upload the correct file.";
+        run;
+    %end;
+    %else %if &zip_size < &size_threshold %then %do;
+        /* ZIP file exists but size is too small - send email */
+        filename mail email 'your_email@domain.com'
+            subject="ZIP File Size Alert: &zip_name"
+            type="text/plain";
+
+        data _null_;
+            file mail;
+            put "Alert: The ZIP file &zip_name is present but is too small.";
+            put "ZIP File Size: &zip_size bytes.";
+            put "Please verify and upload the correct file.";
+        run;
+    %end;
+    %else %do;
+        /* Unzip the file */
+        filename zipfile zip "&zip_path.&zip_name";
+
+        data _null_;
+            infile zipfile;
+            input;
+            call symputx('unzipped_file_exists', 'YES');
+        run;
+
+        /* Check extracted file */
+        data _null_;
+            file_exists = fileexist("&zip_path.&extracted_file_name");
+            if file_exists then do;
+                file_id = fopen("&zip_path.&extracted_file_name", 'I');
+                file_size = fsize(file_id);
+                rc = fclose(file_id);
+                call symputx('file_size', file_size);
+            end;
+            else call symputx('file_size', 0);
+            call symputx('file_exists', file_exists);
+        run;
+
+        %if &file_exists = 0 %then %do;
+            /* Extracted file is missing - send email */
+            filename mail email 'your_email@domain.com'
+                subject="Extracted File Missing Alert: &extracted_file_name"
+                type="text/plain";
+
+            data _null_;
+                file mail;
+                put "Alert: The extracted file &extracted_file_name is missing.";
+                put "Please check and upload the correct file.";
+            run;
+        %end;
+        %else %if &file_size < &size_threshold %then %do;
+            /* Extracted file exists but is too small - send email */
+            filename mail email 'your_email@domain.com'
+                subject="Extracted File Size Alert: &extracted_file_name"
+                type="text/plain";
+
+            data _null_;
+                file mail;
+                put "Alert: The extracted file &extracted_file_name is too small.";
+                put "File Size: &file_size bytes.";
+                put "Please verify and upload the correct file.";
+            run;
+        %end;
+    %end;
+%mend check_zip_file;
+
+%check_zip_file;
+
+
+
+
+
+
+
+
+
 Subject: Prioritization and Bandwidth Challenges
 
 Hi Kinnari and Souvik,
