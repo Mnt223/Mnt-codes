@@ -1,3 +1,23 @@
+data _null_;
+    rc1 = filename('test', "\\server\share\archive\known_file.zip");
+    rc2 = fopen('test');
+    if rc2 > 0 then do;
+        put "SUCCESS: File accessible";
+        rc3 = fclose(rc2);
+    end;
+    else put "ERROR: " sysmsg();
+    rc4 = filename('test');
+run;
+
+
+
+
+
+
+
+
+
+
 4
 %let base_path = /your/base/path/;  /* Must end with slash */
 %let days_back = 45;
