@@ -96,8 +96,6 @@ run;
             run;
             proc append base=backlog data=temp; run;
         %end;
-
-        /* NO DELETION of extracted folder */
     %end;
     %else %do;
         /* Case: File missing */
@@ -168,3 +166,6 @@ data _null_;
     put '</table>';
     put '</body></html>';
 run;
+
+/* DELETE EXTRACTED FILES AFTER PROCESSING */
+x "rm -rf &unzip_path";
