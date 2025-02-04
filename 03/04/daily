@@ -1,0 +1,63 @@
+%macro check_files_and_notify(zip_path=, folder_path=, file_name=);
+
+   /* Unzip the file first */
+   %let unzip_cmd = %str(unzip -o -d &folder_path &zip_path);
+   %sysexec &unzip_cmd;
+
+   /* Check if the folder exists */
+   %let rc = %sysfunc(filename(fileref,&folder_path));
+   %let dsid = %sysfunc(dopen(&fileref));
+   %if &dsid %then %do;
+      /* Folder exists, now check for the CSV file specifically */
+      %let fid_csv = %sysfunc(fopen(&fileref/&file_name..csv, i));
+
+      /* Check if CSV file can be opened */
+      %if &fid_csv %then %do;
+         /* Check CSV file size */
+         %let filesize_csv = %sysfunc(finfo(&fid_csv, File Size (bytes)));
+         %let rc = %sysfunc(fclose(&fid_csv));
+
+         %if &filesize_csv < 102400 %then %do;
+            %put ERROR: CSV file size is insufficient.;
+            /* Email notification for insufficient CSV file size */
+            filename mail email to="your_email@example.com"
+                     subject="CSV File Size Alert"
+                     type='text/plain'; 
+            data _null_;
+               file mail;
+               put 'The CSV file size is under 100KB in the folder: &folder_path';
+            run;
+         %end;
+      %end;
+      %else %do;
+         %put ERROR: CSV file does not exist or cannot be opened.;
+         /* Email notification for CSV file access issue */
+         filename mail email to="your_email@example.com"
+                  subject="CSV File Access Alert"
+                  type='text/plain'; 
+         data _null_;
+            file mail;
+            put 'Cannot access or find the CSV file in the specified folder: &folder_path';
+         run;
+      %end;
+
+   %end;
+   %else %do;
+      %put ERROR: Folder does not exist or cannot be opened after unzipping.;
+      /* Email notification for missing or inaccessible folder */
+      filename mail email to="your_email@example.com"
+               subject="Folder Access Alert"
+               type='text/plain'; 
+      data _null_;
+         file mail;
+         put 'The specified folder does not exist or cannot be opened: &folder_path';
+      run;
+   %end;
+
+   %let rc = %sysfunc(dclose(&dsid));
+   %let rc = %sysfunc(filename(fileref,""));
+
+%mend check_files_and_notify;
+
+/* Example usage */
+%check_files_and_notify(zip_path=/path/to/your/zipfile.zip, folder_path=/path/to/unzip, file_name=example);
