@@ -1,5 +1,5 @@
-%let base_path = \\server\share\archive\;  /* UNC path - update this */
-%let extracted_path = \\server\share\extracted\; /* Path for extracted files */
+%let base_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_sms/;
+%let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_sms_unzipped/;
 %let days_back = 45;                      /* 0 to 44 days */
 %let size_threshold = 102400;             /* 100KB threshold */
 %let recipient_email = your.email@domain.com; /* Update email */
@@ -21,128 +21,82 @@ run;
     %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
     %let check_date = %sysfunc(putn(&raw_date, yymmddd10.));
     
-    /* Construct server paths */
-    %let folder_path = %sysfunc(translate(&base_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
-    %let extracted_folder = %sysfunc(translate(&extracted_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
-    %let file_name = %sysfunc(putn(&raw_date, yymmddd10.))..zip;
+    /* Construct paths */
+    %let folder_path = &base_path;
+    %let extracted_folder = &unzip_path.&check_date/;
+    %let file_name = &check_date..zip;
+    %let full_file_path = &folder_path.&file_name;
 
     /* Debugging output */
     %put #########################################;
     %put Checking: &folder_path;
     %put Looking for: &file_name;
     
-    /* 1. Folder existence check */
+    /* Check if ZIP file exists */
     data _null_;
-        length resolved_path $512;
-        resolved_path = resolve("&folder_path");
-        folder_exists = fileexist(resolved_path);
-        call symputx('folder_found', folder_exists);
+        length file_path $512;
+        file_path = resolve("&full_file_path");
+        file_exists = fileexist(file_path);
+        call symputx('file_found', file_exists);
     run;
 
-    %if &folder_found %then %do;
-        /* 2. File existence check */
+    %if &file_found %then %do;
+        /* UNZIPPING THE FILE */
+        x "mkdir -p &extracted_folder"; /* Ensure directory exists */
+        x "unzip -o &full_file_path -d &extracted_folder";
+
+        /* Verify extraction */
         data _null_;
-            length full_path $512;
-            full_path = resolve(catx('\', "&folder_path", "&file_name"));
-            
-            file_exists = fileexist(full_path);
-            
-            if file_exists then do;
-                file_id = fopen(full_path, 'I', 'B', 'recfm=n');
-                if file_id > 0 then do;
-                    file_size = fsize(file_id);
-                    rc = fclose(file_id);
-                    call symputx('file_size', file_size);
-                    call symputx('file_exists', 1);
-                end;
-                else do;
-                    call symputx('file_exists', 0);
-                    call symputx('file_size', 0);
-                end;
-            end;
-            else do;
-                call symputx('file_exists', 0);
-                call symputx('file_size', 0);
-            end;
+            length extracted_path $512;
+            extracted_path = resolve("&extracted_folder");
+            extracted_exists = fileexist(extracted_path);
+            call symputx('extracted_found', extracted_exists);
         run;
 
-        %if &file_exists %then %do;
-            /* 3. Unzipping the file to extracted_path */
-            filename inzip ZIP "&folder_path/&file_name";
-            filename outdir "&extracted_folder";
+        %if &extracted_found %then %do;
+            /* 3. File Validation */
+            %let valid_zip = 1;
+            %let status = Valid;
 
-            /* Extract files */
             data _null_;
-                rc = system("unzip -o &folder_path/&file_name -d &extracted_folder");
-                call symputx('extract_success', rc = 0);
+                length extracted_files $512;
+                extracted_files = resolve("&extracted_folder/*");
+                file_count = fileexist(extracted_files);
+                if file_count = 0 then call symputx('valid_zip', 0);
             run;
 
-            /* 4. Checking extracted folder */
-            data _null_;
-                length resolved_extracted $512;
-                resolved_extracted = resolve("&extracted_folder");
-                extracted_exists = fileexist(resolved_extracted);
-                call symputx('extracted_found', extracted_exists);
-            run;
+            %if not &valid_zip %then %let status = Corrupt;
+            %if &file_size < &size_threshold %then %let status = &status (Below Threshold);
 
-            %if &extracted_found %then %do;
-                /* 5. File validation inside extracted folder */
-                %let valid_zip = 1;
-                %let status = Valid;
-
-                data _null_;
-                    length extracted_files $512;
-                    extracted_files = resolve("&extracted_folder/*");
-                    file_count = fileexist(extracted_files);
-                    if file_count = 0 then call symputx('valid_zip', 0);
-                run;
-
-                %if not &valid_zip %then %let status = Corrupt;
-                %if &file_size < &size_threshold %then %let status = &status (Below Threshold);
-
-                /* Append file status */
-                data temp;
-                    file_date = "&check_date";
-                    folder_status = "Exists";
-                    file_status = "&status";
-                    file_size = &file_size;
-                run;
-                proc append base=backlog data=temp; run;
-            %end;
-            %else %do;
-                /* If extraction failed */
-                data temp;
-                    file_date = "&check_date";
-                    folder_status = "Exists";
-                    file_status = "Extraction Failed";
-                    file_size = .;
-                run;
-                proc append base=backlog data=temp; run;
-            %end;
-
-            /* 6. Deleting extracted folder */
-            data _null_;
-                rc = system("rm -rf &extracted_folder");
-                call symputx('delete_success', rc = 0);
-            run;
-        %end;
-        %else %do;
-            /* Case 1: File missing */
+            /* Append file status */
             data temp;
                 file_date = "&check_date";
                 folder_status = "Exists";
-                file_status = "Missing";
+                file_status = "&status";
+                file_size = &file_size;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+        %else %do;
+            /* If extraction failed */
+            data temp;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "Extraction Failed";
                 file_size = .;
             run;
             proc append base=backlog data=temp; run;
         %end;
+
+        /* 4. DELETE Extracted Folder */
+        x "rm -rf &extracted_folder";
     %end;
     %else %do;
-        /* Case 2: Folder missing */
+        /* Case: File missing */
         data temp;
             file_date = "&check_date";
-            folder_status = "Missing";
-            file_status = "-";
+            folder_status = "Exists";
+            file_status = "Missing";
             file_size = .;
         run;
         proc append base=backlog data=temp; run;
@@ -158,7 +112,6 @@ proc sql;
     select 
         file_date,
         sum(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
-        sum(case when folder_status = 'Missing' then 1 else 0 end) as Folders_Missing,
         sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
         sum(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
         sum(case when file_status contains 'Corrupt' then 1 else 0 end) as Corrupt_Files,
@@ -189,7 +142,7 @@ data _null_;
     put '<h3 style="color: #34495e;">Summary Statistics</h3>';
     put '<table border="1" style="border-collapse: collapse; width: 100%;">';
     put '<tr style="background-color: #3498db; color: white;">';
-    put '<th>Date</th><th>Folders Exist</th><th>Folders Missing</th><th>Valid Files</th>';
+    put '<th>Date</th><th>Folders Exist</th><th>Valid Files</th>';
     put '<th>Missing Files</th><th>Corrupt Files</th><th>Size Warnings</th></tr>';
     
     do until (eof2);
@@ -197,7 +150,6 @@ data _null_;
         put '<tr>';
         put '<td style="padding: 8px;">' file_date '</td>';
         put '<td style="padding: 8px; text-align: center;">' Folders_Exist '</td>';
-        put '<td style="padding: 8px; text-align: center;">' Folders_Missing '</td>';
         put '<td style="padding: 8px; text-align: center;">' Valid_Files '</td>';
         put '<td style="padding: 8px; text-align: center;">' Missing_Files '</td>';
         put '<td style="padding: 8px; text-align: center;">' Corrupt_Files '</td>';
