@@ -1,5 +1,5 @@
-%let base_path = \\server\share\archive\;  /* Path 1 - Original location */
-%let unzipped_path = \\server\share\unzipped\;  /* Path 2 - Unzipped folder location */
+%let base_path = \\server\share\archive\;  /* UNC path - update this */
+%let extracted_path = \\server\share\extracted\; /* Path for extracted files */
 %let days_back = 45;                      /* 0 to 44 days */
 %let size_threshold = 102400;             /* 100KB threshold */
 %let recipient_email = your.email@domain.com; /* Update email */
@@ -23,7 +23,7 @@ run;
     
     /* Construct server paths */
     %let folder_path = %sysfunc(translate(&base_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
-    %let unzip_folder = %sysfunc(translate(&unzipped_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
+    %let extracted_folder = %sysfunc(translate(&extracted_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
     %let file_name = %sysfunc(putn(&raw_date, yymmddd10.))..zip;
 
     /* Debugging output */
@@ -40,7 +40,7 @@ run;
     run;
 
     %if &folder_found %then %do;
-        /* 2. File existence & size check */
+        /* 2. File existence check */
         data _null_;
             length full_path $512;
             full_path = resolve(catx('\', "&folder_path", "&file_name"));
@@ -66,7 +66,67 @@ run;
             end;
         run;
 
-        %if not &file_exists %then %do;
+        %if &file_exists %then %do;
+            /* 3. Unzipping the file to extracted_path */
+            filename inzip ZIP "&folder_path/&file_name";
+            filename outdir "&extracted_folder";
+
+            /* Extract files */
+            data _null_;
+                rc = system("unzip -o &folder_path/&file_name -d &extracted_folder");
+                call symputx('extract_success', rc = 0);
+            run;
+
+            /* 4. Checking extracted folder */
+            data _null_;
+                length resolved_extracted $512;
+                resolved_extracted = resolve("&extracted_folder");
+                extracted_exists = fileexist(resolved_extracted);
+                call symputx('extracted_found', extracted_exists);
+            run;
+
+            %if &extracted_found %then %do;
+                /* 5. File validation inside extracted folder */
+                %let valid_zip = 1;
+                %let status = Valid;
+
+                data _null_;
+                    length extracted_files $512;
+                    extracted_files = resolve("&extracted_folder/*");
+                    file_count = fileexist(extracted_files);
+                    if file_count = 0 then call symputx('valid_zip', 0);
+                run;
+
+                %if not &valid_zip %then %let status = Corrupt;
+                %if &file_size < &size_threshold %then %let status = &status (Below Threshold);
+
+                /* Append file status */
+                data temp;
+                    file_date = "&check_date";
+                    folder_status = "Exists";
+                    file_status = "&status";
+                    file_size = &file_size;
+                run;
+                proc append base=backlog data=temp; run;
+            %end;
+            %else %do;
+                /* If extraction failed */
+                data temp;
+                    file_date = "&check_date";
+                    folder_status = "Exists";
+                    file_status = "Extraction Failed";
+                    file_size = .;
+                run;
+                proc append base=backlog data=temp; run;
+            %end;
+
+            /* 6. Deleting extracted folder */
+            data _null_;
+                rc = system("rm -rf &extracted_folder");
+                call symputx('delete_success', rc = 0);
+            run;
+        %end;
+        %else %do;
             /* Case 1: File missing */
             data temp;
                 file_date = "&check_date";
@@ -76,72 +136,9 @@ run;
             run;
             proc append base=backlog data=temp; run;
         %end;
-        %else %do;
-            /* 3. Unzip the file */
-            %let unzip_command = "unzip -o &folder_path/&file_name -d &unzip_folder";
-            %sysexec &unzip_command;
-            
-            /* Check if unzipped folder exists */
-            data _null_;
-                length resolved_unzip_path $512;
-                resolved_unzip_path = resolve("&unzip_folder");
-                unzip_exists = fileexist(resolved_unzip_path);
-                call symputx('unzip_found', unzip_exists);
-            run;
-
-            %if &unzip_found %then %do;
-                /* 4. Perform the same validation process on unzipped files */
-                data _null_;
-                    length unzip_full_path $512;
-                    unzip_full_path = resolve(catx('\', "&unzip_folder", "&file_name"));
-                    
-                    unzip_file_exists = fileexist(unzip_full_path);
-                    
-                    if unzip_file_exists then do;
-                        unzip_file_id = fopen(unzip_full_path, 'I', 'B', 'recfm=n');
-                        if unzip_file_id > 0 then do;
-                            unzip_file_size = fsize(unzip_file_id);
-                            rc = fclose(unzip_file_id);
-                            call symputx('unzip_file_size', unzip_file_size);
-                            call symputx('unzip_file_exists', 1);
-                        end;
-                        else do;
-                            call symputx('unzip_file_exists', 0);
-                            call symputx('unzip_file_size', 0);
-                        end;
-                    end;
-                    else do;
-                        call symputx('unzip_file_exists', 0);
-                        call symputx('unzip_file_size', 0);
-                    end;
-                run;
-
-                /* Determine final status */
-                %let status=Valid;
-                %if &unzip_file_size < &size_threshold %then %let status=Valid (Below Threshold);
-
-                data temp;
-                    file_date = "&check_date";
-                    folder_status = "Unzipped Exists";
-                    file_status = "&status";
-                    file_size = &unzip_file_size;
-                run;
-                proc append base=backlog data=temp; run;
-            %end;
-            %else %do;
-                /* Case 2: Unzipped folder missing */
-                data temp;
-                    file_date = "&check_date";
-                    folder_status = "Unzip Failed";
-                    file_status = "Error";
-                    file_size = .;
-                run;
-                proc append base=backlog data=temp; run;
-            %end;
-        %end;
     %end;
     %else %do;
-        /* Case 3: Folder missing */
+        /* Case 2: Folder missing */
         data temp;
             file_date = "&check_date";
             folder_status = "Missing";
@@ -161,17 +158,14 @@ proc sql;
     select 
         file_date,
         sum(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
-        sum(case when folder_status = 'Unzipped Exists' then 1 else 0 end) as Unzipped_Folders_Exist,
         sum(case when folder_status = 'Missing' then 1 else 0 end) as Folders_Missing,
         sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
         sum(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
+        sum(case when file_status contains 'Corrupt' then 1 else 0 end) as Corrupt_Files,
         sum(case when file_status contains 'Threshold' then 1 else 0 end) as Size_Warnings
     from backlog
     group by file_date;
 quit;
-
-/* Delete all files in the unzipped folder */
-%sysexec del /Q &unzipped_path\*.*;
 
 /* Send HTML email report */
 filename mail email &recipient_email
@@ -180,17 +174,37 @@ filename mail email &recipient_email
 
 data _null_;
     file mail;
-    put "<html><body>";
-    put "<h2>Server File Audit Report</h2>";
-    put "<p>Base Path: &base_path</p>";
-    put "<p>Unzipped Path: &unzipped_path</p>";
-    put "<p>Report Period: Last &days_back Days</p>";
-    put "<p>Generated: %sysfunc(datetime(), datetime20.)</p>";
-    put "<h3>Summary Statistics</h3>";
-    put "<table border='1'>";
-    put "<tr><th>Date</th><th>Folders Exist</th><th>Unzipped Folders Exist</th><th>Valid Files</th><th>Missing Files</th><th>Size Warnings</th></tr>";
-    set summary;
-    put "<tr><td>" file_date "</td><td>" Folders_Exist "</td><td>" Unzipped_Folders_Exist "</td><td>" Valid_Files "</td><td>" Missing_Files "</td><td>" Size_Warnings "</td></tr>";
-    put "</table>";
-    put "</body></html>";
+    put '<html><body style="font-family: Arial, sans-serif; margin: 20px;">';
+    
+    put '<h2 style="color: #2c3e50; border-bottom: 2px solid #3498db;">';
+    put "Server File Audit Report";
+    put '</h2>';
+    
+    put '<div style="margin-bottom: 30px;">';
+    put "<p><strong>Base Path:</strong> &base_path</p>";
+    put "<p><strong>Report Period:</strong> Last &days_back Days</p>";
+    put "<p><strong>Generated:</strong> %sysfunc(datetime(), datetime20.)</p>";
+    put '</div>';
+    
+    put '<h3 style="color: #34495e;">Summary Statistics</h3>';
+    put '<table border="1" style="border-collapse: collapse; width: 100%;">';
+    put '<tr style="background-color: #3498db; color: white;">';
+    put '<th>Date</th><th>Folders Exist</th><th>Folders Missing</th><th>Valid Files</th>';
+    put '<th>Missing Files</th><th>Corrupt Files</th><th>Size Warnings</th></tr>';
+    
+    do until (eof2);
+        set summary end=eof2;
+        put '<tr>';
+        put '<td style="padding: 8px;">' file_date '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Folders_Exist '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Folders_Missing '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Valid_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Missing_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Corrupt_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Size_Warnings '</td>';
+        put '</tr>';
+    end;
+    
+    put '</table>';
+    put '</body></html>';
 run;
