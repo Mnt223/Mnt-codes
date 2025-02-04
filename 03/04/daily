@@ -11,6 +11,194 @@ quit;
 
 /* Initialize dataset */
 data backlog;
+    length file_date $10 file_status $25 file_size 8 formatted_size $20;
+    stop;
+run;
+
+%macro check_files;
+
+%do i = 0 %to %eval(&days_back - 1);
+    /* Generate date components */
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
+    %let check_date = %sysfunc(putn(&raw_date, yymmddd10.));
+    
+    /* Construct paths */
+    %let folder_path = &base_path;
+    %let extracted_folder = &unzip_path.&check_date/;
+    %let file_name = &check_date..zip;
+    %let full_file_path = &folder_path.&file_name;
+
+    /* Check if ZIP file exists */
+    data _null_;
+        length file_path $512;
+        file_path = resolve("&full_file_path");
+        file_exists = fileexist(file_path);
+        call symputx('file_found', file_exists);
+    run;
+
+    %if &file_found %then %do;
+        /* UNZIPPING THE FILE */
+        x "mkdir -p &extracted_folder"; /* Ensure directory exists */
+        x "unzip -o &full_file_path -d &extracted_folder";
+
+        /* Verify extraction */
+        data _null_;
+            length extracted_path $512;
+            extracted_path = resolve("&extracted_folder");
+            extracted_exists = fileexist(extracted_path);
+            call symputx('extracted_found', extracted_exists);
+        run;
+
+        %if &extracted_found %then %do;
+            /* 3. File Validation */
+            %let valid_zip = 1;
+            %let status = Valid;
+            %let file_size = 0; /* Ensure file_size is initialized */
+
+            /* Get extracted folder size */
+            data _null_;
+                infile "du -sb &extracted_folder" pipe;
+                input extracted_size 8.;
+                call symputx('file_size', extracted_size);
+            run;
+
+            %if not &valid_zip %then %let status = Corrupt;
+            %if %sysevalf(&file_size < &size_threshold) %then %let status = &status (Below Threshold);
+
+            /* Append file status */
+            data temp;
+                file_date = "&check_date";
+                file_status = "&status";
+                file_size = &file_size;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+        %else %do;
+            /* If extraction failed */
+            data temp;
+                file_date = "&check_date";
+                file_status = "Extraction Failed";
+                file_size = .;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+    %end;
+    %else %do;
+        /* Case: File missing */
+        data temp;
+            file_date = "&check_date";
+            file_status = "Missing";
+            file_size = .;
+        run;
+        proc append base=backlog data=temp; run;
+    %end;
+%end;
+%mend;
+
+%check_files;
+
+/* Convert file size to KB, MB, or GB */
+data backlog;
+    set backlog;
+    if file_size > 1073741824 then formatted_size = catx(" ", round(file_size/1073741824, 0.01), "GB");
+    else if file_size > 1048576 then formatted_size = catx(" ", round(file_size/1048576, 0.01), "MB");
+    else if file_size > 1024 then formatted_size = catx(" ", round(file_size/1024, 0.01), "KB");
+    else if file_size > 0 then formatted_size = catx(" ", file_size, "Bytes");
+    else formatted_size = "-";
+run;
+
+/* Create summary statistics */
+proc sql;
+    create table summary as
+    select 
+        file_date,
+        sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
+        sum(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
+        sum(case when index(file_status, 'Corrupt') > 0 then 1 else 0 end) as Corrupt_Files,
+        sum(case when index(file_status, 'Threshold') > 0 then 1 else 0 end) as Size_Warnings
+    from backlog
+    group by file_date;
+quit;
+
+/* Send HTML email report */
+filename mail email &recipient_email
+    subject="Server File Audit Report - Last &days_back Days"
+    type="text/html";
+
+data _null_;
+    file mail;
+    put '<html><body style="font-family: Arial, sans-serif; margin: 20px;">';
+    
+    put '<h2 style="color: #2c3e50; border-bottom: 2px solid #3498db;">';
+    put "Server File Audit Report";
+    put '</h2>';
+    
+    put '<div style="margin-bottom: 30px;">';
+    put "<p><strong>Base Path:</strong> &base_path</p>";
+    put "<p><strong>Report Period:</strong> Last &days_back Days</p>";
+    put "<p><strong>Generated:</strong> %sysfunc(datetime(), datetime20.)</p>";
+    put '</div>';
+    
+    put '<h3 style="color: #34495e;">Detailed Report</h3>';
+    put '<table border="1" style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">';
+    put '<tr style="background-color: #3498db; color: white;">';
+    put '<th>Date</th><th>File Status</th><th>File Size</th></tr>';
+    
+    do until (eof);
+        set backlog end=eof;
+        put '<tr>';
+        put '<td style="padding: 8px;">' file_date '</td>';
+        put '<td style="padding: 8px;">' file_status '</td>';
+        put '<td style="padding: 8px;">' formatted_size '</td>';
+        put '</tr>';
+    end;
+    
+    put '</table>';
+    
+    put '<h3 style="color: #34495e;">Summary Statistics</h3>';
+    put '<table border="1" style="border-collapse: collapse; width: 100%;">';
+    put '<tr style="background-color: #3498db; color: white;">';
+    put '<th>Date</th><th>Valid Files</th>';
+    put '<th>Missing Files</th><th>Corrupt Files</th><th>Size Warnings</th></tr>';
+    
+    do until (eof2);
+        set summary end=eof2;
+        put '<tr>';
+        put '<td style="padding: 8px;">' file_date '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Valid_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Missing_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Corrupt_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Size_Warnings '</td>';
+        put '</tr>';
+    end;
+    
+    put '</table>';
+    put '</body></html>';
+run;
+
+/* DELETE EXTRACTED FILES AFTER PROCESSING */
+x "rm -rf &unzip_path";
+
+
+
+
+
+
+
+
+%let base_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_sms/;
+%let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_sms_unzipped/;
+%let days_back = 45;                      /* 0 to 44 days */
+%let size_threshold = 102400;             /* 100KB threshold */
+%let recipient_email = your.email@domain.com; /* Update email */
+
+/* Delete previous data */
+proc datasets lib=work nolist;
+    delete backlog summary;
+quit;
+
+/* Initialize dataset */
+data backlog;
     length file_date $10 folder_status $20 file_status $25 file_size 8;
     stop;
 run;
