@@ -1,3 +1,214 @@
+mnt
+%let base_path = \\server\share\archive\;  /* UNC path - update this */
+%let days_back = 45;                      /* 0 to 44 days */
+%let size_threshold = 102400;             /* 100KB threshold */
+%let recipient_email = your.email@domain.com; /* Update email */
+
+/* Delete previous data */
+proc delete data=backlog; run;
+proc delete data=summary; run;
+
+/* Initialize dataset */
+data backlog;
+    length file_date $10 folder_status $20 file_status $25 file_size 8;
+    stop;
+run;
+
+%macro check_files;
+
+%do i = 0 %to %eval(&days_back - 1);
+    /* Generate date components */
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
+    %let check_date = %sysfunc(putn(&raw_date, yymmddd10.));
+    
+    /* Construct server paths */
+    %let folder_path = %sysfunc(translate(&base_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
+    %let file_name = %sysfunc(putn(&raw_date, yymmddd10.))..zip;
+
+    /* Debugging output */
+    %put #########################################;
+    %put Checking: &folder_path;
+    %put Looking for: &file_name;
+    
+    /* 1. Folder existence check */
+    data _null_;
+        length resolved_path $512;
+        resolved_path = resolve("&folder_path");
+        folder_exists = fileexist(resolved_path);
+        call symputx('folder_found', folder_exists);
+    run;
+
+    %if &folder_found %then %do;
+        /* 2. File existence & size check */
+        data _null_;
+            length full_path $512;
+            full_path = resolve(catx('\', "&folder_path", "&file_name"));
+            
+            file_exists = fileexist(full_path);
+            
+            if file_exists then do;
+                file_id = fopen(full_path, 'I', 'B', 'recfm=n');
+                if file_id > 0 then do;
+                    file_size = fsize(file_id);
+                    rc = fclose(file_id);
+                    call symputx('file_size', file_size);
+                    call symputx('file_exists', 1);
+                end;
+                else do;
+                    call symputx('file_exists', 0);
+                    call symputx('file_size', 0);
+                end;
+            end;
+            else do;
+                call symputx('file_exists', 0);
+                call symputx('file_size', 0);
+            end;
+        run;
+
+        %if not &file_exists %then %do;
+            /* Case 1: File missing */
+            data temp;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "Missing";
+                file_size = .;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+        %else %do;
+            /* 3. ZIP validation */
+            %let valid_zip = 0;
+            filename inzip ZIP "&folder_path/&file_name";
+
+            data _null_;
+                rc = filename('inzip', "&folder_path/&file_name");
+                fid = fopen('inzip');
+                if fid > 0 then do;
+                    call symputx('valid_zip', 1);
+                    rc = fclose(fid);
+                end;
+                rc = filename('inzip');
+            run;
+
+            /* Determine final status */
+            %let status=;
+            %if &valid_zip %then %let status=Valid;
+            %else %let status=Corrupt;
+            
+            %if &file_size < &size_threshold %then %let status=&status (Below Threshold);
+
+            data temp;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "&status";
+                file_size = &file_size;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+    %end;
+    %else %do;
+        /* Case 2: Folder missing */
+        data temp;
+            file_date = "&check_date";
+            folder_status = "Missing";
+            file_status = "-";
+            file_size = .;
+        run;
+        proc append base=backlog data=temp; run;
+    %end;
+%end;
+%mend;
+
+%check_files;
+
+/* Create summary statistics */
+proc sql;
+    create table summary as
+    select 
+        file_date,
+        sum(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
+        sum(case when folder_status = 'Missing' then 1 else 0 end) as Folders_Missing,
+        sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
+        sum(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
+        sum(case when file_status contains 'Corrupt' then 1 else 0 end) as Corrupt_Files,
+        sum(case when file_status contains 'Threshold' then 1 else 0 end) as Size_Warnings
+    from backlog
+    group by file_date;
+quit;
+
+/* Send HTML email report */
+filename mail email &recipient_email
+    subject="Server File Audit Report - Last &days_back Days"
+    type="text/html";
+
+data _null_;
+    file mail;
+    put '<html><body style="font-family: Arial, sans-serif; margin: 20px;">';
+    
+    put '<h2 style="color: #2c3e50; border-bottom: 2px solid #3498db;">';
+    put "Server File Audit Report";
+    put '</h2>';
+    
+    put '<div style="margin-bottom: 30px;">';
+    put "<p><strong>Base Path:</strong> &base_path</p>";
+    put "<p><strong>Report Period:</strong> Last &days_back Days</p>";
+    put "<p><strong>Generated:</strong> %sysfunc(datetime(), datetime20.)</p>";
+    put '</div>';
+    
+    put '<h3 style="color: #34495e;">Daily Status Details</h3>';
+    put '<table border="1" style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">';
+    put '<tr style="background-color: #3498db; color: white;">';
+    put '<th>Date</th><th>Folder Status</th><th>File Status</th><th>File Size</th></tr>';
+    
+    do until (eof);
+        set backlog end=eof;
+        put '<tr>';
+        put '<td style="padding: 8px;">' file_date '</td>';
+        put '<td style="padding: 8px;">' folder_status '</td>';
+        put '<td style="padding: 8px;">' file_status '</td>';
+        put '<td style="padding: 8px;">' file_size '</td>';
+        put '</tr>';
+    end;
+    
+    put '</table>';
+    
+    put '<h3 style="color: #34495e;">Summary Statistics</h3>';
+    put '<table border="1" style="border-collapse: collapse; width: 100%;">';
+    put '<tr style="background-color: #3498db; color: white;">';
+    put '<th>Date</th><th>Folders Exist</th><th>Folders Missing</th><th>Valid Files</th>';
+    put '<th>Missing Files</th><th>Corrupt Files</th><th>Size Warnings</th></tr>';
+    
+    do until (eof2);
+        set summary end=eof2;
+        put '<tr>';
+        put '<td style="padding: 8px;">' file_date '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Folders_Exist '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Folders_Missing '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Valid_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Missing_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Corrupt_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Size_Warnings '</td>';
+        put '</tr>';
+    end;
+    
+    put '</table>';
+    put '</body></html>';
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 66
 
 
