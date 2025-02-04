@@ -1,3 +1,35 @@
+%if &folder_found %then %do;
+    /* Extract ZIP File */
+    filename sftpzip sftp "/your/sftp/directory/&check_date..zip"
+        host="sftp.yourdomain.com"
+        user="your_username"
+        pass="your_password";
+
+    filename localzip "/sas/temp/&check_date..zip";
+
+    /* Copy ZIP to local SAS folder */
+    data _null_;
+        infile sftpzip;
+        file localzip;
+        input;
+        put _infile_;
+    run;
+
+    /* Unzip the file */
+    x "unzip -o /sas/temp/&check_date..zip -d /sas/temp/&check_date./";
+
+    /* Set new folder path */
+    %let folder_path = /sas/temp/&check_date./;
+%end;
+
+
+
+
+
+
+
+
+
 mnt
 %let base_path = \\server\share\archive\;  /* UNC path - update this */
 %let days_back = 45;                      /* 0 to 44 days */
