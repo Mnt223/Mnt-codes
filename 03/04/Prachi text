@@ -1,3 +1,174 @@
+66
+
+
+%let base_path = /your/sas/directory/; /* Update this with your base directory */
+%let days_back = 45; /* Number of days to check (0 to -44 for 45 days total) */
+%let size_threshold = 102400; /* 100 KB in bytes */
+
+proc delete data=backlog; run;
+
+/* Initialize backlog dataset */
+data backlog;
+    length file_date $10 folder_status $20 file_status $50 file_size 8;
+    stop;
+run;
+
+%macro check_files;
+
+%do i = 0 %to %eval(&days_back - 1); /* Loop from T-0 to T-44 */
+    %let check_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b), yymmddd10.);
+    %let folder_path = &base_path.&check_date./;
+    %let file_name = &check_date..csv;
+
+    /* Step 1: Check if the unzipped folder exists using dopen() */
+    data _null_;
+        folder_id = dopen("&folder_path");
+        if folder_id > 0 then folder_exists = 1;
+        else folder_exists = 0;
+        call symputx('folder_found', folder_exists);
+    run;
+
+    %put Folder Path: &folder_path;
+    %put Folder Found: &folder_found;
+
+    %if &folder_found %then %do;
+        /* Step 2: Check if the file exists */
+        data _null_;
+            length fullpath $256;
+            fullpath = "&folder_path.&file_name";
+            file_exists = fileexist(fullpath);
+            
+            if file_exists then do;
+                file_id = fopen(fullpath, 'I');
+                file_size = fsize(file_id);
+                rc = fclose(file_id);
+                call symputx('file_size', file_size);
+                call symputx('file_exists', 1);
+            end;
+            else do;
+                call symputx('file_size', 0);
+                call symputx('file_exists', 0);
+            end;
+        run;
+
+        %put File Path: &folder_path.&file_name;
+        %put File Found: &file_exists;
+        %put File Size: &file_size;
+
+        %if not &file_exists %then %do;
+            data temp;
+                length file_date $10 folder_status $20 file_status $20;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "Missing";
+                file_size = .;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+        %else %do;
+            /* Step 3: Check if file is readable and meets size threshold */
+            data _null_;
+                infile "&folder_path.&file_name" eof=eof;
+                rc = 0;
+                input;
+                return;
+                
+                eof:
+                rc = 1;
+                call symputx('file_valid', rc);
+                stop;
+            run;
+
+            %if &file_valid %then %do;
+                %let status=Valid;
+            %end;
+            %else %do;
+                %let status=Corrupt;
+            %end;
+
+            %if &file_size < &size_threshold %then %do;
+                %let status=&status (Below Threshold);
+            %end;
+
+            data temp;
+                length file_date $10 folder_status $20 file_status $50;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "&status";
+                file_size = &file_size;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+    %end;
+    %else %do;
+        /* Step 4: Folder is missing */
+        data temp;
+            length file_date $10 folder_status $20 file_status $20;
+            file_date = "&check_date";
+            folder_status = "Missing";
+            file_status = "-";
+            file_size = .;
+        run;
+        proc append base=backlog data=temp; run;
+    %end;
+%end;
+
+%mend check_files;
+
+%check_files;
+
+/* Create a proper summary dataset */
+proc sql;
+    create table summary as
+    select 
+        file_date,
+        sum(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
+        sum(case when folder_status = 'Missing' then 1 else 0 end) as Folders_Missing,
+        sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
+        sum(case when file_status contains 'Missing' then 1 else 0 end) as Missing_Files,
+        sum(case when file_status contains 'Corrupt' then 1 else 0 end) as Corrupt_Files,
+        sum(case when file_status contains 'Threshold' then 1 else 0 end) as Size_Warnings
+    from backlog
+    group by file_date;
+quit;
+
+/* Send an email with backlog details */
+filename mail email 'your_email@domain.com'
+    subject="Folder & File Check Report - Last 45 Days"
+    type="text/html";
+
+data _null_;
+    file mail;
+    put '<html><body>';
+    put '<h2>Folder & File Check Report - Last 45 Days (T-0 to T-44)</h2>';
+    put '<table border="1"><tr><th>Date</th><th>Folder Status</th><th>File Status</th><th>File Size (bytes)</th></tr>';
+    
+    do until (eof);
+        set backlog end=eof;
+        put "<tr><td>" file_date "</td><td>" folder_status "</td><td>" file_status "</td><td>" file_size "</td></tr>";
+    end;
+    
+    put '</table>';
+    
+    put '<h2>Summary</h2>';
+    put '<table border="1"><tr><th>Date</th><th>Folders Exist</th><th>Folders Missing</th><th>Valid Files</th><th>Missing Files</th><th>Corrupt Files</th><th>Size Warnings</th></tr>';
+    
+    do until (eof2);
+        set summary end=eof2;
+        put "<tr><td>" file_date "</td><td>" Folders_Exist "</td><td>" Folders_Missing "</td><td>" Valid_Files "</td><td>" Missing_Files "</td><td>" Corrupt_Files "</td><td>" Size_Warnings "</td></tr>";
+    end;
+    
+    put '</table></body></html>';
+run;
+
+
+
+
+
+
+
+
+
 data _null_;
     rc1 = filename('test', "\\server\share\archive\known_file.zip");
     rc2 = fopen('test');
