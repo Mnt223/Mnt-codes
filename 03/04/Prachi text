@@ -1,3 +1,116 @@
+4
+%let base_path = /your/base/path/;  /* Must end with slash */
+%let days_back = 45;
+%let size_threshold = 102400;
+
+/* Initialize dataset */
+proc delete data=backlog; run;
+
+data backlog;
+    length file_date $10 folder_status $20 file_status $20 file_size 8;
+    stop;
+run;
+
+%macro check_files;
+
+%do i = 0 %to %eval(&days_back - 1);
+    /* Use hyphens in date format */
+    %let check_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b), yymmddd10.);
+    %let folder_path = &base_path.%sysfunc(translate(&check_date,_,:-));  /* Replace : with _ */
+    %let file_name = &check_date..zip;
+
+    /* Debugging output */
+    %put #########################################;
+    %put Checking path: &folder_path;
+    %put Looking for file: &file_name;
+    
+    /* Folder existence check */
+    data _null_;
+        folder_exists = fileexist("&folder_path");
+        call symputx('folder_found', folder_exists);
+        put "Folder exists: " folder_exists;
+    run;
+
+    %if &folder_found %then %do;
+        /* File check */
+        data _null_;
+            full_path = "&folder_path/&file_name";  /* Added slash between folder and file */
+            file_exists = fileexist(full_path);
+            
+            if file_exists then do;
+                file_id = fopen(full_path, 'I');
+                file_size = fsize(file_id);
+                rc = fclose(file_id);
+                call symputx('file_size', file_size);
+                call symputx('file_exists', 1);
+            end;
+            else do;
+                call symputx('file_size', 0);
+                call symputx('file_exists', 0);
+            end;
+            put "File exists: " file_exists;
+        run;
+
+        /* Rest of your existing logic */
+        %if not &file_exists %then %do;
+            data temp;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "Missing";
+                file_size = .;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+        %else %do;
+            /* ZIP validation logic */
+            %let valid_zip = 0;
+            filename inzip ZIP "&folder_path/&file_name";
+
+            data _null_;
+                rc = filename('inzip', "&folder_path/&file_name");
+                fid = fopen('inzip');
+                if fid > 0 then do;
+                    call symputx('valid_zip', 1);
+                    rc = fclose(fid);
+                end;
+                rc = filename('inzip');
+            run;
+
+            %if &valid_zip %then %let status=Valid;
+            %else %let status=Corrupt;
+
+            %if &file_size < &size_threshold %then %let status=&status (Below Threshold);
+
+            data temp;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "&status";
+                file_size = &file_size;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+    %end;
+    %else %do;
+        data temp;
+            file_date = "&check_date";
+            folder_status = "Missing";
+            file_status = "-";
+            file_size = .;
+        run;
+        proc append base=backlog data=temp; run;
+    %end;
+%end;
+%mend;
+
+%check_files;
+
+
+
+
+
+
+
+
 %let base_path = /mnt/data/archive/;  /* MUST end with slash */
 %let check_date = %sysfunc(today(), yymmddn8.); /* Current date as YYYYMMDD */
 
