@@ -1,3 +1,126 @@
+%let base_path = /your/sas/directory/; /* Update this with your base directory */
+%let days_back = 45; /* Number of days for backlog */
+%let size_threshold = 102400; /* 100 KB in bytes */
+
+data backlog;
+    length file_date $10 folder_status $20 file_status $20 file_size 8;
+run;
+
+%macro check_files;
+
+/* Loop through past 'N' days */
+%do i = 1 %to &days_back;
+    %let check_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b), yymmdd10.);
+    %let folder_path = &base_path.&check_date./;
+    %let file_name = &check_date..csv;
+    
+    /* Step 1: Check if folder exists */
+    data _null_;
+        folder_exists = fileexist("&folder_path");
+        call symputx('folder_found', ifc(folder_exists, 'YES', 'NO'));
+    run;
+
+    %if &folder_found = YES %then %do;
+        /* Step 2: Check if file exists */
+        data _null_;
+            file_exists = fileexist("&folder_path.&file_name");
+            if file_exists then do;
+                file_id = fopen("&folder_path.&file_name", 'I');
+                file_size = fsize(file_id);
+                rc = fclose(file_id);
+                call symputx('file_size', file_size);
+            end;
+            else call symputx('file_size', 0);
+            call symputx('file_exists', file_exists);
+        run;
+
+        %if &file_exists = 0 %then %do;
+            data backlog;
+                set backlog;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "Missing";
+                file_size = .;
+            run;
+        %end;
+        %else %do;
+            /* Step 3: Try opening the file */
+            %let dsid = %sysfunc(open("&folder_path.&file_name"));
+            %if &dsid %then %do;
+                %let rc = %sysfunc(close(&dsid));
+                data backlog;
+                    set backlog;
+                    file_date = "&check_date";
+                    folder_status = "Exists";
+                    file_status = "Valid";
+                    file_size = &file_size;
+                run;
+            %end;
+            %else %do;
+                data backlog;
+                    set backlog;
+                    file_date = "&check_date";
+                    folder_status = "Exists";
+                    file_status = "Corrupt";
+                    file_size = &file_size;
+                run;
+            %end;
+        %end;
+    %end;
+    %else %do;
+        /* Step 4: Folder is missing */
+        data backlog;
+            set backlog;
+            file_date = "&check_date";
+            folder_status = "Missing";
+            file_status = "-";
+            file_size = .;
+        run;
+    %end;
+%end;
+
+%mend check_files;
+
+%check_files;
+
+/* Create a summary dataset */
+proc sql;
+    create table summary as
+    select 
+        file_date,
+        count(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
+        count(case when folder_status = 'Missing' then 1 else 0 end) as Folders_Missing,
+        count(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
+        count(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
+        count(case when file_status = 'Corrupt' then 1 else 0 end) as Corrupt_Files
+    from backlog
+    group by file_date;
+quit;
+
+/* Send an email with backlog details */
+filename mail email 'your_email@domain.com'
+    subject="Folder & File Check Report - Last 45 Days"
+    type="text/html";
+
+data _null_;
+    file mail;
+    put '<html><body>';
+    put '<h2>Folder & File Check Report - Last 45 Days</h2>';
+    put '<table border="1"><tr><th>Date</th><th>Folder Status</th><th>File Status</th><th>File Size (bytes)</th></tr>';
+    set backlog;
+    put "<tr><td>" file_date "</td><td>" folder_status "</td><td>" file_status "</td><td>" file_size "</td></tr>";
+    put '</table>';
+    
+    put '<h2>Summary</h2>';
+    put '<table border="1"><tr><th>Date</th><th>Folders Exist</th><th>Folders Missing</th><th>Valid Files</th><th>Missing Files</th><th>Corrupt Files</th></tr>';
+    set summary;
+    put "<tr><td>" file_date "</td><td>" Folders_Exist "</td><td>" Folders_Missing "</td><td>" Valid_Files "</td><td>" Missing_Files "</td><td>" Corrupt_Files "</td></tr>";
+    put '</table></body></html>';
+run;
+
+
+
+
 %let base_path = /your/sas/directory/; /* Update with actual directory path */
 %let days_back = 5; /* Number of days for backlog tracking */
 %let size_threshold = 102400; /* 100 KB in bytes */
