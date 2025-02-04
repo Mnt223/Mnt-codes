@@ -5,8 +5,9 @@
 %let recipient_email = your.email@domain.com; /* Update email */
 
 /* Delete previous data */
-proc delete data=backlog; run;
-proc delete data=summary; run;
+proc datasets lib=work nolist;
+    delete backlog summary;
+quit;
 
 /* Initialize dataset */
 data backlog;
@@ -57,6 +58,7 @@ run;
             /* 3. File Validation */
             %let valid_zip = 1;
             %let status = Valid;
+            %let file_size = 0; /* Ensure file_size is initialized */
 
             data _null_;
                 length extracted_files $512;
@@ -65,8 +67,15 @@ run;
                 if file_count = 0 then call symputx('valid_zip', 0);
             run;
 
+            /* Check extracted folder size */
+            data _null_;
+                infile "du -sb &extracted_folder" pipe;
+                input extracted_size 8.;
+                call symputx('file_size', extracted_size);
+            run;
+
             %if not &valid_zip %then %let status = Corrupt;
-            %if &file_size < &size_threshold %then %let status = &status (Below Threshold);
+            %if %sysevalf(&file_size < &size_threshold) %then %let status = &status (Below Threshold);
 
             /* Append file status */
             data temp;
@@ -88,8 +97,7 @@ run;
             proc append base=backlog data=temp; run;
         %end;
 
-        /* 4. DELETE Extracted Folder */
-        x "rm -rf &extracted_folder";
+        /* NO DELETION of extracted folder */
     %end;
     %else %do;
         /* Case: File missing */
@@ -114,8 +122,8 @@ proc sql;
         sum(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
         sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
         sum(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
-        sum(case when file_status contains 'Corrupt' then 1 else 0 end) as Corrupt_Files,
-        sum(case when file_status contains 'Threshold' then 1 else 0 end) as Size_Warnings
+        sum(case when index(file_status, 'Corrupt') > 0 then 1 else 0 end) as Corrupt_Files,
+        sum(case when index(file_status, 'Threshold') > 0 then 1 else 0 end) as Size_Warnings
     from backlog
     group by file_date;
 quit;
