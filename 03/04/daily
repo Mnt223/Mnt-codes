@@ -1,63 +1,184 @@
-%macro check_files_and_notify(zip_path=, folder_path=, file_name=);
+%let base_path = \\server\share\archive\;  /* UNC path - update this */
+%let extract_path = \\server\temp\extracted\; /* Temporary extraction folder */
+%let days_back = 45;                      /* 0 to 44 days */
+%let size_threshold = 102400;             /* 100KB threshold */
+%let recipient_email = your.email@domain.com; /* Update email */
 
-   /* Unzip the file first */
-   %let unzip_cmd = %str(unzip -o -d &folder_path &zip_path);
-   %sysexec &unzip_cmd;
+/* Delete previous data */
+proc delete data=backlog; run;
+proc delete data=summary; run;
 
-   /* Check if the folder exists */
-   %let rc = %sysfunc(filename(fileref,&folder_path));
-   %let dsid = %sysfunc(dopen(&fileref));
-   %if &dsid %then %do;
-      /* Folder exists, now check for the CSV file specifically */
-      %let fid_csv = %sysfunc(fopen(&fileref/&file_name..csv, i));
+/* Initialize dataset */
+data backlog;
+    length file_date $10 folder_status $20 file_status $25 file_size 8;
+    stop;
+run;
 
-      /* Check if CSV file can be opened */
-      %if &fid_csv %then %do;
-         /* Check CSV file size */
-         %let filesize_csv = %sysfunc(finfo(&fid_csv, File Size (bytes)));
-         %let rc = %sysfunc(fclose(&fid_csv));
+%macro check_files;
 
-         %if &filesize_csv < 102400 %then %do;
-            %put ERROR: CSV file size is insufficient.;
-            /* Email notification for insufficient CSV file size */
-            filename mail email to="your_email@example.com"
-                     subject="CSV File Size Alert"
-                     type='text/plain'; 
-            data _null_;
-               file mail;
-               put 'The CSV file size is under 100KB in the folder: &folder_path';
+%do i = 0 %to %eval(&days_back - 1);
+    /* Generate date components */
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
+    %let check_date = %sysfunc(putn(&raw_date, yymmddd10.));
+    
+    /* Construct server paths */
+    %let folder_path = %sysfunc(translate(&base_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
+    %let file_name = %sysfunc(putn(&raw_date, yymmddd10.))..zip;
+    %let extract_folder = &extract_path.%sysfunc(putn(&raw_date, yymmddd10.));
+
+    /* Debugging output */
+    %put #########################################;
+    %put Checking: &folder_path;
+    %put Looking for: &file_name;
+    
+    /* 1. Folder existence check */
+    data _null_;
+        length resolved_path $512;
+        resolved_path = resolve("&folder_path");
+        dir_id = dopen(resolved_path);
+        if dir_id > 0 then do;
+            call symputx('folder_found', 1);
+            rc = dclose(dir_id);
+        end;
+        else call symputx('folder_found', 0);
+    run;
+
+    %if &folder_found %then %do;
+        /* 2. File existence check */
+        data _null_;
+            length full_path $512;
+            full_path = resolve(catx('\', "&folder_path", "&file_name"));
+            file_exists = fileexist(full_path);
+            call symputx('file_exists', file_exists);
+        run;
+
+        %if not &file_exists %then %do;
+            /* Case 1: File missing */
+            data temp;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "Missing";
+                file_size = .;
             run;
-         %end;
-      %end;
-      %else %do;
-         %put ERROR: CSV file does not exist or cannot be opened.;
-         /* Email notification for CSV file access issue */
-         filename mail email to="your_email@example.com"
-                  subject="CSV File Access Alert"
-                  type='text/plain'; 
-         data _null_;
-            file mail;
-            put 'Cannot access or find the CSV file in the specified folder: &folder_path';
-         run;
-      %end;
+            proc append base=backlog data=temp; run;
+        %end;
+        %else %do;
+            /* Unzip the file to extract_path */
+            x "mkdir &extract_folder";  /* Create the extraction directory */
+            x "powershell -Command Expand-Archive -Path '&folder_path\&file_name' -DestinationPath '&extract_folder' -Force";
 
-   %end;
-   %else %do;
-      %put ERROR: Folder does not exist or cannot be opened after unzipping.;
-      /* Email notification for missing or inaccessible folder */
-      filename mail email to="your_email@example.com"
-               subject="Folder Access Alert"
-               type='text/plain'; 
-      data _null_;
-         file mail;
-         put 'The specified folder does not exist or cannot be opened: &folder_path';
-      run;
-   %end;
+            /* 3. ZIP extraction check */
+            data _null_;
+                length extracted_path $512;
+                extracted_path = resolve("&extract_folder");
+                dir_id = dopen(extracted_path);
+                if dir_id > 0 then do;
+                    call symputx('valid_extracted', 1);
+                    rc = dclose(dir_id);
+                end;
+                else call symputx('valid_extracted', 0);
+            run;
 
-   %let rc = %sysfunc(dclose(&dsid));
-   %let rc = %sysfunc(filename(fileref,""));
+            /* Determine final status */
+            %let status=;
+            %if &valid_extracted %then %let status=Valid;
+            %else %let status=Extraction Failed;
+            
+            data temp;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "&status";
+                file_size = .;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+    %end;
+    %else %do;
+        /* Case 2: Folder missing */
+        data temp;
+            file_date = "&check_date";
+            folder_status = "Missing";
+            file_status = "-";
+            file_size = .;
+        run;
+        proc append base=backlog data=temp; run;
+    %end;
+%end;
+%mend;
 
-%mend check_files_and_notify;
+%check_files;
 
-/* Example usage */
-%check_files_and_notify(zip_path=/path/to/your/zipfile.zip, folder_path=/path/to/unzip, file_name=example);
+/* Delete Extracted Folders After Processing */
+x "powershell -Command Remove-Item -Path '&extract_path\*' -Recurse -Force";
+
+/* Create summary statistics */
+proc sql;
+    create table summary as
+    select 
+        file_date,
+        sum(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
+        sum(case when folder_status = 'Missing' then 1 else 0 end) as Folders_Missing,
+        sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
+        sum(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
+        sum(case when file_status contains 'Extraction Failed' then 1 else 0 end) as Extraction_Failures
+    from backlog
+    group by file_date;
+quit;
+
+/* Send HTML email report */
+filename mail email &recipient_email
+    subject="Server File Audit Report - Last &days_back Days"
+    type="text/html";
+
+data _null_;
+    file mail;
+    put '<html><body style="font-family: Arial, sans-serif; margin: 20px;">';
+    
+    put '<h2 style="color: #2c3e50; border-bottom: 2px solid #3498db;">';
+    put "Server File Audit Report";
+    put '</h2>';
+    
+    put '<div style="margin-bottom: 30px;">';
+    put "<p><strong>Base Path:</strong> &base_path</p>";
+    put "<p><strong>Extract Path:</strong> &extract_path</p>";
+    put "<p><strong>Report Period:</strong> Last &days_back Days</p>";
+    put "<p><strong>Generated:</strong> %sysfunc(datetime(), datetime20.)</p>";
+    put '</div>';
+    
+    put '<h3 style="color: #34495e;">Daily Status Details</h3>';
+    put '<table border="1" style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">';
+    put '<tr style="background-color: #3498db; color: white;">';
+    put '<th>Date</th><th>Folder Status</th><th>File Status</th></tr>';
+    
+    do until (eof);
+        set backlog end=eof;
+        put '<tr>';
+        put '<td style="padding: 8px;">' file_date '</td>';
+        put '<td style="padding: 8px;">' folder_status '</td>';
+        put '<td style="padding: 8px;">' file_status '</td>';
+        put '</tr>';
+    end;
+    
+    put '</table>';
+    
+    put '<h3 style="color: #34495e;">Summary Statistics</h3>';
+    put '<table border="1" style="border-collapse: collapse; width: 100%;">';
+    put '<tr style="background-color: #3498db; color: white;">';
+    put '<th>Date</th><th>Folders Exist</th><th>Folders Missing</th><th>Valid Files</th>';
+    put '<th>Missing Files</th><th>Extraction Failures</th></tr>';
+    
+    do until (eof2);
+        set summary end=eof2;
+        put '<tr>';
+        put '<td style="padding: 8px;">' file_date '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Folders_Exist '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Folders_Missing '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Valid_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Missing_Files '</td>';
+        put '<td style="padding: 8px; text-align: center;">' Extraction_Failures '</td>';
+        put '</tr>';
+    end;
+    
+    put '</table>';
+    put '</body></html>';
+run;
