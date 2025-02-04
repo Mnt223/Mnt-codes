@@ -1,3 +1,102 @@
+tt
+%let base_path = /data/skdn/kffkfkfkd/;  /* Server path - end with / */
+%let days_back = 45;                     /* Days to check (0 to T-44) */
+%let size_threshold = 102400;            /* 100 KB threshold */
+%let recipient_email = your.email@domain.com;
+
+/* Delete previous datasets */
+proc delete data=backlog; run;
+proc delete data=summary; run;
+
+/* Initialize dataset */
+data backlog;
+    length file_date $10 folder_status $20 file_status $25 file_size 8;
+    stop;
+run;
+
+%macro check_files;
+
+%do i = 0 %to %eval(&days_back - 1);
+    /* Generate date-based folder name */
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
+    %let check_date = %sysfunc(putn(&raw_date, yymmddd10.)); /* YYYY-MM-DD */
+    %let folder_path = %sysfunc(catx(/,"&base_path","&check_date"));
+    %let file_name = &check_date..zip;
+
+    /* Debugging output */
+    %put #########################################;
+    %put RAW DATE: &raw_date;
+    %put FOLDER PATH: &folder_path;
+    %put FILE NAME: &file_name;
+    
+    /* 1. Folder existence check with path verification */
+    data _null_;
+        /* Resolve environment variables if any */
+        resolved_path = resolve("&folder_path");
+        
+        /* Verify path exists */
+        folder_exists = fileexist(resolved_path);
+        put "Resolved path: " resolved_path;
+        put "Folder exists: " folder_exists;
+        
+        /* Check directory contents */
+        if folder_exists then do:
+            rc = filename('dir', resolved_path);
+            dir_id = dopen('dir');
+            if dir_id > 0 then do:
+                put "First 3 files:";
+                do i = 1 to min(dnum(dir_id),3);
+                    put "  " dread(dir_id,i);
+                end;
+                rc = dclose(dir_id);
+            end;
+            rc = filename('dir');
+        end;
+        
+        call symputx('folder_found', folder_exists);
+    run;
+
+    %if &folder_found %then %do;
+        /* 2. File check with explicit server path */
+        data _null_;
+            full_path = resolve(catx(/, "&folder_path", "&file_name"));
+            put "Full file path: " full_path;
+            
+            file_exists = fileexist(full_path);
+            if file_exists then do:
+                /* Check file accessibility */
+                file_id = fopen(full_path, 'I', 'B');
+                if file_id > 0 then do:
+                    file_size = fsize(file_id);
+                    rc = fclose(file_id);
+                    call symputx('file_size', file_size);
+                    call symputx('file_exists', 1);
+                    put "File accessible. Size:" file_size "bytes";
+                end;
+                else do:
+                    put "ERROR: File exists but cannot be opened";
+                    call symputx('file_exists', 0);
+                end;
+            end;
+            else do:
+                put "File not found";
+                call symputx('file_exists', 0);
+            end;
+        run;
+
+        /* Rest of the logic... */
+        
+%mend;
+
+%check_files;
+
+/* Rest of reporting code... */
+
+
+
+
+
+
 %if &folder_found %then %do;
     /* Extract ZIP File */
     filename sftpzip sftp "/your/sftp/directory/&check_date..zip"
