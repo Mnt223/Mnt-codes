@@ -19,6 +19,59 @@ data _null_;
     
     put '<h3 style="color: #34495e;">Detailed Report</h3>';
     put '<table border="1" style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">';
+
+    /* Print the header row once */
+    put '<tr style="background-color: #3498db; color: white;">';
+    put '<th>Date</th><th>File Status</th><th>File Size</th></tr>';
+
+    /* Loop through backlog dataset */
+    do until (eof);
+        set backlog end=eof;
+        put '<tr>';
+        put '<td style="padding: 8px;">' file_date '</td>';
+        put '<td style="padding: 8px;">' file_status '</td>';
+        put '<td style="padding: 8px;">' formatted_size '</td>';
+        put '</tr>';
+    end;
+    
+    put '</table>';
+    put '</body></html>';
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Send HTML email report */
+filename mail email &recipient_email
+    subject="Server File Audit Report - Last &days_back Days"
+    type="text/html";
+
+data _null_;
+    file mail;
+    put '<html><body style="font-family: Arial, sans-serif; margin: 20px;">';
+    
+    put '<h2 style="color: #2c3e50; border-bottom: 2px solid #3498db;">';
+    put "Server File Audit Report";
+    put '</h2>';
+    
+    put '<div style="margin-bottom: 30px;">';
+    put "<p><strong>Base Path:</strong> &base_path</p>";
+    put "<p><strong>Report Period:</strong> Last &days_back Days</p>";
+    put "<p><strong>Generated:</strong> %sysfunc(datetime(), datetime20.)</p>";
+    put '</div>';
+    
+    put '<h3 style="color: #34495e;">Detailed Report</h3>';
+    put '<table border="1" style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">';
     put '<tr style="background-color: #3498db; color: white;">';
     put '<th>Date</th><th>File Status</th><th>File Size</th></tr>';
     
