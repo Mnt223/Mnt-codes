@@ -1,3 +1,51 @@
+%let base_path = /mnt/data/archive/;  /* MUST end with slash */
+%let check_date = %sysfunc(today(), yymmddn8.); /* Current date as YYYYMMDD */
+
+/* Diagnostic Path Check */
+%put #############################################;
+%put Diagnostic Check for Date: &check_date;
+%put #############################################;
+
+%let full_path = &base_path.&check_date;
+
+data _null_;
+    /* Basic existence check */
+    folder_exists = fileexist("&full_path");
+    put "Basic Existence Check: " folder_exists=;
+    
+    /* Detailed access verification */
+    rc1 = filename('diag', "&full_path");
+    diag_fid = dopen('diag');
+    
+    if diag_fid > 0 then do;
+        put "Directory Access Granted";
+        put "Contents:";
+        
+        /* List first 5 files */
+        do i = 1 to min(5, dnum(diag_fid));
+            fname = dread(diag_fid, i);
+            put "  " fname=;
+        end;
+        
+        rc2 = dclose(diag_fid);
+    end;
+    else do;
+        put "Access Error: " sysmsg=;
+    end;
+    
+    rc3 = filename('diag');
+run;
+
+
+
+
+
+
+
+
+
+
+
 %let base_path = /your/sas/directory/; /* Update this with your base directory */
 %let days_back = 45; /* Number of days to check (0 to -44 for 45 days total) */
 %let size_threshold = 102400; /* 100 KB in bytes */
