@@ -1,5 +1,5 @@
-%let base_path = \\server\share\archive\;  /* Path 1: Original ZIP folder location */
-%let extract_path = \\server\temp\extracted\; /* Path 2: Extracted folder location */
+%let base_path = \\server\share\archive\;  /* Path 1 - Original location */
+%let unzipped_path = \\server\share\unzipped\;  /* Path 2 - Unzipped folder location */
 %let days_back = 45;                      /* 0 to 44 days */
 %let size_threshold = 102400;             /* 100KB threshold */
 %let recipient_email = your.email@domain.com; /* Update email */
@@ -14,77 +14,137 @@ data backlog;
     stop;
 run;
 
-%macro extract_and_process;
-
-/* Step 1: Extract all ZIP folders from Path 1 to Path 2 */
-x "mkdir &extract_path";  
-x "powershell -Command Get-ChildItem -Path '&base_path' -Filter '*.zip' | ForEach-Object {Expand-Archive -Path $_.FullName -DestinationPath '&extract_path\' -Force}";
+%macro check_files;
 
 %do i = 0 %to %eval(&days_back - 1);
     /* Generate date components */
     %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
     %let check_date = %sysfunc(putn(&raw_date, yymmddd10.));
     
-    /* Construct extracted folder paths */
-    %let extracted_folder = &extract_path.%sysfunc(putn(&raw_date, yymmddd10.));
+    /* Construct server paths */
+    %let folder_path = %sysfunc(translate(&base_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
+    %let unzip_folder = %sysfunc(translate(&unzipped_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
+    %let file_name = %sysfunc(putn(&raw_date, yymmddd10.))..zip;
 
     /* Debugging output */
     %put #########################################;
-    %put Checking extracted folder: &extracted_folder;
+    %put Checking: &folder_path;
+    %put Looking for: &file_name;
     
-    /* 1. Check if extracted folder exists */
+    /* 1. Folder existence check */
     data _null_;
-        length extracted_path $512;
-        extracted_path = resolve("&extracted_folder");
-        dir_id = dopen(extracted_path);
-        if dir_id > 0 then do;
-            call symputx('folder_found', 1);
-            rc = dclose(dir_id);
-        end;
-        else call symputx('folder_found', 0);
+        length resolved_path $512;
+        resolved_path = resolve("&folder_path");
+        folder_exists = fileexist(resolved_path);
+        call symputx('folder_found', folder_exists);
     run;
 
     %if &folder_found %then %do;
-        /* 2. Check CSV file sizes inside extracted folder */
-        filename dirlist pipe "dir /b &extracted_folder\*.csv";
-        
+        /* 2. File existence & size check */
         data _null_;
-            infile dirlist truncover;
-            input csv_file $256.;
-            length csv_path $512;
-            csv_path = resolve(catx('\', "&extracted_folder", csv_file));
-
-            /* Get file size */
-            file_id = fopen(csv_path, 'I', 'B', 'recfm=n');
-            if file_id > 0 then do;
-                file_size = fsize(file_id);
-                rc = fclose(file_id);
-                call symputx('file_size', file_size);
-                call symputx('file_found', 1);
+            length full_path $512;
+            full_path = resolve(catx('\', "&folder_path", "&file_name"));
+            
+            file_exists = fileexist(full_path);
+            
+            if file_exists then do;
+                file_id = fopen(full_path, 'I', 'B', 'recfm=n');
+                if file_id > 0 then do;
+                    file_size = fsize(file_id);
+                    rc = fclose(file_id);
+                    call symputx('file_size', file_size);
+                    call symputx('file_exists', 1);
+                end;
+                else do;
+                    call symputx('file_exists', 0);
+                    call symputx('file_size', 0);
+                end;
             end;
             else do;
-                call symputx('file_found', 0);
+                call symputx('file_exists', 0);
                 call symputx('file_size', 0);
             end;
         run;
 
-        /* Determine final status */
-        %let status=Valid CSV;
-        %if &file_size < &size_threshold %then %let status=Valid CSV (Below Threshold);
+        %if not &file_exists %then %do;
+            /* Case 1: File missing */
+            data temp;
+                file_date = "&check_date";
+                folder_status = "Exists";
+                file_status = "Missing";
+                file_size = .;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+        %else %do;
+            /* 3. Unzip the file */
+            %let unzip_command = "unzip -o &folder_path/&file_name -d &unzip_folder";
+            %sysexec &unzip_command;
+            
+            /* Check if unzipped folder exists */
+            data _null_;
+                length resolved_unzip_path $512;
+                resolved_unzip_path = resolve("&unzip_folder");
+                unzip_exists = fileexist(resolved_unzip_path);
+                call symputx('unzip_found', unzip_exists);
+            run;
 
-        data temp;
-            file_date = "&check_date";
-            folder_status = "Exists";
-            file_status = "&status";
-            file_size = &file_size;
-        run;
-        proc append base=backlog data=temp; run;
+            %if &unzip_found %then %do;
+                /* 4. Perform the same validation process on unzipped files */
+                data _null_;
+                    length unzip_full_path $512;
+                    unzip_full_path = resolve(catx('\', "&unzip_folder", "&file_name"));
+                    
+                    unzip_file_exists = fileexist(unzip_full_path);
+                    
+                    if unzip_file_exists then do;
+                        unzip_file_id = fopen(unzip_full_path, 'I', 'B', 'recfm=n');
+                        if unzip_file_id > 0 then do;
+                            unzip_file_size = fsize(unzip_file_id);
+                            rc = fclose(unzip_file_id);
+                            call symputx('unzip_file_size', unzip_file_size);
+                            call symputx('unzip_file_exists', 1);
+                        end;
+                        else do;
+                            call symputx('unzip_file_exists', 0);
+                            call symputx('unzip_file_size', 0);
+                        end;
+                    end;
+                    else do;
+                        call symputx('unzip_file_exists', 0);
+                        call symputx('unzip_file_size', 0);
+                    end;
+                run;
+
+                /* Determine final status */
+                %let status=Valid;
+                %if &unzip_file_size < &size_threshold %then %let status=Valid (Below Threshold);
+
+                data temp;
+                    file_date = "&check_date";
+                    folder_status = "Unzipped Exists";
+                    file_status = "&status";
+                    file_size = &unzip_file_size;
+                run;
+                proc append base=backlog data=temp; run;
+            %end;
+            %else %do;
+                /* Case 2: Unzipped folder missing */
+                data temp;
+                    file_date = "&check_date";
+                    folder_status = "Unzip Failed";
+                    file_status = "Error";
+                    file_size = .;
+                run;
+                proc append base=backlog data=temp; run;
+            %end;
+        %end;
     %end;
     %else %do;
-        /* Case: Extracted folder missing */
+        /* Case 3: Folder missing */
         data temp;
             file_date = "&check_date";
-            folder_status = "Extract Failed";
+            folder_status = "Missing";
             file_status = "-";
             file_size = .;
         run;
@@ -93,59 +153,44 @@ x "powershell -Command Get-ChildItem -Path '&base_path' -Filter '*.zip' | ForEac
 %end;
 %mend;
 
-%extract_and_process;
+%check_files;
 
-/* Step 3: Delete all extracted folders from Path 2 */
-x "powershell -Command Remove-Item -Path '&extract_path\*' -Recurse -Force";
-
-/* Step 4: Create summary statistics */
+/* Create summary statistics */
 proc sql;
     create table summary as
     select 
         file_date,
         sum(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
-        sum(case when folder_status = 'Extract Failed' then 1 else 0 end) as Extraction_Failures,
-        sum(case when file_status contains 'Valid' then 1 else 0 end) as Valid_CSVs,
-        sum(case when file_status contains 'Below Threshold' then 1 else 0 end) as Size_Warnings
+        sum(case when folder_status = 'Unzipped Exists' then 1 else 0 end) as Unzipped_Folders_Exist,
+        sum(case when folder_status = 'Missing' then 1 else 0 end) as Folders_Missing,
+        sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
+        sum(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
+        sum(case when file_status contains 'Threshold' then 1 else 0 end) as Size_Warnings
     from backlog
     group by file_date;
 quit;
 
-/* Step 5: Send HTML email report */
+/* Delete all files in the unzipped folder */
+%sysexec del /Q &unzipped_path\*.*;
+
+/* Send HTML email report */
 filename mail email &recipient_email
     subject="Server File Audit Report - Last &days_back Days"
     type="text/html";
 
 data _null_;
     file mail;
-    put '<html><body style="font-family: Arial, sans-serif; margin: 20px;">';
-    
-    put '<h2 style="color: #2c3e50; border-bottom: 2px solid #3498db;">';
-    put "Server File Audit Report";
-    put '</h2>';
-    
-    put '<div style="margin-bottom: 30px;">';
-    put "<p><strong>Base Path:</strong> &base_path</p>";
-    put "<p><strong>Extract Path:</strong> &extract_path</p>";
-    put "<p><strong>Report Period:</strong> Last &days_back Days</p>";
-    put "<p><strong>Generated:</strong> %sysfunc(datetime(), datetime20.)</p>";
-    put '</div>';
-    
-    put '<h3 style="color: #34495e;">Daily Status Details</h3>';
-    put '<table border="1" style="border-collapse: collapse; width: 100%; margin-bottom: 30px;">';
-    put '<tr style="background-color: #3498db; color: white;">';
-    put '<th>Date</th><th>Folder Status</th><th>File Status</th><th>File Size</th></tr>';
-    
-    do until (eof);
-        set backlog end=eof;
-        put '<tr>';
-        put '<td style="padding: 8px;">' file_date '</td>';
-        put '<td style="padding: 8px;">' folder_status '</td>';
-        put '<td style="padding: 8px;">' file_status '</td>';
-        put '<td style="padding: 8px;">' file_size '</td>';
-        put '</tr>';
-    end;
-    
-    put '</table>';
-    put '</body></html>';
+    put "<html><body>";
+    put "<h2>Server File Audit Report</h2>";
+    put "<p>Base Path: &base_path</p>";
+    put "<p>Unzipped Path: &unzipped_path</p>";
+    put "<p>Report Period: Last &days_back Days</p>";
+    put "<p>Generated: %sysfunc(datetime(), datetime20.)</p>";
+    put "<h3>Summary Statistics</h3>";
+    put "<table border='1'>";
+    put "<tr><th>Date</th><th>Folders Exist</th><th>Unzipped Folders Exist</th><th>Valid Files</th><th>Missing Files</th><th>Size Warnings</th></tr>";
+    set summary;
+    put "<tr><td>" file_date "</td><td>" Folders_Exist "</td><td>" Unzipped_Folders_Exist "</td><td>" Valid_Files "</td><td>" Missing_Files "</td><td>" Size_Warnings "</td></tr>";
+    put "</table>";
+    put "</body></html>";
 run;
