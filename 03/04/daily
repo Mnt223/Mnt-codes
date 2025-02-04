@@ -1,5 +1,5 @@
-%let base_path = \\server\share\archive\;  /* UNC path - update this */
-%let extract_path = \\server\temp\extracted\; /* Temporary extraction folder */
+%let base_path = \\server\share\archive\;  /* Path 1: Original ZIP folder location */
+%let extract_path = \\server\temp\extracted\; /* Path 2: Extracted folder location */
 %let days_back = 45;                      /* 0 to 44 days */
 %let size_threshold = 102400;             /* 100KB threshold */
 %let recipient_email = your.email@domain.com; /* Update email */
@@ -14,120 +14,96 @@ data backlog;
     stop;
 run;
 
-%macro check_files;
+%macro extract_and_process;
+
+/* Step 1: Extract all ZIP folders from Path 1 to Path 2 */
+x "mkdir &extract_path";  
+x "powershell -Command Get-ChildItem -Path '&base_path' -Filter '*.zip' | ForEach-Object {Expand-Archive -Path $_.FullName -DestinationPath '&extract_path\' -Force}";
 
 %do i = 0 %to %eval(&days_back - 1);
     /* Generate date components */
     %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
     %let check_date = %sysfunc(putn(&raw_date, yymmddd10.));
     
-    /* Construct server paths */
-    %let zip_folder = %sysfunc(translate(&base_path.%sysfunc(putn(&raw_date, yymmddd10.)), '/', '\'));
-    %let zip_file = %sysfunc(putn(&raw_date, yymmddd10.))..zip;
-    %let extract_folder = &extract_path.%sysfunc(putn(&raw_date, yymmddd10.));
+    /* Construct extracted folder paths */
+    %let extracted_folder = &extract_path.%sysfunc(putn(&raw_date, yymmddd10.));
 
     /* Debugging output */
     %put #########################################;
-    %put Checking: &zip_folder;
-    %put Looking for: &zip_file;
+    %put Checking extracted folder: &extracted_folder;
     
-    /* 1. ZIP Folder existence check */
+    /* 1. Check if extracted folder exists */
     data _null_;
-        length zip_path $512;
-        zip_path = resolve(catx('\', "&zip_folder", "&zip_file"));
-        file_exists = fileexist(zip_path);
-        call symputx('file_exists', file_exists);
+        length extracted_path $512;
+        extracted_path = resolve("&extracted_folder");
+        dir_id = dopen(extracted_path);
+        if dir_id > 0 then do;
+            call symputx('folder_found', 1);
+            rc = dclose(dir_id);
+        end;
+        else call symputx('folder_found', 0);
     run;
 
-    %if not &file_exists %then %do;
-        /* Case 1: ZIP file missing */
+    %if &folder_found %then %do;
+        /* 2. Check CSV file sizes inside extracted folder */
+        filename dirlist pipe "dir /b &extracted_folder\*.csv";
+        
+        data _null_;
+            infile dirlist truncover;
+            input csv_file $256.;
+            length csv_path $512;
+            csv_path = resolve(catx('\', "&extracted_folder", csv_file));
+
+            /* Get file size */
+            file_id = fopen(csv_path, 'I', 'B', 'recfm=n');
+            if file_id > 0 then do;
+                file_size = fsize(file_id);
+                rc = fclose(file_id);
+                call symputx('file_size', file_size);
+                call symputx('file_found', 1);
+            end;
+            else do;
+                call symputx('file_found', 0);
+                call symputx('file_size', 0);
+            end;
+        run;
+
+        /* Determine final status */
+        %let status=Valid CSV;
+        %if &file_size < &size_threshold %then %let status=Valid CSV (Below Threshold);
+
         data temp;
             file_date = "&check_date";
-            folder_status = "Missing";
-            file_status = "ZIP Not Found";
-            file_size = .;
+            folder_status = "Exists";
+            file_status = "&status";
+            file_size = &file_size;
         run;
         proc append base=backlog data=temp; run;
     %end;
     %else %do;
-        /* Unzip the folder */
-        x "mkdir &extract_folder";  
-        x "powershell -Command Expand-Archive -Path '&zip_folder\&zip_file' -DestinationPath '&extract_folder' -Force";
-
-        /* 2. Check if extracted folder exists */
-        data _null_;
-            length extracted_path $512;
-            extracted_path = resolve("&extract_folder");
-            dir_id = dopen(extracted_path);
-            if dir_id > 0 then do;
-                call symputx('folder_found', 1);
-                rc = dclose(dir_id);
-            end;
-            else call symputx('folder_found', 0);
+        /* Case: Extracted folder missing */
+        data temp;
+            file_date = "&check_date";
+            folder_status = "Extract Failed";
+            file_status = "-";
+            file_size = .;
         run;
-
-        %if &folder_found %then %do;
-            /* 3. Check CSV file sizes */
-            filename dirlist pipe "dir /b &extract_folder\*.csv";
-            
-            data _null_;
-                infile dirlist truncover;
-                input csv_file $256.;
-                length csv_path $512;
-                csv_path = resolve(catx('\', "&extract_folder", csv_file));
-
-                /* Get file size */
-                file_id = fopen(csv_path, 'I', 'B', 'recfm=n');
-                if file_id > 0 then do;
-                    file_size = fsize(file_id);
-                    rc = fclose(file_id);
-                    call symputx('file_size', file_size);
-                    call symputx('file_found', 1);
-                end;
-                else do;
-                    call symputx('file_found', 0);
-                    call symputx('file_size', 0);
-                end;
-            run;
-
-            /* Determine final status */
-            %let status=Valid CSV;
-            %if &file_size < &size_threshold %then %let status=Valid CSV (Below Threshold);
-
-            data temp;
-                file_date = "&check_date";
-                folder_status = "Exists";
-                file_status = "&status";
-                file_size = &file_size;
-            run;
-            proc append base=backlog data=temp; run;
-        %end;
-        %else %do;
-            /* Case 2: Extracted folder missing */
-            data temp;
-                file_date = "&check_date";
-                folder_status = "Extract Failed";
-                file_status = "-";
-                file_size = .;
-            run;
-            proc append base=backlog data=temp; run;
-        %end;
+        proc append base=backlog data=temp; run;
     %end;
 %end;
 %mend;
 
-%check_files;
+%extract_and_process;
 
-/* Delete Extracted Folders After Processing */
+/* Step 3: Delete all extracted folders from Path 2 */
 x "powershell -Command Remove-Item -Path '&extract_path\*' -Recurse -Force";
 
-/* Create summary statistics */
+/* Step 4: Create summary statistics */
 proc sql;
     create table summary as
     select 
         file_date,
         sum(case when folder_status = 'Exists' then 1 else 0 end) as Folders_Exist,
-        sum(case when folder_status = 'Missing' then 1 else 0 end) as Missing_ZIP,
         sum(case when folder_status = 'Extract Failed' then 1 else 0 end) as Extraction_Failures,
         sum(case when file_status contains 'Valid' then 1 else 0 end) as Valid_CSVs,
         sum(case when file_status contains 'Below Threshold' then 1 else 0 end) as Size_Warnings
@@ -135,7 +111,7 @@ proc sql;
     group by file_date;
 quit;
 
-/* Send HTML email report */
+/* Step 5: Send HTML email report */
 filename mail email &recipient_email
     subject="Server File Audit Report - Last &days_back Days"
     type="text/html";
