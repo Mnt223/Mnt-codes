@@ -1,3 +1,30 @@
+
+Cost = 
+VAR MessageCount = 
+    SWITCH(
+        TRUE(),
+        Summary1[Channel] = "SMS" && Summary1[NR_Flag] = 0 && Summary1[SampleTextLength] <= 160, 1,
+        Summary1[Channel] = "SMS" && Summary1[NR_Flag] = 0 && Summary1[SampleTextLength] > 160 && Summary1[SampleTextLength] <= 320, 2,
+        Summary1[Channel] = "SMS" && Summary1[NR_Flag] = 0 && Summary1[SampleTextLength] > 320 && Summary1[SampleTextLength] <= 480, 3,
+        Summary1[Channel] = "SMS" && Summary1[NR_Flag] = 0 && Summary1[SampleTextLength] > 480, 4,
+        Summary1[Channel] = "SMS" && Summary1[NR_Flag] = 1, 1,
+        0
+    )
+
+VAR SmsCost = 
+    IF(Summary1[NR_Flag] = 0, MessageCount * 0.13, MessageCount * 1.00)
+
+RETURN 
+    SWITCH(
+        TRUE(),
+        Summary1[Channel] = "WhatsApp" && Summary1[Delivered] = 1, 0.88,
+        Summary1[Channel] = "Email" && Summary1[Delivered] = 1, 0.2,
+        Summary1[Channel] = "SMS", SmsCost,
+        0
+    )
+
+
+
 %let base_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_sms/;
 %let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/NonPega_sms_unzipped/;
 %let days_back = 45;                      /* 0 to 44 days */
