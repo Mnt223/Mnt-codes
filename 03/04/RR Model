@@ -1,3 +1,56 @@
+m
+import pandas as pd
+
+# Grouping by selection_month, samplingweight, and mevent, counting gbflag
+frequency = raw.groupby(['selection_month', 'samplingweight', 'mevent'], as_index=False).agg({'gbflag': 'count'})
+
+# Creating a total column by multiplying samplingweight with gbflag count
+frequency['total'] = frequency['samplingweight'] * frequency['gbflag']
+
+# Grouping again by selection_month and mevent, summing the total
+frequency_table = frequency.groupby(['selection_month', 'mevent'], as_index=False).agg({'total': 'sum'})
+
+# Converting total column to int
+frequency_table['total'] = frequency_table['total'].astype('int64')
+
+# Creating a pivot table
+frequency_tab = frequency_table.pivot_table(
+    index=['selection_month'],
+    columns='mevent',
+    values='total',
+    aggfunc='sum',
+    fill_value=0
+).reset_index()
+
+# Renaming columns properly
+frequency_tab.columns = ['Selection Month', 'Non Event', 'Event']
+
+# Calculating Total Base
+frequency_tab['Total Base'] = frequency_tab['Non Event'] + frequency_tab['Event']
+
+# Calculating Event Rate in percentage
+frequency_tab['Event Rate in %'] = ((frequency_tab['Event'] * 100) / frequency_tab['Total Base']).round(decimals=2)
+
+# Ensuring 'Selection Month' is a string
+frequency_tab['Selection Month'] = frequency_tab['Selection Month'].astype(str)
+
+# Displaying raw data description
+raw_description = raw.describe()
+
+# Display the cleaned dataframe
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Frequency Table", dataframe=frequency_tab)
+
+# Display raw data summary
+tools.display_dataframe_to_user(name="Raw Data Description", dataframe=raw_description)
+
+
+
+
+
+
+
+
 import pandas as pd
 
 # Assuming 'raw' is your original dataframe
