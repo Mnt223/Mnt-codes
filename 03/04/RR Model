@@ -1,4 +1,234 @@
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+import shap
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+from pycaret.classification import *
+import logging
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+@dataclass
+class ModelConfig:
+    """Configuration settings for the ML pipeline."""
+    target_column: str
+    train_size: float = 0.7
+    random_state: int = 42
+    correlation_threshold: float = 0.85
+    vif_threshold: float = 5
+    feature_selection_threshold: float = 0.005
+    important_business_features: List[str] = None
+
+class FeatureProcessor:
+    """Handles feature processing and selection."""
+    
+    def __init__(self, config: ModelConfig):
+        self.config = config
+        self.label_encoders = {}
+        self.numeric_features = []
+        self.categorical_features = []
+        
+    def identify_feature_types(self, data: pd.DataFrame) -> Tuple[List[str], List[str]]:
+        """Identify numeric and categorical features in the dataset."""
+        self.numeric_features = data.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        self.categorical_features = data.select_dtypes(include=['object', 'category']).columns.tolist()
+        return self.numeric_features, self.categorical_features
+    
+    def handle_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fill missing values in the dataset."""
+        df = data.copy()
+        for col in self.numeric_features:
+            df[col] = df[col].fillna(df[col].median())
+        for col in self.categorical_features:
+            df[col] = df[col].fillna(df[col].mode()[0])
+        return df
+    
+    def encode_categorical_variables(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Encode categorical variables using LabelEncoder."""
+        df = data.copy()
+        for col in self.categorical_features:
+            le = LabelEncoder()
+            df[col] = le.fit_transform(df[col])
+            self.label_encoders[col] = le
+        return df
+    
+    def remove_correlated_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Remove highly correlated features."""
+        df = data.copy()
+        correlation_matrix = df[self.numeric_features].corr().abs()
+        upper_triangle = correlation_matrix.where(
+            np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
+        )
+        highly_correlated = [
+            column for column in upper_triangle.columns 
+            if any(upper_triangle[column] > self.config.correlation_threshold)
+        ]
+        return df.drop(columns=highly_correlated)
+    
+    def calculate_vif(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Calculate Variance Inflation Factor and remove high VIF features."""
+        df = data.copy()
+        X = add_constant(df[self.numeric_features])
+        vif_data = pd.DataFrame()
+        vif_data["Feature"] = X.columns
+        vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
+        low_vif_features = vif_data[vif_data["VIF"] < self.config.vif_threshold]["Feature"].tolist()
+        return df[low_vif_features]
+
+class ModelBuilder:
+    """Handles model building, evaluation, and visualization."""
+    
+    def __init__(self, config: ModelConfig):
+        self.config = config
+        self.final_model = None
+        self.selected_features = []
+        
+    def setup_pycaret(self, data: pd.DataFrame) -> None:
+        """Set up PyCaret environment."""
+        clf = setup(
+            data=data,
+            target=self.config.target_column,
+            train_size=self.config.train_size,
+            remove_multicollinearity=True,
+            multicollinearity_threshold=self.config.correlation_threshold,
+            feature_selection=True,
+            feature_selection_threshold=self.config.feature_selection_threshold,
+            ignore_low_variance=True,
+            remove_outliers=False,
+            silent=True,
+            session_id=self.config.random_state
+        )
+        self.selected_features = get_config('X_train').columns.tolist()
+        
+    def train_model(self) -> None:
+        """Train and tune the model."""
+        self.final_model = compare_models(sort='AUC', n_select=1)
+        self.final_model = tune_model(self.final_model, optimize='AUC', n_iter=10)
+        self.final_model = finalize_model(self.final_model)
+        
+    def generate_feature_importance(self, output_dir: Path) -> None:
+        """Generate and save feature importance analysis."""
+        feature_imp = pd.DataFrame(
+            self.final_model.feature_importances_,
+            index=self.selected_features,
+            columns=['Importance']
+        )
+        feature_imp = feature_imp.sort_values(by="Importance", ascending=False)
+        feature_imp.to_csv(output_dir / "feature_importance.csv", index=True)
+        
+        # SHAP analysis
+        explainer = shap.TreeExplainer(self.final_model)
+        shap_values = explainer.shap_values(get_config('X_train'))
+        plt.figure()
+        shap.summary_plot(shap_values, get_config('X_train'))
+        plt.savefig(output_dir / "shap_feature_importance.png")
+        plt.close()
+        
+    def generate_evaluation_plots(self, output_dir: Path) -> None:
+        """Generate and save model evaluation plots."""
+        plot_types = ['auc', 'pr', 'feature']
+        for plot_type in plot_types:
+            plt.figure()
+            plot_model(self.final_model, plot=plot_type)
+            plt.savefig(output_dir / f"{plot_type}_plot.png")
+            plt.close()
+            
+    def generate_gains_chart(self, output_dir: Path) -> None:
+        """Generate and save gains chart."""
+        gains_df = get_config('y_test').reset_index(drop=True)
+        gains_df['prediction'] = predict_model(self.final_model, data=get_config('X_test'))['Score']
+        gains_df['Decile'] = pd.qcut(gains_df['prediction'], q=10, labels=False, duplicates='drop')
+        
+        plt.figure(figsize=(10, 6))
+        sns.barplot(
+            x=gains_df.groupby("Decile")["prediction"].mean().index,
+            y=gains_df.groupby("Decile")["prediction"].mean().values
+        )
+        plt.title("Gains Chart (Decile Analysis)")
+        plt.xlabel("Decile")
+        plt.ylabel("Mean Prediction Score")
+        plt.savefig(output_dir / "gains_chart.png")
+        plt.close()
+
+def main():
+    # Create output directory
+    output_dir = Path("model_output")
+    output_dir.mkdir(exist_ok=True)
+    
+    # Initialize configuration
+    config = ModelConfig(
+        target_column='mevent',
+        important_business_features=['cust_tenure', 'credit_card_limit', 'account_balance']
+    )
+    
+    try:
+        # Load data
+        logging.info("Loading data...")
+        data = pd.read_csv("your_data.csv")
+        
+        # Initialize processors
+        feature_processor = FeatureProcessor(config)
+        model_builder = ModelBuilder(config)
+        
+        # Process features
+        logging.info("Processing features...")
+        feature_processor.identify_feature_types(data)
+        data = feature_processor.handle_missing_values(data)
+        data = feature_processor.encode_categorical_variables(data)
+        data = feature_processor.remove_correlated_features(data)
+        data = feature_processor.calculate_vif(data)
+        
+        # Save all features before selection
+        pd.DataFrame({'Features': data.columns.tolist()}).to_csv(
+            output_dir / "all_features.csv",
+            index=False
+        )
+        
+        # Build and evaluate model
+        logging.info("Building model...")
+        model_builder.setup_pycaret(data)
+        model_builder.train_model()
+        
+        # Generate visualizations and save results
+        logging.info("Generating visualizations and saving results...")
+        model_builder.generate_feature_importance(output_dir)
+        model_builder.generate_evaluation_plots(output_dir)
+        model_builder.generate_gains_chart(output_dir)
+        
+        # Save model
+        save_model(model_builder.final_model, output_dir / "final_model")
+        
+        logging.info("Pipeline completed successfully!")
+        
+    except Exception as e:
+        logging.error(f"Error in pipeline: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+import pandas as pd
 
 # Ensure 'mevent' is an integer
 frequency_table['mevent'] = frequency_table['mevent'].astype(int)
