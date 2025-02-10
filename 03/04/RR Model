@@ -1,3 +1,173 @@
+u
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+import shap
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from catboost import Pool, CatBoostClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve
+from pycaret.classification import *
+import matplotlib.patches as patches
+import matplotlib.ticker as mtick
+import lime.lime_tabular
+from scipy import stats
+import pandasql as ps
+import os
+import json
+
+from IPython.core.interactiveshell import InteractiveShell
+InteractiveShell.ast_node_interactivity = "all"
+
+# Install necessary packages
+get_ipython().system('pip install --upgrade pandas')
+get_ipython().system('pip install seaborn --upgrade')
+
+# Check versions
+sns._version_
+pd._version_
+
+# Copy dataset from Hadoop
+get_ipython().system('hadoop fs -copyToLocal gs://RR_Model_Development_Data.csv /opt/jupyter/notebook/')
+
+# Create output directory
+if not os.path.exists('Output_RR'):
+    os.makedirs('Output_RR')
+
+path = os.path.join(os.getcwd(), 'Output_RR/')
+path
+data_path = "/opt/jupyter/notebook/RR_Model_Development_Data.csv"
+
+# Load dataset
+raw = pd.read_csv(data_path, encoding='cp1252')
+raw.columns = [x.lower() for x in raw.columns]
+raw = raw.rename(columns={'custid': 'cust_num'})
+
+print(raw.shape)
+print(raw['selection_month'].unique())
+print(raw['mevent'].value_counts())
+raw.head()
+
+# Process customer numbers
+raw['cust_num'] = raw['cust_num'].astype(str).apply(lambda x: x.zfill(9))
+raw.head()
+
+# Frequency table generation
+frequency = raw.groupby(['selection_month', 'samplingweight', 'mevent'], as_index=False).agg({'gbflag': len})
+frequency['total'] = frequency['samplingweight'] * frequency['gbflag']
+frequency_table = frequency.groupby(['selection_month', 'mevent'], as_index=False).agg({'total': sum})
+frequency_table['total'] = frequency_table['total'].astype('int64')
+
+frequency_tab = pd.DataFrame(frequency_table.pivot_table(index=['selection_month'], columns='mevent',
+                                                          aggfunc=sum, fill_value=0).reset_index())
+frequency_tab.columns = ['Selection Month', 'Non Event', 'Event']
+frequency_tab['Total Base'] = frequency_tab['Non Event'] + frequency_tab['Event']
+frequency_tab['Event Rate in %'] = ((frequency_tab['Event'] * 100) / frequency_tab['Total Base']).round(2)
+frequency_tab['Selection Month'] = frequency_tab['Selection Month'].astype(str)
+
+# Display dataframe
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Frequency Table", dataframe=frequency_tab)
+
+raw.describe()
+
+# Drop columns with all missing values
+cols_to_drop_all_missing = raw.columns[raw.eq(0).all()].tolist()
+raw1 = raw.drop(columns=cols_to_drop_all_missing)
+print(raw1.shape)
+print(raw1['mevent'].value_counts())
+
+# Handle missing values
+raw2 = raw1.fillna(raw1.mode().iloc[0])
+print(raw2.shape)
+print(raw2['mevent'].value_counts())
+
+# Drop irrelevant columns
+drop_cols = ['ga_cust_id', 'gndr_cde', 'gbflag', 'model', 'fin_annual_sal_src', 'gender']
+dataset_raw = raw2.drop(columns=drop_cols, axis=1)
+print(dataset_raw.shape)
+print(dataset_raw['mevent'].value_counts())
+
+# Save dataset
+dataset_raw.to_csv(path + 'dev_data.csv', encoding='utf-8', index=False)
+
+# Setup PyCaret
+cat_feat1 = list(dataset_raw.select_dtypes(include=['object']).columns)
+int_feat1 = list(dataset_raw.select_dtypes(include=['int64', 'float64', 'float32']).columns)
+int_feat1.remove('mevent')
+
+clf = setup(dataset_raw, target='mevent',
+            ignore_features=['selectionprob', 'cust_num', 'samplingweight', 'selection_month', 'key', 'age_yr_gam', 'age_flag'],
+            numeric_imputation='mean',
+            categorical_imputation='mode',
+            remove_outliers=True,
+            train_size=0.70,
+            session_id=1992)
+
+# Compare models
+base_model = compare_models(fold=3, round=2, sort='AUC', n_select=1)
+base_model_init_results = pull()
+base_model_init_results = pd.DataFrame(base_model_init_results)
+base_model_init_results.to_csv(path + 'base_model_init_results.csv', encoding='utf-8', index=False)
+
+# Get training data
+X_train = get_config('X_train')
+y_train = get_config('y_train')
+
+# Feature selection
+def drop_correlated_features(df, threshold=0.9):
+    corr_matrix = df.corr().abs()
+    upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+    to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > threshold)]
+    return df.drop(columns=to_drop)
+
+X_train_corr = drop_correlated_features(X_train, threshold=0.9)
+
+# Feature importance
+feature_names = pd.DataFrame(X_train_corr.columns)
+feature_names['var'] = feature_names
+feature_imp = pd.DataFrame(base_model.feature_importances_)
+feature_imp['imp'] = feature_imp
+var_imp = pd.concat([feature_names, feature_imp], axis=1)
+var_imp = var_imp[['var', 'imp']].sort_values(['imp'], ascending=False)
+
+# Hyperparameter tuning
+params = {
+    'n_estimators': [40, 50, 75, 100],
+    'learning_rate': [0.05, 0.1, 0.15, 0.2],
+    'max_depth': [2, 3, 4],
+    'min_samples_split': [5, 10, 15, 20],
+    'min_samples_leaf': [4, 6, 10]
+}
+gbc_custom_v1 = tune_model(base_model, custom_grid=params)
+
+# Save model
+save_model(gbc_custom_v1, path + 'model_tune_gbc')
+
+# Generate ROC curve
+fpr, tpr, thresholds = roc_curve(y_train, gbc_custom_v1.predict_proba(X_train)[:, 1])
+plt.plot([0, 1], [0, 1], linestyle='--', label='No Skill')
+plt.plot(fpr, tpr, marker='.', label='GBC')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.legend()
+plt.savefig(path + 'ROC.png', dpi=50, bbox_inches='tight')
+
+# Save training results
+scr_all, scr_train, scr_test = predict_model(gbc_custom_v1, dataset_raw, raw_score=True)
+scr_all.to_csv(path + 'scr_all.csv', encoding='utf-8', index=False)
+
+# Display summary statistics
+print(f"Train Gini: {roc_auc_score(y_train, gbc_custom_v1.predict_proba(X_train)[:, 1]) * 2 - 1}")
+
+
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
