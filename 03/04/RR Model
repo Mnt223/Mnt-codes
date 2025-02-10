@@ -1,3 +1,119 @@
+# Take intersection of all feature selection methods
+final_selected_features = list(set(selected_features_rfe) & set(selected_features_mi) & set(selected_features_shap))
+
+# Keep only final selected features
+raw = raw[['mevent'] + final_selected_features]
+print(f"Final selected features: {len(final_selected_features)}")
+
+
+
+
+
+
+
+
+from catboost import CatBoostClassifier
+import shap
+
+def select_features_by_shap(X, y, model=None, n_features=30):
+    """
+    Selects the top N features based on SHAP values.
+    """
+    if model is None:
+        model = CatBoostClassifier(iterations=100, depth=5, learning_rate=0.1, silent=True)
+        model.fit(X, y)
+
+    explainer = shap.Explainer(model, X)
+    shap_values = explainer(X)
+
+    shap_importance = np.abs(shap_values.values).mean(axis=0)
+    shap_df = pd.DataFrame({'Feature': X.columns, 'SHAP Value': shap_importance}).sort_values(by='SHAP Value', ascending=False)
+
+    selected_features = shap_df['Feature'].head(n_features).tolist()
+    print(f"Selected {len(selected_features)} features using SHAP Importance.")
+    
+    return selected_features
+
+# Apply SHAP Selection
+selected_features_shap = select_features_by_shap(raw[num_features], raw['mevent'], n_features=50)
+
+# Keep only selected features
+raw = raw[['mevent'] + selected_features_shap]
+
+
+
+
+
+
+
+
+from sklearn.feature_selection import mutual_info_classif
+
+def select_features_by_mutual_info(X, y, n_features=30):
+    """
+    Selects features based on Mutual Information Score.
+    """
+    mi_scores = mutual_info_classif(X, y, discrete_features=False)
+    mi_df = pd.DataFrame({'Feature': X.columns, 'MI Score': mi_scores}).sort_values(by='MI Score', ascending=False)
+
+    selected_features = mi_df['Feature'].head(n_features).tolist()
+    print(f"Selected {len(selected_features)} features using Mutual Information.")
+    
+    return selected_features
+
+# Apply Mutual Information Selection
+selected_features_mi = select_features_by_mutual_info(raw[num_features], raw['mevent'], n_features=50)
+
+# Keep only selected features
+raw = raw[['mevent'] + selected_features_mi]
+
+
+
+
+
+
+
+
+
+
+
+
+
+from sklearn.feature_selection import RFE
+from sklearn.ensemble import RandomForestClassifier
+
+def feature_selection_rfe(X, y, n_features=30):
+    """
+    Applies Recursive Feature Elimination (RFE) to select the top N features.
+    """
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+
+    selector = RFE(model, n_features_to_select=n_features, step=1)
+    selector.fit(X, y)
+
+    selected_features = X.columns[selector.support_].tolist()
+    print(f"Selected {len(selected_features)} features using RFE.")
+    
+    return selected_features
+
+# Ensure correct numeric feature selection
+num_features = raw.select_dtypes(include=['int64', 'float64']).columns.tolist()
+
+# Apply RFE on numeric features
+selected_features_rfe = feature_selection_rfe(raw[num_features], raw['mevent'], n_features=50)
+
+# Keep only selected features
+raw = raw[['mevent'] + selected_features_rfe]
+
+
+
+
+
+
+
+
+
+
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tools.tools import add_constant
 
