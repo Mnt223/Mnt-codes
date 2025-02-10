@@ -1,3 +1,50 @@
+import pandas as pd
+
+# Assuming 'raw' is your original dataframe
+frequency = raw[raw['final_cus_seg'] != 'Card Only'].groupby(
+    ['selection_month', 'samplingweight', 'mevent'],
+    as_index=False
+).agg({'gbflag': 'sum'})
+
+# Compute total based on sampling weight
+frequency['total'] = frequency['samplingweight'] * frequency['gbflag']
+
+# Aggregate by selection_month and mevent
+frequency_table = frequency.groupby(['selection_month', 'mevent'], as_index=False).agg({'total': 'sum'})
+
+# Convert total column to int
+frequency_table['total'] = frequency_table['total'].astype('int64')
+
+# Create pivot table
+frequency_tab = frequency_table.pivot_table(
+    index=['selection_month'],
+    columns='mevent',
+    values='total',
+    aggfunc='sum',
+    fill_value=0
+).reset_index()
+
+# Rename columns properly
+frequency_tab.columns = ['Selection Month', 'Non Event', 'Event']
+
+# Compute total base
+frequency_tab['Total Base'] = frequency_tab['Non Event'] + frequency_tab['Event']
+
+# Compute event rate in percentage
+frequency_tab['Event Rate in %'] = ((frequency_tab['Event'] * 100) / frequency_tab['Total Base']).round(decimals=2)
+
+# Ensure Selection Month is a string
+frequency_tab['Selection Month'] = frequency_tab['Selection Month'].astype(str)
+
+# Save to CSV
+frequency_tab.to_csv('frequency_tab.csv', encoding='utf-8', index=False)
+
+# Display result
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Frequency Table", dataframe=frequency_tab)
+
+
+
 # Take intersection of all feature selection methods
 final_selected_features = list(set(selected_features_rfe) & set(selected_features_mi) & set(selected_features_shap))
 
