@@ -1,0 +1,131 @@
+# Import necessary libraries
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_selection import RFE, mutual_info_classif
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+from catboost import CatBoostClassifier
+from pycaret.classification import setup, compare_models, tune_model, get_config, create_model, predict_model
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+import shap
+
+# Define paths
+data_path = "/opt/jupyter/notebook/RR_Model_Development_Data.csv"
+output_path = "/opt/jupyter/notebook/notebooks/jupyter/Output_RR/"
+if not os.path.exists(output_path):
+    os.makedirs(output_path)
+
+# Load Data
+raw = pd.read_csv(data_path, encoding="cp1252")
+raw.columns = [x.lower() for x in raw.columns]
+raw = raw.rename(columns={'custid': 'cust_num'})
+
+# Drop columns with more than 80% missing values
+missing_threshold = 0.8
+missing_fraction = raw.isnull().sum() / len(raw)
+cols_to_drop_missing = missing_fraction[missing_fraction > missing_threshold].index.tolist()
+raw = raw.drop(columns=cols_to_drop_missing)
+
+# Drop columns with very low variance
+low_variance_cols = raw.var().loc[lambda x: x < 0.01].index.tolist()
+raw = raw.drop(columns=low_variance_cols)
+
+# Fill missing values
+raw.fillna(raw.mode().iloc[0], inplace=True)
+
+# Convert customer ID to string and standardize length
+raw['cust_num'] = raw['cust_num'].astype(str).apply(lambda x: x.zfill(9))
+
+# Identify categorical and numerical variables
+cat_features = list(raw.select_dtypes(include=['object']).columns)
+num_features = list(raw.select_dtypes(include=['int64', 'float64']).columns)
+
+# Remove target variable from num_features list
+num_features.remove('mevent')
+
+### 1. **Correlation-based Feature Selection**
+def drop_correlated_features(df, threshold=0.9):
+    corr_matrix = df.corr().abs()
+    upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+    to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > threshold)]
+    return df.drop(columns=to_drop)
+
+raw = drop_correlated_features(raw, threshold=0.9)
+
+### 2. **Variance Inflation Factor (VIF)**
+def drop_high_vif_features(df, threshold=10):
+    X = add_constant(df)
+    vif_data = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
+    to_drop = vif_data[vif_data > threshold].index.tolist()
+    return df.drop(columns=to_drop)
+
+raw = drop_high_vif_features(raw[num_features])
+
+### 3. **Recursive Feature Elimination (RFE)**
+# Use Logistic Regression or Random Forest to select top features
+def feature_selection_rfe(X, y, n_features=30):
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    selector = RFE(model, n_features_to_select=n_features, step=1)
+    selector.fit(X, y)
+    selected_features = X.columns[selector.support_].tolist()
+    return selected_features
+
+selected_features_rfe = feature_selection_rfe(raw[num_features], raw['mevent'], n_features=50)
+
+### 4. **Mutual Information Gain**
+def select_features_by_mutual_info(X, y, n_features=30):
+    mi_scores = mutual_info_classif(X, y, discrete_features=False)
+    mi_df = pd.DataFrame({'Feature': X.columns, 'MI Score': mi_scores}).sort_values(by='MI Score', ascending=False)
+    return mi_df['Feature'].head(n_features).tolist()
+
+selected_features_mi = select_features_by_mutual_info(raw[num_features], raw['mevent'], n_features=50)
+
+### 5. **SHAP Feature Importance**
+def select_features_by_shap(X, y, model=None, n_features=30):
+    if model is None:
+        model = CatBoostClassifier(iterations=100, depth=5, learning_rate=0.1, silent=True)
+        model.fit(X, y)
+    
+    explainer = shap.Explainer(model, X)
+    shap_values = explainer(X)
+    shap_importance = np.abs(shap_values.values).mean(axis=0)
+    shap_df = pd.DataFrame({'Feature': X.columns, 'SHAP Value': shap_importance}).sort_values(by='SHAP Value', ascending=False)
+    return shap_df['Feature'].head(n_features).tolist()
+
+selected_features_shap = select_features_by_shap(raw[num_features], raw['mevent'], n_features=50)
+
+# **Final Selected Features (Intersection of All Methods)**
+final_selected_features = list(set(selected_features_rfe) & set(selected_features_mi) & set(selected_features_shap))
+raw = raw[['mevent'] + final_selected_features]
+
+# PyCaret Model Training
+clf = setup(
+    raw, 
+    target='mevent',
+    numeric_imputation='mean',
+    categorical_imputation='mode',
+    remove_outliers=True,
+    train_size=0.7,
+    session_id=1992
+)
+
+# Train the best model
+best_model = compare_models(fold=5, round=2, sort='AUC', n_select=1)
+
+# Tune the best model
+tuned_model = tune_model(best_model, fold=5, optimize='AUC')
+
+# Save Feature Importance
+feature_importance = pd.DataFrame({'Feature': final_selected_features, 'Importance': tuned_model.feature_importances_})
+feature_importance.to_csv(output_path + "final_feature_importance.csv", index=False)
+
+# Save the final dataset with selected features
+raw.to_csv(output_path + "final_selected_data.csv", index=False)
