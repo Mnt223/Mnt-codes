@@ -1,6 +1,40 @@
 import pandas as pd
 
 # Ensure 'mevent' is an integer
+frequency_table['mevent'] = frequency_table['mevent'].astype(int)
+
+# Use pivot_table instead of pivot to handle duplicate entries
+frequency_tab = frequency_table.pivot_table(
+    index='selection_month', 
+    columns='mevent', 
+    values='total',
+    aggfunc='sum',  # Aggregate sum in case of duplicate rows
+    fill_value=0  # Replace missing values with 0
+).reset_index()
+
+# Rename columns properly
+frequency_tab.columns.name = None  # Remove pivot_table auto-generated column name
+frequency_tab.rename(columns={0: 'Non Event', 1: 'Event'}, inplace=True)
+
+# Compute Total Base
+frequency_tab['Total Base'] = frequency_tab['Non Event'] + frequency_tab['Event']
+
+# Compute Event Rate
+frequency_tab['Event Rate in %'] = ((frequency_tab['Event'] * 100) / frequency_tab['Total Base']).round(2)
+
+# Convert Selection Month to string
+frequency_tab['Selection Month'] = frequency_tab['Selection Month'].astype(str)
+
+# Display the cleaned dataframe
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Frequency Table", dataframe=frequency_tab)
+
+
+
+
+import pandas as pd
+
+# Ensure 'mevent' is an integer
 frequency['mevent'] = frequency['mevent'].astype(int)
 
 # Aggregate total sum for each 'selection_month' and 'mevent' to remove duplicates
