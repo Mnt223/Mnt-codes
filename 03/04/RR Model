@@ -1,3 +1,44 @@
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+
+def drop_high_vif_features(df, threshold=10):
+    """
+    Drops features with a high Variance Inflation Factor (VIF) score.
+    """
+    # Ensure only numeric columns are used
+    numeric_features = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+
+    # Ensure columns exist before applying VIF
+    if not numeric_features:
+        print("No numeric features found for VIF calculation.")
+        return df
+
+    X = add_constant(df[numeric_features])  # Add constant term for VIF calculation
+
+    # Calculate VIF for each feature
+    vif_data = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
+
+    # Identify features with VIF above threshold
+    to_drop = vif_data[vif_data > threshold].index.tolist()
+
+    print(f"Dropping {len(to_drop)} features with VIF > {threshold}: {to_drop}")
+
+    return df.drop(columns=to_drop, errors="ignore")  # Avoid KeyError
+
+# Apply VIF reduction
+raw = drop_high_vif_features(raw)
+
+
+
+
+
+
+
+
+
+
+
+
 # Import necessary libraries
 import os
 import numpy as np
