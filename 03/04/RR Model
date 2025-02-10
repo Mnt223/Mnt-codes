@@ -5,6 +5,214 @@ import seaborn as sns
 import joblib
 import shap
 from pathlib import Path
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+from pycaret.classification import *
+import logging
+
+# Set up logging and output directory
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+output_dir = Path("model_output")
+output_dir.mkdir(exist_ok=True)
+
+# Configuration parameters
+TARGET_COLUMN = 'mevent'
+TRAIN_SIZE = 0.7
+RANDOM_STATE = 42
+CORRELATION_THRESHOLD = 0.85
+VIF_THRESHOLD = 5
+FEATURE_SELECTION_THRESHOLD = 0.005
+IMPORTANT_BUSINESS_FEATURES = ['cust_tenure', 'credit_card_limit', 'account_balance']
+
+try:
+    # Step 1: Load Dataset
+    logging.info("Loading dataset...")
+    data = pd.read_csv("your_data.csv")  # Replace with actual file path
+    
+    # Step 2: Identify Numeric & Categorical Variables
+    logging.info("Identifying feature types...")
+    numeric_features = data.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    categorical_features = data.select_dtypes(include=['object', 'category']).columns.tolist()
+    
+    # Step 3: Handle Missing Values
+    logging.info("Handling missing values...")
+    for col in numeric_features:
+        data[col] = data[col].fillna(data[col].median())
+    
+    for col in categorical_features:
+        data[col] = data[col].fillna(data[col].mode()[0])
+    
+    # Step 4: Encode Categorical Variables
+    logging.info("Encoding categorical variables...")
+    label_encoders = {}
+    for col in categorical_features:
+        le = LabelEncoder()
+        data[col] = le.fit_transform(data[col])
+        label_encoders[col] = le
+    
+    # Step 5: Save Initial Features
+    all_features = data.columns.tolist()
+    pd.DataFrame({'Features': all_features}).to_csv(output_dir / "all_features.csv", index=False)
+    
+    # Step 6: Remove Highly Correlated Variables
+    logging.info("Removing highly correlated features...")
+    correlation_matrix = data[numeric_features].corr().abs()
+    upper_triangle = correlation_matrix.where(
+        np.triu(np.ones(correlation_matrix.shape), k=1).astype(bool)
+    )
+    highly_correlated = [
+        column for column in upper_triangle.columns 
+        if any(upper_triangle[column] > CORRELATION_THRESHOLD)
+    ]
+    data.drop(columns=highly_correlated, inplace=True)
+    
+    # Step 7: Calculate and Filter by VIF
+    logging.info("Calculating VIF and removing high VIF features...")
+    X = add_constant(data[numeric_features])
+    vif_data = pd.DataFrame()
+    vif_data["Feature"] = X.columns
+    vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(X.shape[1])]
+    low_vif_features = vif_data[vif_data["VIF"] < VIF_THRESHOLD]["Feature"].tolist()
+    data = data[low_vif_features]
+    
+    # Step 8: Split Data
+    logging.info("Splitting data into train and test sets...")
+    X_train, X_test, y_train, y_test = train_test_split(
+        data.drop(columns=[TARGET_COLUMN]), 
+        data[TARGET_COLUMN], 
+        test_size=1-TRAIN_SIZE, 
+        random_state=RANDOM_STATE
+    )
+    
+    # Step 9: PyCaret Setup and Feature Selection
+    logging.info("Setting up PyCaret and performing feature selection...")
+    clf = setup(
+        data=data,
+        target=TARGET_COLUMN,
+        train_size=TRAIN_SIZE,
+        remove_multicollinearity=True,
+        multicollinearity_threshold=CORRELATION_THRESHOLD,
+        feature_selection=True,
+        feature_selection_threshold=FEATURE_SELECTION_THRESHOLD,
+        ignore_low_variance=True,
+        remove_outliers=False,
+        silent=True,
+        session_id=RANDOM_STATE
+    )
+    
+    # Step 10: Get and Save Selected Features
+    selected_features = get_config('X_train').columns.tolist()
+    pd.DataFrame({'Features': selected_features}).to_csv(
+        output_dir / "selected_features.csv", 
+        index=False
+    )
+    
+    # Step 11: Check Removed Features
+    removed_features = list(set(all_features) - set(selected_features))
+    pd.DataFrame({'Removed Features': removed_features}).to_csv(
+        output_dir / "removed_features.csv", 
+        index=False
+    )
+    
+    # Step 12: Check Important Business Features
+    missing_business_features = [
+        feature for feature in IMPORTANT_BUSINESS_FEATURES 
+        if feature not in selected_features
+    ]
+    if missing_business_features:
+        logging.warning(f"Important business features removed: {missing_business_features}")
+        selected_features = list(set(selected_features) | set(IMPORTANT_BUSINESS_FEATURES))
+    
+    # Step 13: Model Selection and Training
+    logging.info("Training and tuning model...")
+    best_model = compare_models(sort='AUC', n_select=1)
+    tuned_model = tune_model(best_model, optimize='AUC', n_iter=10)
+    final_model = finalize_model(tuned_model)
+    
+    # Step 14: Save Model
+    logging.info("Saving final model...")
+    save_model(final_model, output_dir / "final_model")
+    
+    # Step 15: Feature Importance Analysis
+    logging.info("Generating feature importance analysis...")
+    feature_imp = pd.DataFrame(
+        final_model.feature_importances_,
+        index=selected_features,
+        columns=['Importance']
+    )
+    feature_imp = feature_imp.sort_values(by="Importance", ascending=False)
+    feature_imp.to_csv(output_dir / "feature_importance.csv", index=True)
+    
+    # Step 16: SHAP Analysis
+    logging.info("Generating SHAP analysis...")
+    explainer = shap.TreeExplainer(final_model)
+    shap_values = explainer.shap_values(get_config('X_train'))
+    plt.figure(figsize=(10, 6))
+    shap.summary_plot(shap_values, get_config('X_train'))
+    plt.savefig(output_dir / "shap_feature_importance.png")
+    plt.close()
+    
+    # Step 17: Generate Evaluation Plots
+    logging.info("Generating evaluation plots...")
+    evaluate_model(final_model)
+    
+    plot_types = ['auc', 'pr', 'feature']
+    for plot_type in plot_types:
+        plt.figure()
+        plot_model(final_model, plot=plot_type)
+        plt.savefig(output_dir / f"{plot_type}_plot.png")
+        plt.close()
+    
+    # Step 18: Generate Gains Chart
+    logging.info("Generating gains chart...")
+    gains_df = get_config('y_test').reset_index(drop=True)
+    gains_df['prediction'] = predict_model(final_model, data=get_config('X_test'))['Score']
+    gains_df['Decile'] = pd.qcut(gains_df['prediction'], q=10, labels=False, duplicates='drop')
+    
+    plt.figure(figsize=(10, 6))
+    sns.barplot(
+        x=gains_df.groupby("Decile")["prediction"].mean().index,
+        y=gains_df.groupby("Decile")["prediction"].mean().values
+    )
+    plt.title("Gains Chart (Decile Analysis)")
+    plt.xlabel("Decile")
+    plt.ylabel("Mean Prediction Score")
+    plt.savefig(output_dir / "gains_chart.png")
+    plt.close()
+    
+    # Step 19: Print Final Summary
+    logging.info("Generating final summary...")
+    print("\nFinal Summary:")
+    print(f"Total Features Before Selection: {len(all_features)}")
+    print(f"Total Features After Selection: {len(selected_features)}")
+    print(f"Important Business Features Removed: {missing_business_features}")
+    print("\nTop 10 Features by Importance:")
+    print(feature_imp.head(10))
+    
+    logging.info("Pipeline completed successfully!")
+
+except Exception as e:
+    logging.error(f"Error in pipeline: {str(e)}")
+    raise
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+import shap
+from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from sklearn.model_selection import train_test_split
