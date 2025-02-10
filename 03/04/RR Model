@@ -1,38 +1,33 @@
-m
 import pandas as pd
 
-# Grouping by selection_month, samplingweight, and mevent, counting gbflag occurrences
-frequency = raw.groupby(['selection_month', 'samplingweight', 'mevent'], as_index=False).agg({'gbflag': 'count'})
+# Ensure 'mevent' is an integer
+frequency['mevent'] = frequency['mevent'].astype(int)
 
-# Creating a total column by multiplying samplingweight with gbflag count
-frequency['total'] = frequency['samplingweight'] * frequency['gbflag']
-
-# Grouping again by selection_month and mevent, summing the total
+# Aggregate total sum for each 'selection_month' and 'mevent' to remove duplicates
 frequency_table = frequency.groupby(['selection_month', 'mevent'], as_index=False).agg({'total': 'sum'})
 
-# Converting total column to int
-frequency_table['total'] = frequency_table['total'].astype('int64')
+# Debugging step: Check for issues before pivoting
+print(frequency_table.head())  # Check structure before pivot
+print(frequency_table.dtypes)  # Ensure 'mevent' and 'selection_month' are correct
 
-# Creating a pivot table with correct column assignments
-frequency_tab = frequency_table.pivot_table(
-    index='selection_month',    # Rows
-    columns='mevent',           # Column headers
-    values='total',             # Values to aggregate
-    aggfunc='sum', 
-    fill_value=0
-).reset_index()
+# Use pivot instead of pivot_table to avoid unstack() errors
+frequency_tab = frequency_table.pivot(
+    index='selection_month', 
+    columns='mevent', 
+    values='total'
+).fillna(0).reset_index()
 
-# Renaming columns properly
-frequency_tab.columns.name = None  # Remove hierarchical index from pivot_table()
-frequency_tab.rename(columns={0: 'Non Event', 1: 'Event'}, inplace=True)  # Ensure correct naming
+# Rename columns properly
+frequency_tab.columns.name = None  # Remove pivot_table auto-generated column name
+frequency_tab.rename(columns={0: 'Non Event', 1: 'Event'}, inplace=True)
 
-# Calculating Total Base
+# Compute Total Base
 frequency_tab['Total Base'] = frequency_tab['Non Event'] + frequency_tab['Event']
 
-# Calculating Event Rate in percentage
+# Compute Event Rate
 frequency_tab['Event Rate in %'] = ((frequency_tab['Event'] * 100) / frequency_tab['Total Base']).round(2)
 
-# Ensuring 'Selection Month' is a string
+# Convert Selection Month to string
 frequency_tab['Selection Month'] = frequency_tab['Selection Month'].astype(str)
 
 # Display the cleaned dataframe
@@ -40,6 +35,48 @@ import ace_tools as tools
 tools.display_dataframe_to_user(name="Frequency Table", dataframe=frequency_tab)
 
 
+
+
+
+
+
+
+m
+import pandas as pd
+
+# Ensure 'mevent' is an integer
+frequency['mevent'] = frequency['mevent'].astype(int)
+
+# Aggregate total sum for each 'selection_month' and 'mevent' to remove duplicates
+frequency_table = frequency.groupby(['selection_month', 'mevent'], as_index=False).agg({'total': 'sum'})
+
+# Debugging step: Check for issues before pivoting
+print(frequency_table.head())  # Check structure before pivot
+print(frequency_table.dtypes)  # Ensure 'mevent' and 'selection_month' are correct
+
+# Use pivot instead of pivot_table to avoid unstack() errors
+frequency_tab = frequency_table.pivot(
+    index='selection_month', 
+    columns='mevent', 
+    values='total'
+).fillna(0).reset_index()
+
+# Rename columns properly
+frequency_tab.columns.name = None  # Remove pivot_table auto-generated column name
+frequency_tab.rename(columns={0: 'Non Event', 1: 'Event'}, inplace=True)
+
+# Compute Total Base
+frequency_tab['Total Base'] = frequency_tab['Non Event'] + frequency_tab['Event']
+
+# Compute Event Rate
+frequency_tab['Event Rate in %'] = ((frequency_tab['Event'] * 100) / frequency_tab['Total Base']).round(2)
+
+# Convert Selection Month to string
+frequency_tab['Selection Month'] = frequency_tab['Selection Month'].astype(str)
+
+# Display the cleaned dataframe
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Frequency Table", dataframe=frequency_tab)
 
 
 
