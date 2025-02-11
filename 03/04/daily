@@ -1,3 +1,15 @@
+Growth_Indicator = 
+VAR GrowthValue = SUM('YourTable'[Growth])
+RETURN 
+    IF(GrowthValue > 0, "▲ " & FORMAT(GrowthValue, "0.00%"), "▼ " & FORMAT(GrowthValue, "0.00%"))
+
+
+
+
+
+
+
+
 DateTable = 
 VAR MinDate = MIN('YourTable'[Month_text])
 VAR MaxDate = MAX('YourTable'[Month_text])
