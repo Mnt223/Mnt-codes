@@ -1,4 +1,14 @@
-
+DateTable = 
+VAR MinDate = MIN('YourTable'[Month_text])
+VAR MaxDate = MAX('YourTable'[Month_text])
+RETURN
+ADDCOLUMNS(
+    FILTER(CALENDAR(MinDate, MaxDate), 
+           YEAR([Date]) >= YEAR(MinDate) && YEAR([Date]) <= YEAR(MaxDate)),
+    "Year", YEAR([Date]),
+    "Month", FORMAT([Date], "MMM"),
+    "MonthNumber", MONTH([Date])
+)
 
 
 
