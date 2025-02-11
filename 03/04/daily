@@ -1,3 +1,62 @@
+filename outbox email
+    to=("receiver@domain.com")
+    from="your_email@domain.com"
+    subject="Segmentation EOP Report"
+    content_type="text/html";
+
+data _null_;
+    file outbox;
+    put '<html>';
+    put '<head><meta content="text/html; charset=ISO-8859-1" http-equiv="content-type"></head>';
+    put '<body style="font-size:10pt;font-family:Calibri, sans-serif;">';
+
+    put '<b>Dear Team,</b><br><br>';
+
+    /* TOTAL EOP SECTION */
+    put '<b>Total EOP</b><br>';
+    put '<table border="1" cellspacing="0" cellpadding="4">';
+    put '<tr bgcolor="#D3D3D3"><th>Column1</th><th>Column2</th><th>Column3</th></tr>'; /* Adjust Column Names */
+    do until (last);
+        set Total_EOP end=last;
+        put '<tr><td>' column1 '</td><td>' column2 '</td><td>' column3 '</td></tr>'; /* Adjust as per dataset */
+    end;
+    put '</table><br><br>';
+
+    /* EBS SECTION */
+    put '<b>EBS</b><br>';
+    put '<table border="1" cellspacing="0" cellpadding="4">';
+    put '<tr bgcolor="#D3D3D3"><th>Column1</th><th>Column2</th><th>Column3</th></tr>';
+    do until (last);
+        set EBS end=last;
+        put '<tr><td>' column1 '</td><td>' column2 '</td><td>' column3 '</td></tr>';
+    end;
+    put '</table><br><br>';
+
+    /* NON-EBS SECTION */
+    put '<b>Non EBS</b><br>';
+    put '<table border="1" cellspacing="0" cellpadding="4">';
+    put '<tr bgcolor="#D3D3D3"><th>Column1</th><th>Column2</th><th>Column3</th></tr>';
+    do until (last);
+        set Non_EBS end=last;
+        put '<tr><td>' column1 '</td><td>' column2 '</td><td>' column3 '</td></tr>';
+    end;
+    put '</table><br><br>';
+
+    put '<br>';
+    put '<b>Note:</b> Please validate the SQL outputs before usage and revert for any discrepancies.<br>';
+    put '<b>Confidentiality Notice:</b> This is a system-generated email, and the data is classified as <b>HIGHLY RESTRICTED</b>. Do not share externally.<br>';
+    put '<br>';
+    put 'Thanks & Regards,<br>';
+    put '<b>Business Intelligence</b><br>';
+    put '<b>HSBC Technology and Services - Service Delivery</b><br>';
+
+    put '</body></html>';
+run;
+
+
+
+
+
 
 Cost = 
 VAR MessageCount = 
