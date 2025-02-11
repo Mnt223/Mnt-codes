@@ -1,3 +1,64 @@
+filename xmlout "&excel_file.";
+
+ods tagsets.excelxp file=xmlout style=sasweb 
+    options(embedded_titles='yes' 
+            sheet_name='Segmentation Data' /* First Sheet */
+            suppress_bylines='yes' 
+            autofilter='all' 
+            embedded_footnotes='yes' 
+            absolute_column_width='15,15,15' 
+            sheet_interval='none'  
+            skip_space='2');  
+
+ods listing close;
+ods html close;
+
+/* Export Table 1: Segmentation EOP */
+title "Table 1: Total EOP";
+proc print data=Segmentation_EOP_Total noobs;
+    format Advance GPB Mass_Mkt Premier Total_Sum 12.3; 
+run;
+
+/* Add a blank row separator */
+ods text=" ";
+
+/* Export Table 2: EBS */
+title "Table 2: EBS";
+proc print data=Segmentation_EOP_EBS noobs;
+    format Advance GPB Mass_Mkt Premier Total_Sum 12.3;
+run;
+
+/* Add a blank row separator */
+ods text=" ";
+
+/* Export Table 3: Non EBS */
+title "Table 3: Non EBS";
+proc print data=Segmentation_EOP_NONEBS noobs;
+    format Advance GPB Mass_Mkt Premier Total_Sum 12.3;
+run;
+
+/* Export Daily EBS Total in Sheet 2 */
+ods tagsets.excelxp options(sheet_name='Daily EBS Total' sheet_interval='table');
+
+title "Daily EBS Total (by Date)";
+proc print data=Daily_EBS_History noobs;
+    format _numeric_ 12.3;
+run;
+
+/* Close ODS */
+ods tagsets.excelxp close;
+ods listing;
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Create Dataset for Today's EBS Total */
 data Daily_EBS_Snap;
     set Segmentation_EOP_EBS;
