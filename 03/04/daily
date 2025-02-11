@@ -1,3 +1,91 @@
+/* Step 1: Define Macros for File Paths */
+%let ydate = %sysfunc(today(), yymmddn8.);  
+
+/* Define file paths */
+%let xml_file = /home/your_username/Segmentation_EOP_Report_&ydate..xml;
+%let zip_file = /home/your_username/Segmentation_EOP_Report_&ydate..zip;
+
+filename xmlout "&xml_file.";
+
+/* Step 2: Export Three Tables into a Single XML File */
+ods tagsets.excelxp file=xmlout style=sasweb 
+    options(embedded_titles='yes' sheet_name='Sheet1' zoom='75');
+
+ods listing close;
+ods html close;
+
+/* Export Table 1: Total EOP */
+title "Table 1: Total EOP";
+proc print data=work.Total_EOP noobs;
+run;
+
+/* Export Table 2: EBS */
+title "Table 2: EBS";
+proc print data=work.EBS noobs;
+run;
+
+/* Export Table 3: Non EBS */
+title "Table 3: Non EBS";
+proc print data=work.Non_EBS noobs;
+run;
+
+/* Close ODS */
+ods tagsets.excelxp close;
+ods listing;
+
+/* Step 3: Compress the XML File into a ZIP Folder */
+filename zipout "&zip_file.";
+
+/* Use X command to create ZIP */
+x "zip -j &zip_file. &xml_file.";
+
+/* Step 4: Send Email with ZIP File Attached */
+filename outbox email
+    to=("business_stakeholders@company.com")  /* Change recipient */
+    from="your_email@company.com"             /* Change sender */
+    subject="Segmentation EOP Report"
+    content_type="text/html"
+    attach=("&zip_file.");
+
+data _null_;
+    file outbox;
+    put '<html>';
+    put '<head><meta content="text/html; charset=ISO-8859-1" http-equiv="content-type"></head>';
+    put '<body style="font-size:10pt;font-family:Calibri, sans-serif;">';
+    put '<b>Dear Business Team,</b><br><br>';
+    put 'Please find attached the required segmentation report in a ZIP folder.<br><br>';
+    put 'The ZIP file contains an XML report with the following tables:<br>';
+    put '<ul>';
+    put '<li><b>Table 1: Total EOP</b></li>';
+    put '<li><b>Table 2: EBS</b></li>';
+    put '<li><b>Table 3: Non EBS</b></li>';
+    put '</ul>';
+    put '<br>';
+    put '<b>Instructions:</b><br>';
+    put '1. Download the ZIP file.<br>';
+    put '2. Extract the XML file.<br>';
+    put '3. Open the XML file in Excel.<br><br>';
+    put '<b>Note:</b> This report is classified as <b>HIGHLY RESTRICTED</b>. Do not share externally.<br>';
+    put '<br>Thanks & Regards,<br>';
+    put '<b>Business Intelligence Team</b><br>';
+    put '</body></html>';
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Define output file for Excel */
 filename xlout "INM-RPT-418-Segmentation_EOP_Report_&ydate..xml";
 
