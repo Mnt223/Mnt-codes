@@ -1,3 +1,41 @@
+filename zipout "/home/your_username/Segmentation_Report_&month_year..zip";
+
+/* Zip the XML file */
+x "zip -j &zipout. &excel_file.";
+
+/* Send the email with ZIP attached */
+filename outbox email
+    to=("business_stakeholders@company.com") 
+    from="your_email@company.com"
+    subject="Monthly Segmentation Report - &month_year."
+    content_type="text/html"
+    attach=("&zipout.");
+
+data _null_;
+    file outbox;
+    put '<html>';
+    put '<head><meta content="text/html; charset=ISO-8859-1" http-equiv="content-type"></head>';
+    put '<body style="font-size:10pt;font-family:Calibri, sans-serif;">';
+    put '<b>Dear Team,</b><br><br>';
+    put 'Please find attached the Monthly Segmentation Report.<br>';
+    put '<b>Segmentation Data (EOP, EBS, Non-EBS)</b> is in Sheet 1.<br>';
+    put '<b>Daily EBS Total</b> (with dates as columns) is in Sheet 2.<br>';
+    put '<br><b>Note:</b> This file is updated daily throughout the month.<br>';
+    put '<br>Thanks & Regards,<br>';
+    put '<b>Business Intelligence Team</b><br>';
+    put '</body></html>';
+run;
+
+
+
+
+
+
+
+
+
+
+
 filename xmlout "&excel_file.";
 
 ods tagsets.excelxp file=xmlout style=sasweb 
