@@ -1,3 +1,56 @@
+/* Define the output XML file */
+filename xmlout "/approvl/mix_nas/inm/INMDAU/IM/SASBAU/sandbox/Prachi/Segmentation_EOP_Report_20250211.xml";
+
+/* Step 2: Export Three Tables into a Single XML File (One Sheet) */
+ods tagsets.excelxp file=xmlout style=sasweb 
+    options(embedded_titles='yes' 
+            sheet_name='Segmentation EOP' 
+            suppress_bylines='yes' 
+            autofilter='all' 
+            embedded_footnotes='yes' 
+            absolute_column_width='15,15,15');
+
+/* Close listings to avoid unwanted output */
+ods listing close;
+ods html close;
+
+/* Export Table 1: Total EOP */
+title "Table 1: Total EOP";
+proc print data=work.Segmentation_EOP noobs;
+run;
+
+/* Add a blank row as a separator */
+data _null_;
+    file print;
+    put ' ';
+run;
+
+/* Export Table 2: EBS */
+title "Table 2: EBS";
+proc print data=work.Segmentation_EBS noobs;
+run;
+
+/* Add a blank row as a separator */
+data _null_;
+    file print;
+    put ' ';
+run;
+
+/* Export Table 3: Non EBS */
+title "Table 3: Non EBS";
+proc print data=work.Segmentation_Non_EBS noobs;
+run;
+
+/* Close ODS */
+ods tagsets.excelxp close;
+ods listing;
+
+
+
+
+
+
+
 Growth_Indicator = 
 VAR GrowthValue = SUM('YourTable'[Growth])
 RETURN 
