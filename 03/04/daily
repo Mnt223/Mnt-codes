@@ -1,3 +1,33 @@
+ods tagsets.excelxp options(sheet_name='Daily EBS Total' sheet_interval='table');  
+
+/* Create dataset for today's EBS Total */
+data Daily_EBS_Snap;
+    set Segmentation_EOP_EBS;
+    keep Total_Sum;
+    format Date date9. Total_Sum 12.3;
+    Date = today(); /* Add today's date */
+run;
+
+/* Append to the existing Excel file */
+proc append base=Daily_EBS_Snap data=Daily_EBS_Snap force;
+run;
+
+/* Export the appended Daily EBS data */
+proc print data=Daily_EBS_Snap noobs;
+run;
+
+/* Close ODS */
+ods tagsets.excelxp close;
+ods listing;
+
+
+
+
+
+
+
+
+
 /* Define the output XML file */
 filename xmlout "/approvl/mix_nas/inm/INMDAU/IM/SASBAU/sandbox/Prachi/Segmentation_EOP_Report_20250211.xml";
 
