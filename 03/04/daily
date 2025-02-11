@@ -1,3 +1,37 @@
+/* Step 1: Create Dataset for Today's EBS Total */
+data Daily_EBS_Snap;
+    set Segmentation_EOP_EBS;
+    keep Total_Sum;
+    format Total_Sum 12.3;
+    retain Date;
+    Date = today(); /* Store today's date as a column */
+run;
+
+/* Step 2: Load Only Current Month's Data */
+data Daily_EBS_History;
+    set Daily_EBS_Snap;
+    where month(Date) = month(today()) and year(Date) = year(today()); /* Ensures only this month's data */
+run;
+
+/* Step 3: Transpose Data to Have Dates as Columns */
+proc transpose data=Daily_EBS_History out=Daily_EBS_Transposed(drop=_name_);
+    id Date; /* Make date a column */
+    var Total_Sum;
+run;
+
+/* Step 4: Append Today's Data to the Historical Dataset */
+proc append base=Daily_EBS_History data=Daily_EBS_Transposed force;
+run;
+
+
+
+
+
+
+
+
+
+
 /* Load Previous Data if it Exists */
 data Daily_EBS_History;
     set Daily_EBS_Snap;
