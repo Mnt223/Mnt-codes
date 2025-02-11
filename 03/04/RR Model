@@ -1,3 +1,11 @@
+# Bayesian Optimization for Hyperparameter Tuning
+tuned_model = tune_model(best_model, n_iter=10, optimize='AUC', search_library='scikit-optimize', search_algorithm='bayesian')
+
+
+
+
+
+
 u
 import pandas as pd
 import numpy as np
