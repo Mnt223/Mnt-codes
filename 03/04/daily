@@ -1,3 +1,31 @@
+filename xlout "INM-RPT-418-Segmentation_EOP_Report_&ydate..xml";
+
+ods tagsets.excelxp file=xlout style=XLStatistical 
+    options(embedded_titles='yes' sheet_name='Segmentation EOP' zoom='75');
+
+ods listing close;
+ods html close;
+
+title "Table 1: Total EOP";
+proc print data=Total_EOP noobs;
+run;
+
+title "Table 2: EBS";
+proc print data=EBS noobs;
+run;
+
+title "Table 3: Non EBS";
+proc print data=Non_EBS noobs;
+run;
+
+ods tagsets.excelxp close;
+ods listing;
+
+
+
+
+
+
 filename outbox email
     to=("receiver@domain.com")
     from="your_email@domain.com"
