@@ -6,6 +6,96 @@ RUN;
 /* Step 2: Converting DROP_FLAG_SAL3L to Numeric */
 DATA DROP_FREQ_NUM;
     SET DROP_FREQ;
+    DROP_FLAG_NUM = INPUT(DROP_FLAG_SAL3L, 8.); /* Convert string to numeric */
+    IF DROP_FLAG_NUM = . THEN DELETE; /* Remove invalid values */
+    DROP DROP_FLAG_SAL3L;
+    RENAME DROP_FLAG_NUM = DROP_FLAG_SAL3L;
+RUN;
+
+/* Step 3: Sorting Data */
+PROC SORT DATA=DROP_FREQ_NUM;
+    BY DROP_FLAG_SAL3L;
+RUN;
+
+/* Step 4: Compute Total Base (Initial Count Before Any Drop) */
+PROC SQL;
+    SELECT SUM(Frequency) INTO :TOTAL_BASE FROM DROP_FREQ_NUM;
+QUIT;
+
+/* Step 5: Creating a Full List of Drop Flags (1 to Maximum Found) */
+DATA DROP_FULL;
+    DO DROP_FLAG_SAL3L = 1 TO 18; /* Ensure all numbers from 1 to 18 are included */
+        OUTPUT;
+    END;
+RUN;
+
+/* Step 6: Merging Original Data with Full Drop Flag List */
+DATA DROP_COMPLETE;
+    MERGE DROP_FULL (IN=A) DROP_FREQ_NUM (IN=B);
+    BY DROP_FLAG_SAL3L;
+    IF NOT B THEN Frequency = 0; /* If missing, set frequency to 0 */
+RUN;
+
+/* Step 7: Creating Cumulative Reduction Table */
+DATA DROP_SUMMARY;
+    SET DROP_COMPLETE;
+    RETAIN Starting_Customers Remaining_Customers;
+    
+    /* Set Initial Base using Macro Variable */
+    IF _N_ = 1 THEN DO;
+        Remaining_Customers = &TOTAL_BASE;
+    END;
+
+    /* Set the starting value before subtraction */
+    Starting_Customers = Remaining_Customers;
+
+    /* Compute Remaining Customers after each drop */
+    Remaining_Customers = Remaining_Customers - Frequency;
+
+    /* Output dataset */
+    OUTPUT;
+RUN;
+
+/* Step 8: Adding Initial Base Row */
+DATA DROP_FINAL;
+    SET DROP_SUMMARY;
+
+    /* Insert Base Row at the Start */
+    IF _N_ = 1 THEN DO;
+        DROP_FLAG_SAL3L = 0; /* Numeric representation for base */
+        Frequency = 0;
+        Starting_Customers = .; /* No previous value for the base */
+        Remaining_Customers = &TOTAL_BASE;
+        OUTPUT;
+    END;
+
+    OUTPUT;
+RUN;
+
+/* Step 9: Display the Final Drop Summary Table */
+PROC PRINT DATA=DROP_FINAL NOOBS;
+    TITLE "Step-wise Drop Flag Reduction Table (With All Numbers & String to Numeric Conversion)";
+RUN;
+
+
+
+
+
+
+
+
+
+
+
+
+/* Step 1: Running PROC FREQ to get counts */
+PROC FREQ DATA=FINAL_WTRFL_8 NOPRINT;
+    TABLE DROP_FLAG_SAL3L / OUT=DROP_FREQ (DROP=PERCENT);
+RUN;
+
+/* Step 2: Converting DROP_FLAG_SAL3L to Numeric */
+DATA DROP_FREQ_NUM;
+    SET DROP_FREQ;
     DROP_FLAG_NUM = INPUT(DROP_FLAG_SAL3L, 8.); /* Convert to Numeric */
     IF DROP_FLAG_NUM = . THEN DELETE; /* Remove invalid values */
     DROP DROP_FLAG_SAL3L;
