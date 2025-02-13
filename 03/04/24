@@ -1,3 +1,26 @@
+Teams Message:
+
+Hi Kinnari & Hrithika,
+
+I suggest we push these two reports directly into the dashboard and update them daily. As far as I know, we are doing the same analysis but through different tasks. Instead of customizing every time for individual asks, it’s better to create a standardized format and integrate it into the dashboard.
+
+This way, business stakeholders can access, customize, and download the reports on a self-serve basis without needing our intervention. This will save us time and storage, as we won’t need to generate and share multiple Excel dumps daily. We will only need to generate a single file, push it to SharePoint, and be done. The dashboard will provide both insights and data access in one place.
+
+This is my suggestion for this report, but if you guys have an alternative approach or a better idea—whether we should still provide Excel files or share the data differently—let’s discuss and find the best way forward.
+
+Let me know your thoughts!
+
+
+
+
+
+
+
+
+
+
+
+
 %let path1 = /path/to/zip/folder; /* Path to the folder containing the ZIP file */
 %let email_to = recipient@example.com; /* Email recipient */
 %let subject = "File Size Alert";
