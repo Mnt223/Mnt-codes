@@ -1,3 +1,82 @@
+/* Step 1: Running PROC FREQ to get counts */
+PROC FREQ DATA=FINAL_WTRFL_8 NOPRINT;
+    TABLE DROP_FLAG_SAL3L / OUT=DROP_FREQ (DROP=PERCENT);
+RUN;
+
+/* Step 2: Sorting Data to Maintain Order */
+PROC SORT DATA=DROP_FREQ;
+    BY DROP_FLAG_SAL3L;
+RUN;
+
+/* Step 3: Creating a Full List of Drop Flags (1 to Maximum Found) */
+DATA DROP_FULL;
+    DO DROP_FLAG_SAL3L = 1 TO 18; /* Adjust based on the max value */
+        OUTPUT;
+    END;
+RUN;
+
+/* Step 4: Merging Original Data with Full Drop Flag List */
+DATA DROP_COMPLETE;
+    MERGE DROP_FULL (IN=A) DROP_FREQ (IN=B);
+    BY DROP_FLAG_SAL3L;
+    IF NOT B THEN Frequency = 0; /* If missing, set frequency to 0 */
+RUN;
+
+/* Step 5: Creating Cumulative Reduction Table */
+DATA DROP_SUMMARY;
+    SET DROP_COMPLETE;
+    RETAIN Initial_Base Starting_Customers Remaining_Customers;
+
+    /* Initialize the base with the sum of all frequencies */
+    IF _N_ = 1 THEN DO;
+        CALL SYMPUTX("TOTAL_BASE", SUM(Frequency));
+        Initial_Base = &TOTAL_BASE;
+        Remaining_Customers = Initial_Base;
+    END;
+
+    /* Set the starting value before subtraction */
+    Starting_Customers = Remaining_Customers;
+
+    /* Compute Remaining Customers after each drop */
+    Remaining_Customers = Remaining_Customers - Frequency;
+
+    /* Output dataset */
+    OUTPUT;
+RUN;
+
+/* Step 6: Adding Initial Base Row */
+DATA DROP_FINAL;
+    SET DROP_SUMMARY;
+
+    /* Insert Base Row at the Start */
+    IF _N_ = 1 THEN DO;
+        DROP_FLAG_SAL3L = "Base";
+        Frequency = 0;
+        Starting_Customers = .; /* No previous value for the base */
+        Remaining_Customers = &TOTAL_BASE;
+        OUTPUT;
+    END;
+
+    OUTPUT;
+RUN;
+
+/* Step 7: Display the Final Drop Summary Table */
+PROC PRINT DATA=DROP_FINAL NOOBS;
+    TITLE "Step-wise Drop Flag Reduction Table (With All Numbers)";
+RUN;
+
+
+
+
+
+
+
+
+
+
+
+
+
 filename zipout "/home/your_username/Segmentation_Report_&month_year..zip";
 
 /* Zip the XML file */
