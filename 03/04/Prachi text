@@ -1,3 +1,26 @@
+Branch Growth Rank = 
+VAR BranchCASAGrowth = SUM('Sales MI'[CASA_GROW])
+RETURN 
+IF(
+    NOT(ISBLANK(BranchCASAGrowth)), 
+    RANKX(
+        ALLSELECTED('Branch Mapping'[BRANCH NAME]), 
+        BranchCASAGrowth, 
+        , 
+        DESC, 
+        DENSE
+    )
+)
+
+
+
+
+
+
+
+
+
+
 /* Send HTML email report */
 filename mail email &recipient_email
     subject="Server File Audit Report - Last &days_back Days"
