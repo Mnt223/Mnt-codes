@@ -1,3 +1,41 @@
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Reshape data
+rank_table = rank_out.melt(id_vars=["score_band"], var_name="cols", value_name="event_rate")
+
+# Create catplot
+g = sns.catplot(
+    x="score_band", 
+    y="event_rate", 
+    hue="cols", 
+    data=rank_table, 
+    kind="bar", 
+    height=5, 
+    aspect=2
+)
+
+# Set title using `fig.suptitle()`
+g.fig.suptitle("Rank Ordering - Out of Time", fontsize=14)
+
+# Save figure
+g.savefig(path + "Rank_Ordering_OOT.png", dpi=50, bbox_inches='tight')
+
+# Show plot
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Running PROC FREQ to get counts */
 PROC FREQ DATA=FINAL_WTRFL_8 NOPRINT;
     TABLE DROP_FLAG_SAL3L / OUT=DROP_FREQ (DROP=PERCENT);
