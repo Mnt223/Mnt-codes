@@ -1,3 +1,9 @@
+common_columns = list(set(train_data.columns) & set(oot_data.columns))
+train_data = train_data[common_columns]
+oot_data = oot_data[common_columns]
+
+
+
 import numpy as np
 import pandas as pd
 
