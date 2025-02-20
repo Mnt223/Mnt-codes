@@ -1,3 +1,57 @@
+import sqlite3
+import pandasql as ps
+
+def psi(X, Y):
+    conn = sqlite3.connect(":memory:")  # Use an in-memory SQLite DB
+
+    X['pentile'] = pd.qcut(X['score'], 5, labels=False) + 1  
+
+    # Define boundary conditions for bins
+    X_tile = pd.DataFrame(X.groupby("pentile").agg({"score": [np.min, np.max]})).reset_index()
+    X_tile.columns = ["pentile", "min", "max"]
+    X_tile.loc[0, "min"] = -np.inf
+    X_tile.loc[4, "max"] = np.inf
+
+    sqlcode = """
+        SELECT c.pentile, c.cnt as X_count, c.X_tot, d.cnt as Y_count, d.Y_tot
+        FROM (SELECT a.*, b.* FROM 
+              (SELECT b.pentile, COUNT(*) AS cnt FROM X a 
+               LEFT JOIN X_tile b 
+               ON a.score >= b.min AND a.score < b.max 
+               GROUP BY b.pentile) a
+               CROSS JOIN (SELECT COUNT(*) AS X_tot FROM X) b) c
+        LEFT JOIN
+             (SELECT a.*, b.* FROM 
+              (SELECT b.pentile, COUNT(*) AS cnt FROM Y a 
+               LEFT JOIN X_tile b 
+               ON a.score >= b.min AND a.score < b.max 
+               GROUP BY b.pentile) a
+               CROSS JOIN (SELECT COUNT(*) AS Y_tot FROM Y) b) d
+        ON c.pentile = d.pentile
+    """
+    
+    # Pass SQLite connection explicitly
+    psi_stg0 = ps.sqldf(sqlcode, locals(), conn)  
+
+    psi_stg0['X_perc'] = psi_stg0['X_count'] / psi_stg0['X_tot']
+    psi_stg0['Y_perc'] = psi_stg0['Y_count'] / psi_stg0['Y_tot']
+    psi_stg0['PSI'] = (psi_stg0['X_perc'] - psi_stg0['Y_perc']) * np.log(psi_stg0['X_perc'] / psi_stg0['Y_perc'])
+
+    psi_stg1 = pd.merge(psi_stg0, X_tile, how="left", left_on="pentile", right_on="pentile")
+    psi_stg1["score_band"] = psi_stg1["min"].astype(str) + "-" + psi_stg1["max"].astype(str)
+
+    psi_result = psi_stg1[['score_band', 'X_perc', 'Y_perc', 'PSI']].round(3)
+    total_psi = round(psi_result['PSI'].sum(), 3)
+
+    conn.close()  # Close the SQLite connection
+
+    return psi_result, total_psi
+
+
+
+
+
+
 nt
 import numpy as np
 import pandas as pd
