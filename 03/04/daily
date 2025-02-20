@@ -1,3 +1,27 @@
+# Running PSI Calculation
+psi_train_test, total_psi_train_test = psi(scr_train, scr_test)
+
+# Renaming Columns for Readability
+psi_train_test = psi_train_test.rename(columns={'score_band': 'score_band', 
+                                                'scr_train_perc': 'x_perc', 
+                                                'scr_test_perc': 'y_perc'})
+
+# Converting percentages into a 0-100 scale and rounding
+psi_train_test['x_perc'] = round(psi_train_test['x_perc'] * 100, 2)
+psi_train_test['y_perc'] = round(psi_train_test['y_perc'] * 100, 2)
+
+# Rounding PSI values
+psi_train_test['psi'] = round(psi_train_test['psi'], 2)
+
+# Printing Total PSI
+print(f"Total PSI (Train vs Test): {round(psi_train_test.psi.sum(), 3)}")
+
+# Printing PSI Table
+print("PSI Table (Train vs Test):")
+print(psi_train_test)
+
+
+
 import numpy as np
 import pandas as pd
 
