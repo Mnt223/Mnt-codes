@@ -1,3 +1,136 @@
+nt
+import numpy as np
+import pandas as pd
+import pandasql as ps  # SQL-style DataFrame operations
+
+# 1️⃣ PSI Function (Train vs Test)
+def psi(X, Y):
+    X['pentile'] = pd.qcut(X['score'], 5, labels=False) + 1  
+
+    # Define boundary conditions for bins
+    X_tile = pd.DataFrame(X.groupby("pentile").agg({"score": [np.min, np.max]})).reset_index()
+    X_tile.columns = ["pentile", "min", "max"]
+    X_tile.loc[0, "min"] = -np.inf
+    X_tile.loc[4, "max"] = np.inf
+
+    sqlcode = """
+        SELECT c.pentile, c.cnt as X_count, c.X_tot, d.cnt as Y_count, d.Y_tot
+        FROM (SELECT a.*, b.* FROM 
+              (SELECT b.pentile, COUNT(*) AS cnt FROM X a 
+               LEFT JOIN X_tile b 
+               ON a.score >= b.min AND a.score < b.max 
+               GROUP BY b.pentile) a
+               CROSS JOIN (SELECT COUNT(*) AS X_tot FROM X) b) c
+        LEFT JOIN
+             (SELECT a.*, b.* FROM 
+              (SELECT b.pentile, COUNT(*) AS cnt FROM Y a 
+               LEFT JOIN X_tile b 
+               ON a.score >= b.min AND a.score < b.max 
+               GROUP BY b.pentile) a
+               CROSS JOIN (SELECT COUNT(*) AS Y_tot FROM Y) b) d
+        ON c.pentile = d.pentile
+    """
+    
+    psi_stg0 = ps.sqldf(sqlcode, locals())  
+
+    psi_stg0['X_perc'] = psi_stg0['X_count'] / psi_stg0['X_tot']
+    psi_stg0['Y_perc'] = psi_stg0['Y_count'] / psi_stg0['Y_tot']
+    psi_stg0['PSI'] = (psi_stg0['X_perc'] - psi_stg0['Y_perc']) * np.log(psi_stg0['X_perc'] / psi_stg0['Y_perc'])
+
+    psi_stg1 = pd.merge(psi_stg0, X_tile, how="left", left_on="pentile", right_on="pentile")
+    psi_stg1["score_band"] = psi_stg1["min"].astype(str) + "-" + psi_stg1["max"].astype(str)
+
+    psi_result = psi_stg1[['score_band', 'X_perc', 'Y_perc', 'PSI']].round(3)
+    total_psi = round(psi_result['PSI'].sum(), 3)
+
+    return psi_result, total_psi
+
+# 2️⃣ PSI Table Function (Train vs Test/OOT)
+def psi_table(dev_data, val_data):
+    dev_data.columns = dev_data.columns.str.lower()
+    val_data.columns = val_data.columns.str.lower()
+
+    if "samplingweight" not in dev_data.columns:
+        dev_data["samplingweight"] = 1
+    if "samplingweight" not in val_data.columns:
+        val_data["samplingweight"] = 1
+
+    dev_data["pentile"] = pd.qcut(dev_data["score"], 5, labels=False) + 1
+
+    dev_tile = pd.DataFrame(dev_data.groupby("pentile").agg({"score": [np.min, np.max]})).reset_index()
+    dev_tile.columns = ["pentile", "min", "max"]
+    dev_tile.loc[0, "min"] = -10000  
+    dev_tile.loc[4, "max"] = 10000   
+    dev_tile["pentile"] = dev_tile["pentile"] + 1
+
+    dev_pentile_summary = pentile_calculation(dev_data, dev_tile, "development_%")
+    val_pentile_summary = pentile_calculation(val_data, dev_tile, "validation_%")
+
+    pentile_summary = pd.merge(dev_tile, dev_pentile_summary, how="inner", on="pentile")
+    pentile_summary = pd.merge(pentile_summary, val_pentile_summary, how="inner", on="pentile")
+
+    pentile_summary.loc[0, "min"] = "low"
+    pentile_summary.loc[4, "max"] = "high"
+    pentile_summary["score_band"] = pentile_summary["min"].astype(str) + "-" + pentile_summary["max"].astype(str)
+    pentile_summary = pentile_summary[["score_band", "development_%", "validation_%"]]
+
+    pentile_summary["psi"] = (pentile_summary["development_%"] - pentile_summary["validation_%"]) * \
+                             np.log(pentile_summary["development_%"] / pentile_summary["validation_%"])
+
+    pentile_summary.sort_index(axis=0, ascending=False, inplace=True)
+
+    return pentile_summary.round(3)
+
+# 3️⃣ Pentile Calculation Function
+def pentile_calculation(data, tile, col_name):
+    data.columns = data.columns.str.lower()
+
+    data["pentile_band"] = np.where((data["score"] >= tile.loc[0, "min"]) & (data["score"] < tile.loc[0, "max"]), 1,
+        np.where((data["score"] >= tile.loc[1, "min"]) & (data["score"] < tile.loc[1, "max"]), 2,
+        np.where((data["score"] >= tile.loc[2, "min"]) & (data["score"] < tile.loc[2, "max"]), 3,
+        np.where((data["score"] >= tile.loc[3, "min"]) & (data["score"] < tile.loc[3, "max"]), 4,
+        np.where((data["score"] >= tile.loc[4, "min"]), 5, 0))))))
+    
+    pentile_summary = pd.DataFrame(((data.groupby("pentile_band").agg({"samplingweight": ["sum"]}) /
+                                     sum(data["samplingweight"])) * 100).reset_index())
+
+    pentile_summary.columns = ["pentile", col_name]
+
+    return pentile_summary
+
+# 🚀 How to Use These Functions
+path = "/opt/jupyter/notebook/"  # Change path accordingly
+
+# Load Train & Test data
+scr_train = pd.read_csv(path + 'scr_train.csv', encoding='cp1252')
+scr_test = pd.read_csv(path + 'scr_test.csv', encoding='cp1252')
+
+# Compute PSI between Train & Test
+psi_train_test, total_psi_train_test = psi(scr_train, scr_test)
+
+# Save PSI Results
+psi_train_test.to_csv(path + 'psi_train_test.csv', encoding='utf-8', index=False)
+
+# Compute PSI Table
+psi_train_test_table = psi_table(scr_train, scr_test)
+
+# Save PSI Table
+psi_train_test_table.to_csv(path + 'psi_train_test_table.csv', encoding='utf-8', index=False)
+
+# Print PSI Score
+print(f"Total PSI (Train vs Test): {total_psi_train_test}")
+print("PSI Table (Train vs Test):")
+print(psi_train_test_table)
+
+
+
+
+
+
+
+
+
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 
