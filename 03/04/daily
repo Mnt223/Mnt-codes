@@ -11,6 +11,52 @@ def psi_table(dev_data, val_data):
     dev_data = dev_data.dropna(subset=["score"])
     val_data = val_data.dropna(subset=["score"])
 
+    # Define 5 bin edges to create 4 bins
+    min_score = dev_data["score"].min()
+    q1 = np.percentile(dev_data["score"], 25)
+    q2 = np.percentile(dev_data["score"], 50)  # Median
+    q3 = np.percentile(dev_data["score"], 75)
+    max_score = dev_data["score"].max()
+
+    bin_edges = [min_score, q1, q2, q3, max_score]
+    bin_labels = ["Low", "Middle 1", "Middle 2", "High"]  # 4 labels for 5 edges
+
+    # Assign bins explicitly
+    dev_data["pentile"] = pd.cut(dev_data["score"], bins=bin_edges, labels=bin_labels, include_lowest=True)
+    val_data["pentile"] = pd.cut(val_data["score"], bins=bin_edges, labels=bin_labels, include_lowest=True)
+
+    # Compute percentage in each bin
+    dev_pentile_summary = dev_data.groupby("pentile")["samplingweight"].sum() / dev_data["samplingweight"].sum() * 100
+    val_pentile_summary = val_data.groupby("pentile")["samplingweight"].sum() / val_data["samplingweight"].sum() * 100
+
+    # Convert to DataFrame
+    pentile_summary = pd.DataFrame({"score_band": dev_pentile_summary.index,
+                                    "development_%": dev_pentile_summary.values,
+                                    "validation_%": val_pentile_summary.reindex(dev_pentile_summary.index, fill_value=0).values})
+
+    # Calculate PSI
+    pentile_summary["psi"] = (pentile_summary["development_%"] - pentile_summary["validation_%"]) * \
+                             np.log((pentile_summary["development_%"] + 1e-6) / (pentile_summary["validation_%"] + 1e-6))
+
+    return pentile_summary.round(3)
+
+
+
+
+
+def psi_table(dev_data, val_data):
+    dev_data.columns = dev_data.columns.str.lower()
+    val_data.columns = val_data.columns.str.lower()
+
+    if "samplingweight" not in dev_data.columns:
+        dev_data["samplingweight"] = 1
+    if "samplingweight" not in val_data.columns:
+        val_data["samplingweight"] = 1
+
+    # Drop NaN values in score to avoid issues
+    dev_data = dev_data.dropna(subset=["score"])
+    val_data = val_data.dropna(subset=["score"])
+
     # Define custom bin edges (ensures "low" and "high" bands always exist)
     min_score = dev_data["score"].min()
     max_score = dev_data["score"].max()
