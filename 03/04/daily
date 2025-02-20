@@ -1,3 +1,19 @@
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10,5))
+sns.kdeplot(scr_train["score"], label="Train", shade=True)
+sns.kdeplot(scr_oot["score"], label="OOT", shade=True)
+plt.legend()
+plt.title("Score Distribution: Train vs. OOT")
+plt.show()
+
+
+
+
+
+
+
 common_columns = list(set(train_data.columns) & set(oot_data.columns))
 train_data = train_data[common_columns]
 oot_data = oot_data[common_columns]
