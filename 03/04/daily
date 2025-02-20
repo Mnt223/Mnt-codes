@@ -1,3 +1,45 @@
+def psi_table(dev_data, val_data):
+    dev_data.columns = dev_data.columns.str.lower()
+    val_data.columns = val_data.columns.str.lower()
+
+    if "samplingweight" not in dev_data.columns:
+        dev_data["samplingweight"] = 1
+    if "samplingweight" not in val_data.columns:
+        val_data["samplingweight"] = 1
+
+    # Ensure there are no NaN scores
+    dev_data = dev_data.dropna(subset=["score"])
+    val_data = val_data.dropna(subset=["score"])
+
+    dev_data["pentile"] = pd.qcut(dev_data["score"], 5, labels=False, duplicates="drop") + 1
+
+    dev_tile = dev_data.groupby("pentile")['score'].agg(['min', 'max']).reset_index()
+    dev_tile.loc[0, "min"] = dev_data["score"].min()  
+    dev_tile.loc[4, "max"] = dev_data["score"].max()  
+
+    dev_tile["pentile"] = dev_tile["pentile"] + 1
+
+    dev_pentile_summary = pentile_calculation(dev_data, dev_tile, "development_%")
+    val_pentile_summary = pentile_calculation(val_data, dev_tile, "validation_%")
+
+    pentile_summary = pd.merge(dev_tile, dev_pentile_summary, how="inner", on="pentile")
+    pentile_summary = pd.merge(pentile_summary, val_pentile_summary, how="inner", on="pentile")
+
+    pentile_summary["score_band"] = pentile_summary["min"].astype(str) + "-" + pentile_summary["max"].astype(str)
+    pentile_summary = pentile_summary[["score_band", "development_%", "validation_%"]]
+
+    pentile_summary["psi"] = (pentile_summary["development_%"] - pentile_summary["validation_%"]) * \
+                             np.log((pentile_summary["development_%"] + 1e-6) / (pentile_summary["validation_%"] + 1e-6))
+
+    pentile_summary.sort_index(axis=0, ascending=False, inplace=True)
+
+    return pentile_summary.round(3)
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
