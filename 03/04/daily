@@ -1,3 +1,114 @@
+import numpy as np
+import pandas as pd
+
+# 1️⃣ PSI Function
+def psi(X, Y):
+    X['pentile'] = pd.qcut(X['score'], 5, labels=False) + 1  
+
+    # Define Boundary Conditions
+    X_tile = X.groupby("pentile")['score'].agg(['min', 'max']).reset_index()
+    X_tile.loc[0, "min"] = -np.inf  
+    X_tile.loc[4, "max"] = np.inf  
+
+    # Assign Pentile Bins to Train & Test Data
+    X_bins = pd.cut(X['score'], bins=X_tile['min'].tolist() + [X_tile['max'].iloc[-1]], labels=False, include_lowest=True)
+    Y_bins = pd.cut(Y['score'], bins=X_tile['min'].tolist() + [X_tile['max'].iloc[-1]], labels=False, include_lowest=True)
+
+    # Compute Normalized Counts
+    X_counts = X_bins.value_counts(normalize=True).sort_index()
+    Y_counts = Y_bins.value_counts(normalize=True).sort_index()
+
+    # Fill Missing Bins with Small Values
+    X_counts = X_counts.reindex(range(5), fill_value=1e-6)
+    Y_counts = Y_counts.reindex(range(5), fill_value=1e-6)
+
+    # Compute PSI for Each Bin
+    psi_values = (X_counts - Y_counts) * np.log(X_counts / Y_counts)
+
+    # Create PSI Breakdown Table
+    psi_df = pd.DataFrame({
+        "Score Band": X_tile['min'].astype(str) + " - " + X_tile['max'].astype(str),
+        "Train_Percentage": X_counts.values * 100,
+        "Test_Percentage": Y_counts.values * 100,
+        "PSI": psi_values.values
+    })
+
+    # Compute Total PSI
+    total_psi = round(psi_values.sum(), 3)
+
+    return psi_df.round(3), total_psi
+
+# 2️⃣ PSI Table Function
+def psi_table(dev_data, val_data):
+    dev_data.columns = dev_data.columns.str.lower()
+    val_data.columns = val_data.columns.str.lower()
+
+    if "samplingweight" not in dev_data.columns:
+        dev_data["samplingweight"] = 1
+    if "samplingweight" not in val_data.columns:
+        val_data["samplingweight"] = 1
+
+    dev_data["pentile"] = pd.qcut(dev_data["score"], 5, labels=False) + 1
+
+    dev_tile = dev_data.groupby("pentile")['score'].agg(['min', 'max']).reset_index()
+    dev_tile.loc[0, "min"] = -10000  
+    dev_tile.loc[4, "max"] = 10000   
+    dev_tile["pentile"] = dev_tile["pentile"] + 1
+
+    dev_pentile_summary = pentile_calculation(dev_data, dev_tile, "development_%")
+    val_pentile_summary = pentile_calculation(val_data, dev_tile, "validation_%")
+
+    pentile_summary = pd.merge(dev_tile, dev_pentile_summary, how="inner", on="pentile")
+    pentile_summary = pd.merge(pentile_summary, val_pentile_summary, how="inner", on="pentile")
+
+    pentile_summary.loc[0, "min"] = "low"
+    pentile_summary.loc[4, "max"] = "high"
+    pentile_summary["score_band"] = pentile_summary["min"].astype(str) + "-" + pentile_summary["max"].astype(str)
+    pentile_summary = pentile_summary[["score_band", "development_%", "validation_%"]]
+
+    pentile_summary["psi"] = (pentile_summary["development_%"] - pentile_summary["validation_%"]) * \
+                             np.log(pentile_summary["development_%"] / pentile_summary["validation_%"])
+
+    pentile_summary.sort_index(axis=0, ascending=False, inplace=True)
+
+    return pentile_summary.round(3)
+
+# 3️⃣ Pentile Calculation Function
+def pentile_calculation(data, tile, col_name):
+    data.columns = data.columns.str.lower()
+
+    data["pentile_band"] = pd.cut(data["score"], bins=tile["min"].tolist() + [tile["max"].iloc[-1]], labels=False, include_lowest=True)
+    
+    pentile_summary = pd.DataFrame(((data.groupby("pentile_band")["samplingweight"].sum() /
+                                     data["samplingweight"].sum()) * 100).reset_index())
+
+    pentile_summary.columns = ["pentile", col_name]
+
+    return pentile_summary
+
+# 🚀 Running PSI Calculations (No Data Loading)
+psi_train_test, total_psi_train_test = psi(scr_train, scr_test)
+psi_train_test_table = psi_table(scr_train, scr_test)
+
+# Save Outputs
+psi_train_test.to_csv(path + 'psi_train_test.csv', encoding='utf-8', index=False)
+psi_train_test_table.to_csv(path + 'psi_train_test_table.csv', encoding='utf-8', index=False)
+
+# Print Results
+print(f"Total PSI (Train vs Test): {total_psi_train_test}")
+print("PSI Table (Train vs Test):")
+print(psi_train_test_table)
+
+
+
+
+
+
+
+
+
+
+
 import sqlite3
 import pandasql as ps
 
