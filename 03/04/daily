@@ -1,3 +1,106 @@
+import numpy as np
+import pandas as pd
+
+def csi_numeric(dev_data, rev_data, var):
+    """
+    Computes CSI (Characteristic Stability Index) for a given numerical variable.
+    
+    Args:
+    dev_data (pd.DataFrame): Development dataset
+    rev_data (pd.DataFrame): Review dataset
+    var (str): Column name (numeric variable)
+
+    Returns:
+    pd.DataFrame: DataFrame with CSI values
+    """
+    try:
+        # Create percentiles based on ranking
+        dev_tile = dev_data[var].rank(method='first', pct=True) * 5
+        dev_tile = dev_tile.astype(int)
+        
+        rev_tile = rev_data[var].rank(method='first', pct=True) * 5
+        rev_tile = rev_tile.astype(int)
+
+        # Count occurrences in each percentile for both datasets
+        dev_counts = dev_tile.value_counts(normalize=True).sort_index()
+        rev_counts = rev_tile.value_counts(normalize=True).sort_index()
+
+        # Align indices to ensure consistency
+        all_pentiles = sorted(set(dev_counts.index).union(set(rev_counts.index)))
+        dev_counts = dev_counts.reindex(all_pentiles, fill_value=0)
+        rev_counts = rev_counts.reindex(all_pentiles, fill_value=0)
+
+        # Compute CSI using the formula: (P1 - P2) * ln(P1 / P2)
+        csi_values = (dev_counts - rev_counts) * np.log(dev_counts / rev_counts)
+        csi_values = csi_values.replace([np.inf, -np.inf, np.nan], 0)  # Handle division errors
+        
+        # Final CSI value (sum of CSI across pentiles)
+        csi_value = csi_values.sum()
+
+        return pd.DataFrame({'feature_name': [var], 'csi': [round(csi_value, 2)]})
+    
+    except Exception as e:
+        print(f"Error processing {var}: {e}")
+        return pd.DataFrame({'feature_name': [var], 'csi': [None]})  # Ensure it always returns a DataFrame
+
+def csi(dev_data, rev_data):
+    """
+    Computes CSI for all numeric variables in the dataset.
+    
+    Args:
+    dev_data (pd.DataFrame): Development dataset
+    rev_data (pd.DataFrame): Review dataset
+
+    Returns:
+    pd.DataFrame: CSI results for all numeric features
+    """
+    # Select only numeric columns
+    cols_numeric = dev_data.select_dtypes(include=[np.number]).columns
+    # Exclude specific columns that are not relevant
+    exclude_cols = ["cust_num", "gbflag", "score", "samplingweight", "mevent", "pentile"]
+    cols_numeric = [col for col in cols_numeric if col not in exclude_cols]
+
+    CSI_N = []
+    for col in cols_numeric:
+        CSI_N.append(csi_numeric(dev_data, rev_data, col))
+
+    # Concatenate results
+    csi_df = pd.concat(CSI_N, ignore_index=True)
+
+    # Apply observation conditions
+    csi_df['observation'] = np.where(
+        csi_df['csi'] >= 30, "Impacted the stability of the variable",
+        np.where((csi_df['csi'] >= 20) & (csi_df['csi'] < 30), 
+                 "Continue and Investigate the variable", 
+                 "Working perfectly")
+    )
+
+    return csi_df
+
+# Example Usage (Replace with actual DataFrames)
+# train_data and oot_data should be actual pandas DataFrames
+train_data = pd.DataFrame({
+    'var1': np.random.randn(1000),
+    'var2': np.random.randn(1000),
+    'var3': np.random.randn(1000)
+})
+
+oot_data = pd.DataFrame({
+    'var1': np.random.randn(1000),
+    'var2': np.random.randn(1000),
+    'var3': np.random.randn(1000)
+})
+
+# Compute CSI
+train_oot_csi = csi(train_data, oot_data)
+print(train_oot_csi)
+
+
+
+
+
+
+
 # Running PSI Calculation
 psi_train_test, total_psi_train_test = psi(scr_train, scr_test)
 
