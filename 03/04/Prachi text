@@ -1,3 +1,30 @@
+Here is the final refined email:
+
+Subject: RE: EXTERNAL – OSF Failure
+
+Hi Kaja,
+
+The LOR file shared for February 25 had the location as “WAAL TPSA” instead of “MUM TPSA”, “MUM, TPSA”, or “TPSA, MUM”. This discrepancy is the reason for the different OSF names.
+
+Regarding the failure, we received a response from the InMoment Team confirming that the failure information was shared on February 14th, late at night, at 11:07 PM. As I was on sick leave on Monday, I connected with you on Tuesday to discuss the issue. On the same day, I retriggered the file and also forwarded the failure email to you.
+
+Please let me know if you need any further clarification.
+
+Best regards,
+Prachi Jain
+Business Analyst
+[Email: prachi.jain@xxxxxx.com]
+
+This version keeps it professional, concise, and clear. Let me know if you need any further adjustments.
+
+
+
+
+
+
+
+
+
 Branch Growth Rank = 
 VAR BranchCASAGrowth = SUM('Sales MI'[CASA_GROW])
 RETURN 
