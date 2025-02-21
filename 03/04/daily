@@ -1,3 +1,159 @@
+import numpy as np
+import pandas as pd
+import optuna
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import roc_auc_score
+from catboost import CatBoostClassifier
+
+# -------------------------------
+# 📌 Load Train, Test, OOT Data
+# -------------------------------
+train_data = pd.read_csv("train_data.csv")
+test_data = pd.read_csv("test_data.csv")
+oot_data = pd.read_csv("oot_data.csv")
+
+features = [col for col in train_data.columns if col not in ["mevent", "customer_id", "samplingweight"]]
+
+# -------------------------------
+# 📌 Optuna Hyperparameter Tuning
+# -------------------------------
+def objective(trial):
+    params = {
+        "iterations": trial.suggest_int("iterations", 100, 1000),
+        "depth": trial.suggest_int("depth", 4, 10),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
+        "random_strength": trial.suggest_float("random_strength", 1, 10)
+    }
+    model = CatBoostClassifier(**params, verbose=0)
+    model.fit(train_data[features], train_data["mevent"])
+    preds = model.predict_proba(test_data[features])[:, 1]
+    return roc_auc_score(test_data["mevent"], preds)
+
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=20)
+best_params = study.best_params
+
+# -------------------------------
+# 📌 Train Final Model with Best Params
+# -------------------------------
+final_model = CatBoostClassifier(**best_params)
+final_model.fit(train_data[features], train_data["mevent"])
+
+# -------------------------------
+# 📌 Generate Prediction Probabilities (Ensuring This Exists)
+# -------------------------------
+for df in [train_data, test_data, oot_data]:
+    df["prediction_score_0"], df["prediction_score_1"] = final_model.predict_proba(df[features]).T
+    df["odds"] = df["prediction_score_1"] / df["prediction_score_0"]
+    df["score"] = 200 - 25 * np.log(df["odds"])
+
+# -------------------------------
+# 📌 PSI Calculation Function
+# -------------------------------
+def psi(expected, actual, bins=10):
+    expected_perc = np.histogram(expected, bins=bins, density=True)[0] + 1e-10
+    actual_perc = np.histogram(actual, bins=bins, density=True)[0] + 1e-10
+    return np.sum((expected_perc - actual_perc) * np.log(expected_perc / actual_perc))
+
+psi_train_test = psi(train_data["score"], test_data["score"])
+psi_train_oot = psi(train_data["score"], oot_data["score"])
+
+# -------------------------------
+# 📌 CSI Calculation
+# -------------------------------
+def csi(dev_data, rev_data):
+    csi_values = []
+    for var in dev_data.select_dtypes(include=[np.number]).columns:
+        dev_perc = dev_data[var].mean()
+        rev_perc = rev_data[var].mean()
+        csi_score = (dev_perc - rev_perc) * np.log(dev_perc / rev_perc)
+        csi_values.append([var, csi_score])
+    
+    csi_df = pd.DataFrame(csi_values, columns=["feature_name", "csi"])
+    csi_df["observation"] = np.where(csi_df["csi"] >= 30, "Impacted", "Working")
+    return csi_df
+
+csi_train_oot = csi(train_data, oot_data)
+
+# -------------------------------
+# 📌 Gini Calculation
+# -------------------------------
+def gini(y_true, y_pred):
+    return 2 * roc_auc_score(y_true, y_pred) - 1
+
+gini_train = gini(train_data["mevent"], train_data["prediction_score_1"])
+gini_test = gini(test_data["mevent"], test_data["prediction_score_1"])
+gini_oot = gini(oot_data["mevent"], oot_data["prediction_score_1"])
+
+# -------------------------------
+# 📌 Pentile & Decile Calculation
+# -------------------------------
+def calculate_pentile(df):
+    df["pentile"] = pd.qcut(df["score"].rank(method="first"), 5, labels=False)
+    df["pentile_band"] = df["pentile"] + 1
+    return df
+
+train_data = calculate_pentile(train_data)
+test_data = calculate_pentile(test_data)
+oot_data = calculate_pentile(oot_data)
+
+# -------------------------------
+# 📌 Score Distribution Graph
+# -------------------------------
+plt.figure(figsize=(10, 5))
+sns.kdeplot(train_data["score"], label="Train", shade=True)
+sns.kdeplot(oot_data["score"], label="OOT", shade=True)
+plt.legend()
+plt.title("Score Distribution: Train vs. OOT")
+plt.show()
+
+# -------------------------------
+# 📌 Rank Ordering - Event Rate by Decile
+# -------------------------------
+rank_order_train = train_data.groupby("pentile_band")["mevent"].mean().sort_index()
+rank_order_test = test_data.groupby("pentile_band")["mevent"].mean().sort_index()
+rank_order_oot = oot_data.groupby("pentile_band")["mevent"].mean().sort_index()
+
+plt.figure(figsize=(10, 5))
+plt.plot(rank_order_train, label="Train")
+plt.plot(rank_order_test, label="Test")
+plt.plot(rank_order_oot, label="OOT")
+plt.legend()
+plt.title("Rank Ordering by Pentiles")
+plt.show()
+
+# -------------------------------
+# 📌 Save Final Outputs
+# -------------------------------
+train_data.to_csv("train_data_scored.csv", index=False)
+test_data.to_csv("test_data_scored.csv", index=False)
+oot_data.to_csv("oot_data_scored.csv", index=False)
+csi_train_oot.to_csv("csi_oot.csv", index=False)
+
+# -------------------------------
+# 📌 Print Final Results
+# -------------------------------
+print(f"Gini Train: {gini_train:.3f}")
+print(f"Gini Test: {gini_test:.3f}")
+print(f"Gini OOT: {gini_oot:.3f}")
+print(f"PSI Train vs Test: {psi_train_test:.3f}")
+print(f"PSI Train vs OOT: {psi_train_oot:.3f}")
+print(csi_train_oot.head())
+
+print("✅ Model Training, Scoring, PSI, CSI, and OOT Validation Completed Successfully!")
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
