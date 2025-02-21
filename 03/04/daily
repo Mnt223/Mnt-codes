@@ -1,3 +1,19 @@
+# Ensure we only use features available in train_data
+oot_data = oot_data[features]
+
+# Generate Prediction Probabilities for OOT
+pred_probs_oot = final_model.predict_proba(oot_data)
+oot_data["prediction_score_0"], oot_data["prediction_score_1"] = pred_probs_oot.T
+
+# Compute Odds and Score for OOT Data
+oot_data["odds"] = oot_data["prediction_score_1"] / oot_data["prediction_score_0"]
+oot_data["score"] = 200 - 25 * np.log(oot_data["odds"])
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 import optuna
