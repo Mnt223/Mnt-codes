@@ -1,3 +1,14 @@
+psi_feature_table = psi_table(train_data[important_features], oot_data[important_features])
+psi_feature_table.sort_values("psi", ascending=False).head(10)  # Top 10 shifting features
+
+
+
+
+
+
+
+
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 
