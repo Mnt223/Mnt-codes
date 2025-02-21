@@ -1,3 +1,168 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import optuna
+from catboost import CatBoostClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, precision_score, recall_score
+
+# Load Data
+train_data = pd.read_csv("train_data.csv")
+test_data = pd.read_csv("test_data.csv")
+oot_data = pd.read_csv("oot_data.csv")
+
+# Feature Selection
+features = ["feature1", "feature2", "feature3", ..., "featureN"]  # Update with actual features
+target = "target_variable"
+
+# ✅ Function to create Pentile & Decile Bands
+def create_pentile(data, score_col):
+    data["pentile"] = pd.qcut(data[score_col], q=5, labels=False)
+    data["pentile_band"] = data["pentile"] + 1  # Convert 0-4 to 1-5
+    return data
+
+def create_decile(data, score_col):
+    data["decile"] = pd.qcut(data[score_col], q=10, labels=False)
+    return data
+
+# Apply Pentile & Decile on all datasets
+train_data = create_pentile(train_data, "score")
+train_data = create_decile(train_data, "score")
+test_data = create_pentile(test_data, "score")
+test_data = create_decile(test_data, "score")
+oot_data = create_pentile(oot_data, "score")
+oot_data = create_decile(oot_data, "score")
+
+# ✅ Optuna Hyperparameter Tuning
+def objective(trial):
+    params = {
+        "iterations": trial.suggest_int("iterations", 100, 1000),
+        "depth": trial.suggest_int("depth", 4, 10),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
+    }
+    model = CatBoostClassifier(**params, verbose=0)
+    model.fit(train_data[features], train_data[target])
+    preds = model.predict_proba(test_data[features])[:, 1]
+    return roc_auc_score(test_data[target], preds)
+
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=20)
+best_params = study.best_params
+
+# ✅ Train Final Model
+final_model = CatBoostClassifier(**best_params, verbose=0)
+final_model.fit(train_data[features], train_data[target])
+
+# ✅ Model Evaluation
+def evaluate_model(model, X, y):
+    preds = model.predict(X)
+    return {
+        "Accuracy": accuracy_score(y, preds),
+        "Precision": precision_score(y, preds),
+        "Recall": recall_score(y, preds),
+        "F1 Score": f1_score(y, preds),
+        "AUC": roc_auc_score(y, model.predict_proba(X)[:, 1]),
+    }
+
+train_metrics = evaluate_model(final_model, train_data[features], train_data[target])
+test_metrics = evaluate_model(final_model, test_data[features], test_data[target])
+print("Train Metrics:", train_metrics)
+print("Test Metrics:", test_metrics)
+
+# ✅ PSI Calculation
+def psi(expected, actual, bins=10):
+    expected_dist, _ = np.histogram(expected, bins=bins)
+    actual_dist, _ = np.histogram(actual, bins=bins)
+    
+    expected_dist = expected_dist / expected_dist.sum()
+    actual_dist = actual_dist / actual_dist.sum()
+    
+    psi_values = (expected_dist - actual_dist) * np.log(expected_dist / actual_dist)
+    return psi_values.sum()
+
+psi_train_test = psi(train_data["score"], test_data["score"])
+psi_train_oot = psi(train_data["score"], oot_data["score"])
+print(f"PSI (Train vs Test): {psi_train_test}")
+print(f"PSI (Train vs OOT): {psi_train_oot}")
+
+# ✅ CSI Calculation
+def csi(dev_data, rev_data):
+    dev_dist = dev_data.value_counts(normalize=True)
+    rev_dist = rev_data.value_counts(normalize=True)
+    
+    csi_value = ((dev_dist - rev_dist) * np.log(dev_dist / rev_dist)).sum()
+    return csi_value
+
+csi_value = csi(train_data["score"], oot_data["score"])
+print(f"CSI (Train vs OOT): {csi_value}")
+
+# ✅ Lift & Gain Charts
+sns.lineplot(x=np.arange(1, 11), y=np.cumsum(np.sort(train_data["score"])[::-1] / train_data["score"].sum()))
+plt.title("Lift Chart")
+plt.show()
+
+sns.lineplot(x=np.arange(1, 11), y=np.cumsum(np.sort(test_data["score"])[::-1] / test_data["score"].sum()))
+plt.title("Gain Chart")
+plt.show()
+
+# ✅ Score Distribution Chart
+plt.figure(figsize=(10,5))
+sns.kdeplot(train_data["score"], label="Train", shade=True)
+sns.kdeplot(oot_data["score"], label="OOT", shade=True)
+plt.legend()
+plt.title("Score Distribution: Train vs OOT")
+plt.show()
+
+# ✅ PSI Table
+def psi_table(expected, actual, bins=10):
+    expected_dist, bin_edges = np.histogram(expected, bins=bins)
+    actual_dist, _ = np.histogram(actual, bins=bin_edges)
+    
+    expected_dist = expected_dist / expected_dist.sum()
+    actual_dist = actual_dist / actual_dist.sum()
+    
+    psi_values = (expected_dist - actual_dist) * np.log(expected_dist / actual_dist)
+    
+    psi_df = pd.DataFrame({
+        "Score Band": [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(bin_edges)-1)],
+        "Train %": expected_dist,
+        "OOT %": actual_dist,
+        "PSI": psi_values
+    })
+    
+    return psi_df
+
+psi_table_result = psi_table(train_data["score"], oot_data["score"])
+print(psi_table_result)
+
+# ✅ Rank Ordering Validation
+rank_order = train_data.groupby("pentile_band")["score"].mean()
+plt.figure(figsize=(8,5))
+sns.barplot(x=rank_order.index, y=rank_order.values)
+plt.title("Rank Ordering: Score by Pentile Band")
+plt.xlabel("Pentile Band")
+plt.ylabel("Average Score")
+plt.show()
+
+# ✅ Save Outputs
+train_data.to_csv("train_data_processed.csv", encoding="utf-8", index=False)
+test_data.to_csv("test_data_processed.csv", encoding="utf-8", index=False)
+oot_data.to_csv("oot_data_processed.csv", encoding="utf-8", index=False)
+psi_table_result.to_csv("psi_table.csv", encoding="utf-8", index=False)
+
+print("✅ Model Training & Validation Complete!")
+
+
+
+
+
+
+
+
+
+
 psi_feature_table = psi_table(train_data[important_features], oot_data[important_features])
 psi_feature_table.sort_values("psi", ascending=False).head(10)  # Top 10 shifting features
 
