@@ -3,6 +3,138 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import optuna
+from sklearn.metrics import roc_auc_score, classification_report
+from catboost import CatBoostClassifier
+
+# Read Data
+train_data = pd.read_csv("path/to/train_data.csv")
+test_data = pd.read_csv("path/to/test_data.csv")
+oot_data = pd.read_csv("path/to/oot_data.csv")
+
+# Select Features and Target
+features = [col for col in train_data.columns if col not in ["mevent", "customer_id", "samplingweight"]]
+target = "mevent"
+
+# Define Model Training Function
+def train_model(trial):
+    params = {
+        "iterations": trial.suggest_int("iterations", 100, 500),
+        "depth": trial.suggest_int("depth", 4, 10),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
+        "loss_function": "Logloss",
+        "eval_metric": "AUC",
+        "random_seed": 42,
+        "verbose": False
+    }
+    
+    model = CatBoostClassifier(**params)
+    model.fit(train_data[features], train_data[target], eval_set=(test_data[features], test_data[target]), verbose=False)
+    auc = roc_auc_score(test_data[target], model.predict_proba(test_data[features])[:, 1])
+    
+    return auc
+
+# Hyperparameter Optimization using Optuna
+study = optuna.create_study(direction="maximize")
+study.optimize(train_model, n_trials=20)
+
+# Best Model Training
+best_params = study.best_params
+final_model = CatBoostClassifier(**best_params, loss_function="Logloss", eval_metric="AUC", random_seed=42)
+final_model.fit(train_data[features], train_data[target], eval_set=(test_data[features], test_data[target]), verbose=False)
+
+# Model Evaluation
+train_auc = roc_auc_score(train_data[target], final_model.predict_proba(train_data[features])[:, 1])
+test_auc = roc_auc_score(test_data[target], final_model.predict_proba(test_data[features])[:, 1])
+oot_auc = roc_auc_score(oot_data[target], final_model.predict_proba(oot_data[features])[:, 1])
+
+print(f"Gini Train: {2 * train_auc - 1:.3f}")
+print(f"Gini Test: {2 * test_auc - 1:.3f}")
+print(f"Gini OOT: {2 * oot_auc - 1:.3f}")
+
+# Score Calculation
+train_data["score"] = final_model.predict_proba(train_data[features])[:, 1] * 1000
+test_data["score"] = final_model.predict_proba(test_data[features])[:, 1] * 1000
+oot_data["score"] = final_model.predict_proba(oot_data[features])[:, 1] * 1000
+
+# Calculate Odds
+train_data["odds"] = train_data["score"] / (1 - train_data["score"])
+test_data["odds"] = test_data["score"] / (1 - test_data["score"])
+oot_data["odds"] = oot_data["score"] / (1 - oot_data["score"])
+
+# Calculate PSI
+def psi(train, test, bins=10):
+    train_perc = np.histogram(train, bins=bins)[0] / len(train)
+    test_perc = np.histogram(test, bins=bins)[0] / len(test)
+    psi_values = (train_perc - test_perc) * np.log(train_perc / test_perc)
+    return psi_values.sum()
+
+psi_train_test = psi(train_data["score"], test_data["score"])
+psi_train_oot = psi(train_data["score"], oot_data["score"])
+
+print(f"PSI (Train vs Test): {psi_train_test:.2f}")
+print(f"PSI (Train vs OOT): {psi_train_oot:.2f}")
+
+# CSI Calculation
+def csi(train, oot):
+    train_percent = train.value_counts(normalize=True)
+    oot_percent = oot.value_counts(normalize=True)
+    csi_value = ((train_percent - oot_percent) * np.log(train_percent / oot_percent)).sum()
+    return csi_value
+
+csi_value = csi(train_data["score"], oot_data["score"])
+print(f"CSI: {csi_value:.2f}")
+
+# Creating Decile and Pentile
+train_data["decile"] = pd.qcut(train_data["score"], 10, labels=False) + 1
+test_data["decile"] = pd.qcut(test_data["score"], 10, labels=False) + 1
+oot_data["decile"] = pd.qcut(oot_data["score"], 10, labels=False) + 1
+
+train_data["pentile"] = pd.qcut(train_data["score"], 5, labels=False) + 1
+test_data["pentile"] = pd.qcut(test_data["score"], 5, labels=False) + 1
+oot_data["pentile"] = pd.qcut(oot_data["score"], 5, labels=False) + 1
+
+# Distribution Graphs
+plt.figure(figsize=(10, 5))
+sns.kdeplot(train_data["score"], label="Train", shade=True)
+sns.kdeplot(test_data["score"], label="Test", shade=True)
+sns.kdeplot(oot_data["score"], label="OOT", shade=True)
+plt.legend()
+plt.title("Score Distribution: Train vs Test vs OOT")
+plt.show()
+
+# Rank Ordering Analysis
+rank_order_train = train_data.groupby("decile")["mevent"].mean().sort_index()
+rank_order_test = test_data.groupby("decile")["mevent"].mean().sort_index()
+rank_order_oot = oot_data.groupby("decile")["mevent"].mean().sort_index()
+
+plt.figure(figsize=(10, 5))
+plt.plot(rank_order_train, label="Train")
+plt.plot(rank_order_test, label="Test")
+plt.plot(rank_order_oot, label="OOT")
+plt.legend()
+plt.title("Rank Ordering by Deciles")
+plt.show()
+
+# Save Final Results
+train_data.to_csv("train_data_scored.csv", index=False)
+test_data.to_csv("test_data_scored.csv", index=False)
+oot_data.to_csv("oot_data_scored.csv", index=False)
+
+print("Final Model Training & OOT Validation Completed Successfully!")
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import optuna
 from catboost import CatBoostClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, precision_score, recall_score
