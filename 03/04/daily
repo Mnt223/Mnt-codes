@@ -1,3 +1,146 @@
+# Required Libraries
+import os
+import pandas as pd
+import numpy as np
+import optuna
+import shap
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, roc_curve, auc
+from pycaret.classification import setup, compare_models, predict_model, save_config, save_model, interpret_model
+from catboost import CatBoostClassifier
+from sklearn.preprocessing import LabelEncoder
+
+# ✅ Step 1: Data Pulling (Same as Original Model)
+os.system("hadoop fs -copyToLocal gs://RR_Model_Development_Data.csv /opt/jupyter/notebook/")
+os.system("hadoop fs -copyToLocal gs://final_inv_oot_data.csv /opt/jupyter/notebook/")
+
+# ✅ Step 2: Load Data
+df = pd.read_csv("/opt/jupyter/notebook/RR_Model_Development_Data.csv", encoding='cp1252')
+oot_df = pd.read_csv("/opt/jupyter/notebook/final_inv_oot_data.csv", encoding='cp1252')
+
+# ✅ Step 3: Data Preprocessing
+df.columns = [col.lower().replace(" ", "_") for col in df.columns]
+oot_df.columns = [col.lower().replace(" ", "_") for col in oot_df.columns]
+drop_cols = ['custid', 'key', 'customer_id', 'selection_month']
+df.drop(columns=drop_cols, errors='ignore', inplace=True)
+
+# ✅ Step 4: Remove Empty & High Missing Variables
+cols_to_drop_all_missing = df.columns[df.eq(0).all()].tolist()
+missing_threshold = 0.9
+missing_percentage = df.isnull().mean()
+cols_to_drop_high_missing = missing_percentage[missing_percentage > missing_threshold].index.tolist()
+df.drop(columns=cols_to_drop_all_missing + cols_to_drop_high_missing, inplace=True)
+
+# ✅ Save Dropped Variables Log
+dropped_variables_log = pd.DataFrame({
+    "Dropped Variable": cols_to_drop_all_missing + cols_to_drop_high_missing,
+    "Reason": ["All Zero/Missing"] * len(cols_to_drop_all_missing) + [">90% Missing"] * len(cols_to_drop_high_missing)
+})
+dropped_variables_log.to_csv("/opt/jupyter/notebook/Output_RR/dropped_variables_log.csv", index=False)
+
+# ✅ Step 5: Handle Missing Values
+for col in df.select_dtypes(include=['object']).columns:
+    df[col].fillna(df[col].mode()[0], inplace=True)
+for col in df.select_dtypes(include=['int64', 'float64']).columns:
+    df[col].fillna(df[col].median(), inplace=True)
+
+# ✅ Step 6: Remove Highly Correlated Features
+corr_matrix = df.corr().abs()
+upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+df.drop(columns=[col for col in upper_triangle.columns if any(upper_triangle[col] > 0.9)], inplace=True)
+
+# ✅ Step 7: Train-Test Split
+target_col = "mevent"
+X_train, X_test, y_train, y_test = train_test_split(df.drop(columns=[target_col]), df[target_col], test_size=0.3, random_state=42, stratify=df[target_col])
+
+# ✅ Step 8: Model Selection Using PyCaret
+clf = setup(data=df, target="mevent", train_size=0.7, silent=True, session_id=42)
+best_model = compare_models(sort='AUC')
+
+# ✅ Step 9: Hyperparameter Tuning with Optuna
+tuning_results = []
+def objective(trial):
+    params = {
+        "iterations": trial.suggest_int("iterations", 50, 250, step=50),
+        "depth": trial.suggest_int("depth", 2, 11),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 3, 20),
+        "subsample": trial.suggest_float("subsample", 0.5, 1.0, step=0.1)
+    }
+    
+    model = CatBoostClassifier(**params, verbose=0)
+    model.fit(X_train, y_train)
+    
+    preds_train = model.predict_proba(X_train)[:,1]
+    preds_test = model.predict_proba(X_test)[:,1]
+    preds_oot = model.predict_proba(oot_df[X_train.columns])[:,1]
+    
+    gini_train = 2 * roc_auc_score(y_train, preds_train) - 1
+    gini_test = 2 * roc_auc_score(y_test, preds_test) - 1
+    gini_oot = 2 * roc_auc_score(oot_df[target_col], preds_oot) - 1
+    
+    tuning_results.append({
+        "Iteration": trial.number + 1,
+        "Gini Train": round(gini_train, 3),
+        "Gini Test": round(gini_test, 3),
+        "Gini OOT": round(gini_oot, 3),
+        "% Diff Gini (train - test)": round((gini_train - gini_test) / gini_train * 100, 2),
+        "% Diff Gini (train - OOT)": round((gini_train - gini_oot) / gini_train * 100, 2)
+    })
+    
+    return gini_test
+
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=23)
+
+# ✅ Step 10: Rank Ordering - Out of Time
+oot_df["score_band"] = pd.qcut(oot_df["score"], q=10, duplicates="drop")
+
+rank_oot = oot_df.groupby("score_band")["mevent"].agg(["count", "sum"]).reset_index()
+rank_oot["Cumulative Events"] = rank_oot["sum"].cumsum()
+rank_oot["Cumulative %"] = (rank_oot["Cumulative Events"] / rank_oot["sum"].sum()) * 100
+rank_oot["Event Rate"] = (rank_oot["sum"] / rank_oot["count"]) * 100  
+
+# ✅ Save Rank Ordering Table
+rank_oot.to_csv("/opt/jupyter/notebook/Output_RR/rank_ordering_table.csv", index=False)
+
+# ✅ Generate Rank Ordering Charts
+plt.figure(figsize=(10, 6))
+sns.lineplot(x=rank_oot["score_band"].astype(str), y=rank_oot["Cumulative %"], marker="o")
+plt.title("Rank Ordering - Score Band vs. Cumulative Event Rate")
+plt.savefig("/opt/jupyter/notebook/Output_RR/rank_ordering_cumulative_event.png")
+
+plt.figure(figsize=(10, 6))
+sns.barplot(x=rank_oot["score_band"].astype(str), y=rank_oot["Event Rate"], palette="Blues_r")
+plt.title("Rank Ordering - Score Band vs. Event Rate")
+plt.savefig("/opt/jupyter/notebook/Output_RR/rank_ordering_event_rate.png")
+
+# ✅ Step 11: Generate PyCaret Model Governance Report
+save_model(best_model, "/opt/jupyter/notebook/Output_RR/final_model")
+save_config("/opt/jupyter/notebook/Output_RR/pycaret_model_report.html")
+
+# ✅ Step 12: Display Results
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Hyperparameter Tuning Results", dataframe=pd.DataFrame(tuning_results))
+
+# ✅ Final Confirmation
+print("Full Model Pipeline Completed 🚀")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Ensure we only use features available in train_data
 oot_data = oot_data[features]
 
