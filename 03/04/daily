@@ -1,3 +1,222 @@
+new
+# ============================
+# 📌 Required Libraries
+# ============================
+import os
+import logging
+import warnings
+import pandas as pd
+import numpy as np
+import optuna
+import shap
+import lime.lime_tabular
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.impute import SimpleImputer
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import roc_auc_score, log_loss
+from pycaret.classification import setup, compare_models, save_model, get_config
+from optuna.pruners import HyperbandPruner
+from optuna.samplers import NSGAIISampler
+
+# Configure Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# ============================
+# 📌 Step 1: Load Data
+# ============================
+def load_data():
+    """Loads data from Hadoop storage."""
+    logging.info("📥 Loading Data...")
+    
+    os.system("hadoop fs -copyToLocal gs://RR_Model_Development_Data.csv /opt/jupyter/notebook/")
+    os.system("hadoop fs -copyToLocal gs://final_inv_oot_data.csv /opt/jupyter/notebook/")
+    
+    df = pd.read_csv("/opt/jupyter/notebook/RR_Model_Development_Data.csv", encoding='cp1252')
+    oot_df = pd.read_csv("/opt/jupyter/notebook/final_inv_oot_data.csv", encoding='cp1252')
+    
+    logging.info(f"✅ Data Loaded: Development {df.shape}, OOT {oot_df.shape}")
+    return df, oot_df
+
+# ============================
+# 📌 Step 2: Data Preprocessing
+# ============================
+def preprocess_data(df, oot_df):
+    """Standardizes and cleans datasets."""
+    logging.info("🛠 Preprocessing Data...")
+
+    df.columns = [col.lower().replace(" ", "_") for col in df.columns]
+    oot_df.columns = [col.lower().replace(" ", "_") for col in oot_df.columns]
+    
+    drop_cols = ['custid', 'key', 'customer_id', 'selection_month']
+    df.drop(columns=drop_cols, errors='ignore', inplace=True)
+    oot_df.drop(columns=drop_cols, errors='ignore', inplace=True)
+    
+    logging.info(f"✅ Preprocessing Done: {df.shape} features remaining")
+    return df, oot_df
+
+# ============================
+# 📌 Step 3: Train-Test Split
+# ============================
+def split_data(df, target_col="mevent"):
+    """Splits data into training and testing sets."""
+    logging.info("✂️ Splitting Data...")
+
+    X = df.drop(columns=[target_col])
+    y = df[target_col]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42, stratify=y
+    )
+    
+    logging.info(f"✅ Data Split: Train {X_train.shape}, Test {X_test.shape}")
+    return X_train, X_test, y_train, y_test
+
+# ============================
+# 📌 Step 4: Model Selection (PyCaret)
+# ============================
+def develop_model(X_train, y_train):
+    """Uses PyCaret to select the best model based on AUC."""
+    logging.info("🤖 Developing Model...")
+
+    clf = setup(
+        data=pd.concat([X_train, y_train], axis=1),
+        target="mevent",
+        train_size=0.7,
+        silent=True,
+        session_id=42,
+        include=['catboost', 'xgboost', 'lightgbm', 'rf']
+    )
+
+    best_model = compare_models(sort='AUC')
+    prep_pipeline = get_config("prep_pipe")
+    
+    logging.info(f"✅ Best Model Selected: {type(best_model).__name__}")
+    return best_model, prep_pipeline
+
+# ============================
+# 📌 Step 5: Hyperparameter Optimization
+# ============================
+def optimize_hyperparameters(best_model, X_train, y_train, X_test, y_test):
+    """Uses Optuna to optimize model hyperparameters."""
+    logging.info("🎯 Running Hyperparameter Optimization...")
+    
+    def objective(trial):
+        """Defines Optuna optimization objective."""
+        params = {
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+            "max_depth": trial.suggest_int("max_depth", 3, 10)
+        }
+        model = best_model.set_params(**params)
+        model.fit(X_train, y_train)
+        
+        auc = roc_auc_score(y_test, model.predict_proba(X_test)[:,1])
+        return auc
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=50, timeout=1200)
+    
+    logging.info(f"✅ Hyperparameter Optimization Done: Best AUC {study.best_value:.4f}")
+    return study
+
+# ============================
+# 📌 Step 6: Model Explainability (SHAP & LIME)
+# ============================
+def explain_model(model, X_train, X_test):
+    """Generates SHAP and LIME explanations for model transparency."""
+    logging.info("🧐 Generating Model Explanations...")
+
+    # SHAP for tree-based models
+    if 'tree' in type(model).__name__.lower():
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X_train)
+        
+        plt.figure()
+        shap.summary_plot(shap_values, X_train, show=False)
+        plt.savefig("shap_summary.png")
+        plt.close()
+        logging.info("✅ SHAP Summary Saved!")
+
+    # LIME for non-tree models
+    else:
+        explainer = lime.lime_tabular.LimeTabularExplainer(
+            X_train.values,
+            feature_names=X_train.columns,
+            mode="classification"
+        )
+        exp = explainer.explain_instance(
+            X_test.iloc[0].values, model.predict_proba, num_features=15
+        )
+        exp.save_to_file("lime_explanation.html")
+        logging.info("✅ LIME Explanation Saved!")
+
+# ============================
+# 📌 Step 7: Model Evaluation & Calibration
+# ============================
+def evaluate_model(model, X_test, y_test):
+    """Generates key evaluation metrics and calibration curve."""
+    logging.info("📊 Evaluating Model...")
+
+    probas = model.predict_proba(X_test)[:,1]
+    auc = roc_auc_score(y_test, probas)
+    logloss = log_loss(y_test, probas)
+
+    # Calibration Curve
+    fraction_positives, mean_predicted = calibration_curve(y_test, probas, n_bins=10)
+    
+    plt.figure(figsize=(8,6))
+    plt.plot(mean_predicted, fraction_positives, "s-")
+    plt.plot([0, 1], [0, 1], "k--")
+    plt.xlabel("Predicted Probability")
+    plt.ylabel("Fraction of Positives")
+    plt.title("Calibration Curve")
+    plt.savefig("calibration_curve.png")
+    plt.close()
+
+    logging.info(f"✅ Evaluation Done: AUC={auc:.4f}, LogLoss={logloss:.4f}")
+
+# ============================
+# 📌 Step 8: Save Model
+# ============================
+def save_final_model(model):
+    """Saves the final trained model."""
+    logging.info("💾 Saving Final Model...")
+    save_model(model, "production_model")
+    logging.info("✅ Model Saved Successfully!")
+
+# ============================
+# 📌 Execute Steps One by One
+# ============================
+if __name__ == "__main__":
+    df, oot_df = load_data()
+    df, oot_df = preprocess_data(df, oot_df)
+    X_train, X_test, y_train, y_test = split_data(df)
+    
+    best_model, prep_pipeline = develop_model(X_train, y_train)
+    study = optimize_hyperparameters(best_model, X_train, y_train, X_test, y_test)
+
+    explain_model(best_model, X_train, X_test)
+    evaluate_model(best_model, X_test, y_test)
+    
+    save_final_model(best_model)
+
+    print("🚀 Model Pipeline Completed Successfully!")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Required Libraries
 import os
 import pandas as pd
