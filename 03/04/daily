@@ -1,4 +1,142 @@
 # 📌 Install Required Libraries
+get_ipython().system('pip install --upgrade pandas numpy seaborn matplotlib shap pycaret scikit-learn optuna')
+
+# 📌 Import Libraries
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import shap
+import optuna
+from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.feature_selection import mutual_info_classif, RFE
+from sklearn.linear_model import LassoCV
+from sklearn.ensemble import RandomForestClassifier
+from pycaret.classification import setup, compare_models, create_model, tune_model, save_model, get_config
+from scipy.stats import ks_2samp
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+from IPython.display import display  
+
+# 📌 Function to Display DataFrames
+def display_dataframe(name, dataframe):
+    print(f"\n📌 {name}:\n")
+    display(dataframe.head(10))
+
+# 📌 Load Data From Hadoop
+get_ipython().system('hadoop fs -copyToLocal gs://RR_Model_Development_Data.csv /opt/jupyter/notebook/')
+data_path = '/opt/jupyter/notebook/RR_Model_Development_Data.csv'
+raw = pd.read_csv(data_path, encoding='cp1252')
+
+get_ipython().system('hadoop fs -copyToLocal gs://final_inv_oot_data.csv /opt/jupyter/notebook/')
+oot_path = '/opt/jupyter/notebook/final_inv_oot_data.csv'
+raw_OOT = pd.read_csv(oot_path, encoding='cp1252')
+
+# 📌 Data Preprocessing
+raw.columns = [x.lower() for x in raw.columns]
+raw_OOT.columns = [x.lower() for x in raw_OOT.columns]
+raw = raw.rename(columns={'custid': 'cust_num'})
+raw_OOT = raw_OOT.rename(columns={'custid': 'cust_num'})
+raw_OOT['selection_month'] = '202307'
+raw_OOT['samplingweight'] = 1
+
+# 📌 Drop Unnecessary Columns
+drop_columns = ['cust_num', 'samplingweight', 'selection_month', 'ga_cust_id', 'gndr_cde', 'gbflag', 'model', 'fin_annual_sal_src', 'gender']
+raw = raw.drop(columns=drop_columns, errors='ignore')
+raw_OOT = raw_OOT.drop(columns=drop_columns, errors='ignore')
+
+# 📌 One-Hot Encoding
+raw = pd.get_dummies(raw, columns=['onus_pil_auto_rpmt_ind'], prefix='OPARI')
+raw_OOT = pd.get_dummies(raw_OOT, columns=['onus_pil_auto_rpmt_ind'], prefix='OPARI')
+
+# 📌 Ensure Train and OOT Have Same Features
+missing_cols = set(raw.columns) - set(raw_OOT.columns)
+for col in missing_cols:
+    raw_OOT[col] = 0  
+
+# 📌 Step 1: Remove Correlated & High VIF Features
+corr_matrix = raw.corr().abs()
+upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+correlated_features = [column for column in upper.columns if any(upper[column] > 0.90)]
+raw = raw.drop(columns=correlated_features, errors='ignore')
+
+X = raw.drop(columns=['mevent'], errors='ignore')
+vif_data = add_constant(X)
+vif = pd.Series([variance_inflation_factor(vif_data.values, i) for i in range(vif_data.shape[1])], index=vif_data.columns)
+high_vif_features = vif[vif > 10].index.tolist()
+raw = raw.drop(columns=high_vif_features, errors='ignore')
+
+# 📌 Step 2: Feature Selection (MI, SHAP, RFE, LASSO)
+X = raw.drop(columns=['mevent'], errors='ignore')
+y = raw['mevent']
+
+# Mutual Information
+mi_scores = mutual_info_classif(X, y)
+mi_df = pd.DataFrame({'Feature': X.columns, 'MI_Score': mi_scores}).sort_values(by='MI_Score', ascending=False)
+
+# SHAP Feature Importance
+model = RandomForestClassifier(n_estimators=50)
+model.fit(X, y)
+explainer = shap.TreeExplainer(model)
+shap_values = explainer.shap_values(X)
+shap_df = pd.DataFrame({'Feature': X.columns, 'SHAP_Importance': np.abs(shap_values).mean(axis=0)}).sort_values(by='SHAP_Importance', ascending=False)
+
+# Recursive Feature Elimination (RFE)
+rfe = RFE(model, n_features_to_select=30)
+rfe.fit(X, y)
+rfe_features = X.columns[rfe.support_]
+
+# LASSO Regression
+lasso = LassoCV(cv=5).fit(X, y)
+lasso_df = pd.DataFrame({'Feature': X.columns, 'LASSO_Importance': np.abs(lasso.coef_)}).sort_values(by='LASSO_Importance', ascending=False)
+
+# Final Feature Selection
+final_features = set(mi_df.head(30)['Feature']) & set(shap_df.head(30)['Feature']) & set(rfe_features) & set(lasso_df.head(30)['Feature'])
+X = X[list(final_features)]
+
+# 📌 Step 3: Optuna Hyperparameter Tuning
+hyper_results = []
+
+def objective(trial):
+    params = {
+        'n_estimators': trial.suggest_int('n_estimators', 50, 500, step=50),
+        'max_depth': trial.suggest_int('max_depth', 2, 10),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+        'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
+        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+    }
+    
+    model = create_model('rf', fold=5, verbose=False, **params)
+    tuned = tune_model(model, optimize='AUC', fold=5)
+    
+    train_gini = (2 * get_config('AUC') - 1)
+    oot_preds = tuned.predict_proba(raw_OOT[X.columns])[:, 1]
+    oot_gini = (2 * roc_auc_score(raw_OOT['mevent'], oot_preds)) - 1
+    
+    hyper_results.append([params, train_gini, oot_gini, abs(train_gini - oot_gini)])
+    return abs(train_gini - oot_gini)
+
+study = optuna.create_study(direction="minimize")
+study.optimize(objective, n_trials=20)
+
+# 📌 Select Best Hyperparameters
+best_params = min(hyper_results, key=lambda x: x[3])[0]
+final_model = create_model('rf', fold=5, verbose=True, **best_params)
+tuned_final_model = tune_model(final_model, optimize='AUC', fold=5)
+
+# 📌 Save Model
+save_model(tuned_final_model, '/opt/jupyter/notebook/Output_RR/final_model')
+
+print("🚀 Final Model Successfully Saved!")
+
+
+
+
+
+
+
+
+# 📌 Install Required Libraries
 get_ipython().system('pip install --upgrade pandas numpy seaborn matplotlib shap pycaret scikit-learn')
 
 # 📌 Import Necessary Libraries
