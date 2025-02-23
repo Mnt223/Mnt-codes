@@ -6,6 +6,166 @@ quit;
 /* Define Paths */
 %let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/landing/inbound/;
 %let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/Sample_Check/;
+%let restricted_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/Restricted_Files/;
+%let days_back = 30;
+%let size_threshold = 102400; /* 100KB threshold */
+
+/* Initialize dataset */
+data backlog;
+    length file_date $10 file_status $25 file_size_325 8 file_size_606 8 formatted_size_325 $20 formatted_size_606 $20 extracted_files $100;
+    stop;
+run;
+
+/* Macro for Email ZIP file processing */
+%macro check_email_files;
+
+%do i = 0 %to %eval(&days_back - 1);
+
+    /* Generate the date in YYYY_MM_DD format */
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
+    %let check_date = %sysfunc(putn(&raw_date, yymmdd10.));
+    %let formatted_date = %sysfunc(tranwrd(&check_date, "-", "_")); /* Convert YYYY-MM-DD to YYYY_MM_DD */
+
+    /* Construct file paths */
+    %let zip_filename = Email_&formatted_date..zip;
+    %let extracted_folder = &unzip_path./&formatted_date;
+    %let restricted_folder = &restricted_path./&formatted_date;
+    %let full_zip_path = &base_path./&zip_filename;
+
+    /* Define expected CSV filenames */
+    %let csv_325 = 325.csv;
+    %let csv_606 = 606.csv;
+
+    /* Check if ZIP file exists */
+    data _null_;
+        length full_zip_path $512;
+        full_zip_path = resolve("&full_zip_path");
+        file_exists = fileexist(full_zip_path);
+        call symputx('file_found', file_exists);
+    run;
+
+    %if &file_found %then %do;
+        /* Unzipping the file */
+        x "mkdir -p &extracted_folder"; /* Ensure directory exists */
+        x "unzip -o &full_zip_path -d &extracted_folder";
+
+        /* Ensure restricted folder exists */
+        x "mkdir -p &restricted_folder";
+
+        /* Move restricted files to the restricted folder */
+        x "mv &extracted_folder./&csv_325 &restricted_folder/ 2>/dev/null";
+        x "mv &extracted_folder./&csv_606 &restricted_folder/ 2>/dev/null";
+
+        /* Verify extraction */
+        data _null_;
+            length extracted_path $512;
+            extracted_path = resolve("&extracted_folder");
+            extracted_exists = fileexist(extracted_path);
+            call symputx('extracted_found', extracted_exists);
+        run;
+
+        %if &extracted_found %then %do;
+            /* Initialize variables */
+            %let valid_zip = 1;
+            %let status = Valid;
+            %let file_size_325 = 0;
+            %let file_size_606 = 0;
+            %let extracted_files = ;
+
+            /* Check file sizes for 325.csv and 606.csv */
+            data _null_;
+                length path_325 path_606 $512;
+                path_325 = resolve("&restricted_folder./&csv_325");
+                path_606 = resolve("&restricted_folder./&csv_606");
+
+                file_325_size = ifn(fileexist(path_325), fsize(fopen(path_325)), .);
+                file_606_size = ifn(fileexist(path_606), fsize(fopen(path_606)), .);
+
+                call symputx('file_size_325', file_325_size);
+                call symputx('file_size_606', file_606_size);
+            run;
+
+            /* If files exist, add them to extracted_files */
+            %if &file_size_325 > 0 %then %let extracted_files = catx(", ", &extracted_files, "325.csv");
+            %if &file_size_606 > 0 %then %let extracted_files = catx(", ", &extracted_files, "606.csv");
+
+            %if &extracted_files = %then %do;
+                %let status = Missing;
+            %end;
+
+            /* Convert file sizes to readable format */
+            %let formatted_size_325 = %sysfunc(ifc(&file_size_325 > 1073741824, %sysfunc(catx(" ", %sysevalf(&file_size_325/1073741824, 0.01), "GB")), 
+                                    %sysfunc(ifc(&file_size_325 > 1048576, %sysfunc(catx(" ", %sysevalf(&file_size_325/1048576, 0.01), "MB")), 
+                                    %sysfunc(ifc(&file_size_325 > 1024, %sysfunc(catx(" ", %sysevalf(&file_size_325/1024, 0.01), "KB")), 
+                                    %sysfunc(ifc(&file_size_325 > 0, %sysfunc(catx(" ", &file_size_325, "Bytes")), "-"))))))));
+
+            %let formatted_size_606 = %sysfunc(ifc(&file_size_606 > 1073741824, %sysfunc(catx(" ", %sysevalf(&file_size_606/1073741824, 0.01), "GB")), 
+                                    %sysfunc(ifc(&file_size_606 > 1048576, %sysfunc(catx(" ", %sysevalf(&file_size_606/1048576, 0.01), "MB")), 
+                                    %sysfunc(ifc(&file_size_606 > 1024, %sysfunc(catx(" ", %sysevalf(&file_size_606/1024, 0.01), "KB")), 
+                                    %sysfunc(ifc(&file_size_606 > 0, %sysfunc(catx(" ", &file_size_606, "Bytes")), "-"))))))));
+
+            /* Append file status */
+            data temp;
+                file_date = "&formatted_date";
+                file_status = "&status";
+                extracted_files = "&extracted_files";
+                file_size_325 = &file_size_325;
+                formatted_size_325 = "&formatted_size_325";
+                file_size_606 = &file_size_606;
+                formatted_size_606 = "&formatted_size_606";
+            run;
+
+            proc append base=backlog data=temp; run;
+
+        %end;
+        %else %do;
+            /* Case: Extraction failed */
+            data temp;
+                file_date = "&formatted_date";
+                file_status = "Extraction Failed";
+                extracted_files = "";
+                file_size_325 = .;
+                file_size_606 = .;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+    %end;
+    %else %do;
+        /* Case: File missing */
+        data temp;
+            file_date = "&formatted_date";
+            file_status = "Missing";
+            extracted_files = "";
+            file_size_325 = .;
+            file_size_606 = .;
+        run;
+        proc append base=backlog data=temp; run;
+    %end;
+
+%end;
+
+%mend check_email_files;
+
+/* Run the macro */
+%check_email_files;
+
+
+
+
+
+
+
+
+
+
+/* Delete previous data */
+proc datasets lib=work nolist;
+    delete backlog summary;
+quit;
+
+/* Define Paths */
+%let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/landing/inbound/;
+%let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/Sample_Check/;
 %let days_back = 30;
 %let size_threshold = 102400; /* 100KB threshold */
 
