@@ -1,3 +1,182 @@
+/* Delete previous data */
+proc datasets lib=work nolist;
+    delete backlog summary;
+quit;
+
+/* Define Paths */
+%let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/landing/inbound/;
+%let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/Sample_Check/;
+%let days_back = 30;
+%let size_threshold = 102400; /* 100KB threshold */
+
+/* Initialize dataset */
+data backlog;
+    length file_date $10 file_status $25 file_size 8 formatted_size $20 extracted_files $100;
+    stop;
+run;
+
+/* Macro for Email ZIP file processing */
+%macro check_email_files;
+
+%do i = 0 %to %eval(&days_back - 1);
+
+    /* Generate the date in DD_MM_YY format */
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
+    %let day_part = %sysfunc(putn(&raw_date, day2.));
+    %let month_part = %sysfunc(putn(&raw_date, month2.));
+    %let year_part = %sysfunc(putn(&raw_date, year4.));
+    %let short_year = %substr(&year_part,3,2);
+    %let check_date = &day_part._&month_part._&short_year;
+
+    /* Construct file paths */
+    %let zip_filename = Email_&check_date..zip;
+    %let extracted_folder = &unzip_path./&check_date;
+    %let full_zip_path = &base_path./&zip_filename;
+
+    /* Define expected CSV filenames */
+    %let csv_325 = 325.csv;
+    %let csv_606 = 606.csv;
+
+    /* Check if ZIP file exists */
+    data _null_;
+        length full_zip_path $512;
+        full_zip_path = resolve("&full_zip_path");
+        file_exists = fileexist(full_zip_path);
+        call symputx('file_found', file_exists);
+    run;
+
+    %if &file_found %then %do;
+        /* Unzipping the file */
+        x "mkdir -p &extracted_folder"; /* Ensure directory exists */
+        x "unzip -o &full_zip_path -d &extracted_folder";
+
+        /* Verify extraction */
+        data _null_;
+            length extracted_path $512;
+            extracted_path = resolve("&extracted_folder");
+            extracted_exists = fileexist(extracted_path);
+            call symputx('extracted_found', extracted_exists);
+        run;
+
+        %if &extracted_found %then %do;
+            /* Initialize variables */
+            %let valid_zip = 1;
+            %let status = Valid;
+            %let file_size = 0;
+            %let extracted_files = ;
+
+            /* Check if specific CSV files exist */
+            %let extracted_325 = 0;
+            %let extracted_606 = 0;
+
+            data _null_;
+                length extracted_path_325 extracted_path_606 $512;
+                extracted_path_325 = resolve("&extracted_folder./&csv_325");
+                extracted_path_606 = resolve("&extracted_folder./&csv_606");
+
+                extracted_325_exists = fileexist(extracted_path_325);
+                extracted_606_exists = fileexist(extracted_path_606);
+
+                call symputx('extracted_325', extracted_325_exists);
+                call symputx('extracted_606', extracted_606_exists);
+            run;
+
+            %if &extracted_325 %then %let extracted_files = catx(", ", &extracted_files, "325.csv");
+            %if &extracted_606 %then %let extracted_files = catx(", ", &extracted_files, "606.csv");
+
+            %if &extracted_files = %then %do;
+                %let status = Missing;
+            %end;
+
+            /* Get extracted folder size */
+            data _null_;
+                infile "du -sb &extracted_folder" pipe;
+                input extracted_size 8.;
+                call symputx('file_size', extracted_size);
+            run;
+
+            /* Check file size threshold */
+            %if %sysevalf(&file_size < &size_threshold) %then %let status = &status (Below Threshold);
+
+            /* Append file status */
+            data temp;
+                file_date = "&check_date";
+                file_status = "&status";
+                extracted_files = "&extracted_files";
+                file_size = &file_size;
+            run;
+
+            proc append base=backlog data=temp; run;
+
+        %end;
+        %else %do;
+            /* Case: Extraction failed */
+            data temp;
+                file_date = "&check_date";
+                file_status = "Extraction Failed";
+                extracted_files = "";
+                file_size = .;
+            run;
+            proc append base=backlog data=temp; run;
+        %end;
+    %end;
+    %else %do;
+        /* Case: File missing */
+        data temp;
+            file_date = "&check_date";
+            file_status = "Missing";
+            extracted_files = "";
+            file_size = .;
+        run;
+        proc append base=backlog data=temp; run;
+    %end;
+
+%end;
+
+%mend check_email_files;
+
+/* Run the macro */
+%check_email_files;
+
+/* Convert file size to KB, MB, or GB */
+data backlog;
+    set backlog;
+    if file_size > 1073741824 then formatted_size = catx(" ", round(file_size/1073741824, 0.01), "GB");
+    else if file_size > 1048576 then formatted_size = catx(" ", round(file_size/1048576, 0.01), "MB");
+    else if file_size > 1024 then formatted_size = catx(" ", round(file_size/1024, 0.01), "KB");
+    else if file_size > 0 then formatted_size = catx(" ", file_size, "Bytes");
+    else formatted_size = "-";
+run;
+
+/* Generate Summary Statistics */
+data backlog1 (drop=file_size);
+    set backlog;
+    if file_status = "Missing" then action = "Alert: Missing File - Repush Required";
+    else if file_status = "Valid" then action = "Valid File - No Action";
+    else if index(file_status, "Corrupt") > 0 then action = "Alert: File Size - Repush Required";
+    else action = "Check Required";
+run;
+
+/* Create summary statistics */
+proc sql;
+    create table summary as
+    select
+        file_date,
+        sum(case when file_status = 'Valid' then 1 else 0 end) as Valid_Files,
+        sum(case when file_status = 'Missing' then 1 else 0 end) as Missing_Files,
+        sum(case when index(file_status, 'Corrupt') > 0 then 1 else 0 end) as Corrupt_Files,
+        sum(case when index(file_status, 'Threshold') > 0 then 1 else 0 end) as Size_Warnings
+    from backlog
+    group by file_date;
+quit;
+
+
+
+
+
+
+
+
 %macro check_email_files(days_back=30);
 
 %do i = 0 %to %eval(&days_back - 1);
