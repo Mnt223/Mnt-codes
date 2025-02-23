@@ -1,3 +1,17 @@
+# 📌 Identify Categorical Features
+categorical_cols = raw.select_dtypes(include=['object']).columns.tolist()
+print("🔹 Categorical Columns Detected:", categorical_cols)
+
+# Convert categorical values to lowercase & replace inconsistent strings
+for col in categorical_cols:
+    raw[col] = raw[col].astype(str).str.lower().replace({'y': 'yes', 'n': 'no'})
+    raw_OOT[col] = raw_OOT[col].astype(str).str.lower().replace({'y': 'yes', 'n': 'no'})
+
+# Display Processed Dat
+
+
+
+
 # 📌 Install Required Libraries
 get_ipython().system('pip install --upgrade pandas numpy seaborn matplotlib shap pycaret')
 
