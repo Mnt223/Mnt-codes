@@ -34,6 +34,71 @@ data _null_;
    do until (eof);
       set backlog_data1 end=eof;
 
+      /* Define inline style for red text */
+      if file_status = "Missing" or file_status = "Below Threshold" then do;
+         put '<tr style="font-size: 11px;">';
+         put '<td style="padding: 6px; color: red; font-weight: bold;">' file_date '</td>';
+         put '<td style="padding: 6px; color: red; font-weight: bold;"><strong>' file_status '</strong></td>';
+         put '<td style="padding: 6px; color: red; font-weight: bold;">' formatted_size '</td>';
+         put '<td style="padding: 6px; color: red; font-weight: bold;">' action '</td>';
+         put '</tr>';
+      end;
+      else do;
+         put '<tr style="font-size: 11px;">';
+         put '<td style="padding: 6px;">' file_date '</td>';
+         put '<td style="padding: 6px;">' file_status '</td>';
+         put '<td style="padding: 6px;">' formatted_size '</td>';
+         put '<td style="padding: 6px;">' action '</td>';
+         put '</tr>';
+      end;
+   end;
+
+   /* Close Table & HTML */
+   put '</table>';
+   put '</body></html>';
+run;
+
+
+
+
+
+
+filename mymail email
+   to=("recipient@example.com") /* Replace with actual recipient */
+   from="noreply@example.com" /* Replace with actual sender */
+   subject="Non-Pega SMS File Report - Last &days_back Days"
+   content_type="text/html";
+
+data _null_;
+   file mymail;
+
+   /* Start HTML */
+   put '<html><body style="font-family: Arial, sans-serif; margin: 10px; font-size: 12px; color: #333;">';
+
+   /* Email Header */
+   put '<h2 style="color: #2cae50; border-bottom: 2px solid #3498db; font-size: 20px;">Non-Pega SMS File Report</h2>';
+
+   /* Report Summary - Each in a Separate Row */
+   put '<p style="margin: 5px 0; font-size: 14px;"><strong>Base Path:</strong> <span style="font-size: 13px; color: #555;">' "&base_path" '</span></p>';
+   put '<p style="margin: 5px 0; font-size: 14px;"><strong>Report Period:</strong> <span style="font-size: 13px; color: #555;">Last ' "&days_back" ' Days</span></p>';
+   put '<p style="margin: 5px 0; font-size: 14px;"><strong>Generated:</strong> <span style="font-size: 13px; color: #555;">' %sysfunc(putn(%sysfunc(datetime()), datetime20.)) '</span></p>';
+
+   /* Table Header */
+   put '<h3 style="color: #3498db; font-size: 16px;">Detailed Report</h3>';
+   put '<table border="1" cellpadding="3" cellspacing="0" style="border-collapse: collapse; width: 100%; margin-bottom: 10px; font-size: 11px;">';
+
+   /* Table Headers */
+   put '<tr style="background-color: #3498db; color: white; font-size: 12px; text-align: left;">';
+   put '<th style="padding: 6px; width: 15%;">File Date</th>';
+   put '<th style="padding: 6px; width: 20%;">File Status</th>';
+   put '<th style="padding: 6px; width: 15%;">File Size</th>';
+   put '<th style="padding: 6px; width: 50%;">Action</th>';
+   put '</tr>';
+
+   /* Loop through dataset and apply conditional formatting */
+   do until (eof);
+      set backlog_data1 end=eof;
+
       /* Apply Red Font Color for Entire Row if Issue Exists */
       if file_status = "Missing" or file_status = "Below Threshold" then 
          call symputx("text_style", "<span style=""color: red; font-weight: bold;"">");
