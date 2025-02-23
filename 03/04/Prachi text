@@ -1,3 +1,110 @@
+%macro check_email_files(days_back=30);
+
+%do i = 0 %to %eval(&days_back - 1);
+
+    /* Generate the date in DD_MM_YY format */
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
+    %let day_part = %sysfunc(putn(&raw_date, day2.));
+    %let month_part = %sysfunc(putn(&raw_date, month2.));
+    %let year_part = %sysfunc(putn(&raw_date, year4.));
+    %let short_year = %substr(&year_part,3,2);
+    %let check_date = &day_part._&month_part._&short_year;
+
+    /* Construct file paths */
+    %let zip_filename = Email_&check_date..zip;
+    %let zip_folder = &base_path;
+    %let extracted_folder = &unzip_path./&check_date;
+    %let full_zip_path = &zip_folder./&zip_filename;
+
+    /* Define expected CSV filenames */
+    %let csv_325 = 325.csv;
+    %let csv_606 = 606.csv;
+
+    /* Check if ZIP file exists */
+    data _null_;
+        length full_zip_path $512;
+        full_zip_path = resolve("&full_zip_path");
+        file_exists = fileexist(full_zip_path);
+        call symputx('file_found', file_exists);
+    run;
+
+    %if &file_found %then %do;
+        /* Unzipping the file */
+        x "mkdir -p &extracted_folder"; /* Ensure directory exists */
+        x "unzip -o &full_zip_path -d &extracted_folder";
+
+        /* Validate CSV Files */
+        %let extracted_325 = 0;
+        %let extracted_606 = 0;
+        %let extracted_count = 0;
+
+        data _null_;
+            length extracted_path_325 extracted_path_606 $512;
+            extracted_path_325 = resolve("&extracted_folder./&csv_325");
+            extracted_path_606 = resolve("&extracted_folder./&csv_606");
+
+            extracted_325_exists = fileexist(extracted_path_325);
+            extracted_606_exists = fileexist(extracted_path_606);
+
+            extracted_count = extracted_325_exists + extracted_606_exists;
+
+            call symputx('extracted_325', extracted_325_exists);
+            call symputx('extracted_606', extracted_606_exists);
+            call symputx('extracted_count', extracted_count);
+        run;
+
+        /* Prepare dataset */
+        data temp;
+            length file_date $10 file_status $25 file_size 8 extracted_files $50;
+            file_date = "&check_date";
+            extracted_files = "";
+
+            %if &extracted_325 %then %do;
+                extracted_files = catx(", ", extracted_files, "325.csv");
+            %end;
+            %if &extracted_606 %then %do;
+                extracted_files = catx(", ", extracted_files, "606.csv");
+            %end;
+
+            if extracted_files ne "" then file_status = "Valid";
+            else file_status = "Missing";
+
+            file_size = 0;
+        run;
+
+        proc append base=backlog data=temp; run;
+
+        %put NOTE: File &zip_filename processed. Status: &file_status. Extracted Files: &extracted_files;
+    %end;
+    %else %do;
+        data temp;
+            file_date = "&check_date";
+            file_status = "Missing";
+            extracted_files = "";
+            file_size = .;
+        run;
+
+        proc append base=backlog data=temp; run;
+        %put ERROR: ZIP file &zip_filename not found in &zip_folder.;
+    %end;
+
+%end;
+
+%mend check_email_files;
+
+/* Define Paths */
+%let base_path = /sasdata/path/to/zip/files;
+%let unzip_path = /sasdata/path/to/extracted/files;
+
+/* Run the macro for Email processing */
+%check_email_files(days_back=30);
+
+
+
+
+
+
+
 filename mymail email
    to=("recipient@example.com") /* Replace with actual recipient */
    from="noreply@example.com" /* Replace with actual sender */
