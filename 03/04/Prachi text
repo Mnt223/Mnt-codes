@@ -4,6 +4,65 @@ data _null_;
    /* Start HTML */
    put '<html><body style="font-family: Arial, sans-serif; margin: 10px; font-size: 12px; color: #333;">';
 
+   /* Email Header */
+   put '<h2 style="color: #2cae50; border-bottom: 2px solid #3498db; font-size: 20px;">Non-Pega SMS File Report</h2>';
+
+   /* Table Header */
+   put '<h3 style="color: #3498db; font-size: 16px;">Detailed Report</h3>';
+   put '<table border="1" cellpadding="3" cellspacing="0" style="border-collapse: collapse; width: 100%; margin-bottom: 10px; font-size: 11px;">';
+
+   /* Table Headers */
+   put '<tr style="background-color: #3498db; color: white; font-size: 12px; text-align: left;">';
+   put '<th style="padding: 6px; width: 15%;">File Date</th>';
+   put '<th style="padding: 6px; width: 20%;">File Status</th>';
+   put '<th style="padding: 6px; width: 15%;">File Size</th>';
+   put '<th style="padding: 6px; width: 50%;">Action</th>';
+   put '</tr>';
+
+   /* Loop through dataset and apply conditional formatting */
+   do until (eof);
+      set backlog_data1 end=eof;
+
+      /* Define row background color based on condition */
+      if file_status = "Missing" or file_status = "Below Threshold" then 
+         call symputx("row_color", "#FFCCCC"); /* Entire row in Red */
+      else 
+         call symputx("row_color", "#f9f9f9"); /* Normal Row Background */
+
+      /* Print the row with appropriate background color */
+      put '<tr style="font-size: 11px; background-color:' "&row_color" ';">';
+      put '<td style="padding: 6px; background-color:' "&row_color" ';">' file_date '</td>';
+      put '<td style="padding: 6px; background-color:' "&row_color" ';"><strong>' file_status '</strong></td>';
+      put '<td style="padding: 6px; background-color:' "&row_color" ';">' formatted_size '</td>';
+      put '<td style="padding: 6px; background-color:' "&row_color" ';">' action '</td>';
+      put '</tr>';
+   end;
+
+   /* Close Table & HTML */
+   put '</table>';
+   put '</body></html>';
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+data _null_;
+   file mail;
+
+   /* Start HTML */
+   put '<html><body style="font-family: Arial, sans-serif; margin: 10px; font-size: 12px; color: #333;">';
+
    /* Report Header */
    put '<h2 style="color: #2cae50; border-bottom: 2px solid #3498db; font-size: 20px;">Non-Pega SMS File Report</h2>';
 
