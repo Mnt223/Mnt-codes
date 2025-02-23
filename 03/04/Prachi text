@@ -12,6 +12,103 @@ quit;
 
 /* Initialize dataset */
 data backlog;
+    length file_date $10 file_status $25 file_size_325 8 file_size_606 8 
+           formatted_size_325 $20 formatted_size_606 $20 extracted_files $100;
+    stop;
+run;
+
+/* Macro for Email ZIP file processing */
+%macro check_email_files;
+
+%do i = 0 %to %eval(&days_back - 1);
+
+    /* Generate the date in DD_MM_YY format */
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i, b));
+    %let day_part = %sysfunc(putn(&raw_date, day2.));
+    %let month_part = %sysfunc(putn(&raw_date, month2.));
+    %let year_part = %sysfunc(putn(&raw_date, year4.));
+    %let short_year = %substr(&year_part,3,2); /* Extract last two digits of the year */
+    %let check_date = &day_part._&month_part._&short_year;
+
+    /* Construct file paths */
+    %let zip_filename = Email_&check_date..zip;
+    %let extracted_folder = &unzip_path./&check_date;
+    %let restricted_folder = &restricted_path./&check_date;
+    %let full_zip_path = &base_path./&zip_filename;
+
+    /* Define expected CSV filenames */
+    %let csv_325 = 325.csv;
+    %let csv_606 = 606.csv;
+
+    /* Check if ZIP file exists */
+    data _null_;
+        length full_zip_path $512;
+        full_zip_path = resolve("&full_zip_path");
+        file_exists = fileexist(full_zip_path);
+        call symputx('file_found', file_exists);
+    run;
+
+    %if &file_found %then %do;
+        /* Unzipping the file */
+        x "mkdir -p &extracted_folder"; /* Ensure directory exists */
+        x "unzip -o &full_zip_path -d &extracted_folder";
+
+        /* Ensure restricted folder exists */
+        x "mkdir -p &restricted_folder";
+
+        /* Move restricted files to the restricted folder */
+        x "mv &extracted_folder./&csv_325 &restricted_folder/ 2>/dev/null";
+        x "mv &extracted_folder./&csv_606 &restricted_folder/ 2>/dev/null";
+
+        /* Verify extraction */
+        data _null_;
+            length extracted_path $512;
+            extracted_path = resolve("&extracted_folder");
+            extracted_exists = fileexist(extracted_path);
+            call symputx('extracted_found', extracted_exists);
+        run;
+
+        %if &extracted_found %then %do;
+            /* Initialize variables */
+            %let status = Valid;
+            %let file_size_325 = 0;
+            %let file_size_606 = 0;
+            %let extracted_files = ;
+
+            /* Check file sizes for 325.csv and 606.csv */
+            data _null_;
+                length path_325 path_606 $512;
+                path_325 = resolve("&restricted_folder./&csv_325");
+                path_606 = resolve("&restricted_folder./&csv_606");
+
+                file_325_size = ifn(fileexist(path_325), fsize(fopen(path_325)), .);
+                file_606_size = ifn(fileexist(path_606), fsize(fopen(path_606)), .);
+
+                call symputx('file_size_325', file_325_size);
+                call symputx('file_size_606', file_606_size);
+            run;
+
+            /* If files exist, add them to extracted_files */
+            %if &file_size_325 > 0
+
+
+
+
+
+/* Delete previous data */
+proc datasets lib=work nolist;
+    delete backlog summary;
+quit;
+
+/* Define Paths */
+%let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/landing/inbound/;
+%let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/Sample_Check/;
+%let restricted_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/Restricted_Files/;
+%let days_back = 30;
+%let size_threshold = 102400; /* 100KB threshold */
+
+/* Initialize dataset */
+data backlog;
     length file_date $10 file_status $25 file_size_325 8 file_size_606 8 formatted_size_325 $20 formatted_size_606 $20 extracted_files $100;
     stop;
 run;
