@@ -1,3 +1,144 @@
+# 📌 Install Required Libraries
+get_ipython().system('pip install --upgrade pandas numpy seaborn matplotlib shap pycaret')
+
+# 📌 Import Necessary Libraries
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import shap
+from sklearn.metrics import roc_auc_score, roc_curve
+from pycaret.classification import setup, compare_models, tune_model, save_model, get_config
+from sklearn.feature_selection import mutual_info_classif, RFE
+from sklearn.linear_model import LassoCV
+from sklearn.ensemble import RandomForestClassifier
+from IPython.display import display  # Jupyter display function
+
+# 📌 Function to Display Dataframes in Notebook
+def display_dataframe(name, dataframe):
+    print(f"\n📌 {name}:\n")
+    display(dataframe.head(10))  # Show first 10 rows for readability
+
+# 📌 Load Data from Hadoop
+get_ipython().system('hadoop fs -copyToLocal gs://RR_Model_Development_Data.csv /opt/jupyter/notebook/')
+data_path = '/opt/jupyter/notebook/RR_Model_Development_Data.csv'
+raw = pd.read_csv(data_path, encoding='cp1252')
+
+get_ipython().system('hadoop fs -copyToLocal gs://final_inv_oot_data.csv /opt/jupyter/notebook/')
+oot_path = '/opt/jupyter/notebook/final_inv_oot_data.csv'
+raw_OOT = pd.read_csv(oot_path, encoding='cp1252')
+
+# 📌 Data Preprocessing
+raw.columns = [x.lower() for x in raw.columns]
+raw_OOT.columns = [x.lower() for x in raw_OOT.columns]
+
+raw = raw.rename(columns={'custid': 'cust_num'})
+raw_OOT = raw_OOT.rename(columns={'custid': 'cust_num'})
+
+raw_OOT['selection_month'] = '202307'
+raw_OOT['samplingweight'] = 1
+
+# 📌 Drop Unnecessary Columns
+drop_columns = ['cust_num', 'samplingweight', 'selection_month', 'ga_cust_id', 'gndr_cde', 'gbflag', 'model', 'fin_annual_sal_src', 'gender']
+raw = raw.drop(columns=drop_columns, errors='ignore')
+raw_OOT = raw_OOT.drop(columns=drop_columns, errors='ignore')
+
+# 📌 Identify Categorical Features
+categorical_cols = raw.select_dtypes(include=['object']).columns.tolist()
+print("🔹 Categorical Columns Detected:", categorical_cols)
+
+# Convert categorical values to lowercase & replace inconsistent strings
+for col in categorical_cols:
+    raw[col] = raw[col].astype(str).str.lower().replace({'y': 'yes', 'n': 'no'})
+    raw_OOT[col] = raw_OOT[col].astype(str).str.lower().replace({'y': 'yes', 'n': 'no'})
+
+# Display Processed Data
+display_dataframe("Processed Main Data", raw)
+display_dataframe("Processed OOT Data", raw_OOT)
+
+# 📌 Feature Selection
+X = raw.drop(columns=['mevent'], errors='ignore')
+y = raw['mevent']
+
+# 📌 SHAP Importance
+model = RandomForestClassifier(n_estimators=50)
+model.fit(X, y)
+explainer = shap.TreeExplainer(model)
+shap_values = explainer.shap_values(X)
+shap.summary_plot(shap_values, X, show=False)
+plt.savefig('/opt/jupyter/notebook/Output_RR/shap_summary.png')
+plt.show()
+
+# 📌 Model Setup
+clf = setup(data=pd.concat([X, y], axis=1),
+            target='mevent',
+            categorical_features=categorical_cols,  # ✅ Ensure PyCaret handles categorical variables
+            ignore_features=['cust_num', 'samplingweight', 'selection_month'],
+            numeric_imputation='mean',
+            categorical_imputation='mode',
+            remove_outliers=True, train_size=0.70, session_id=1992)
+
+# 📌 Compare Models
+best_model = compare_models(fold=5, sort='AUC', n_select=1)
+
+# 📌 Hyperparameter Tuning with Optuna
+tuned_models = tune_model(best_model, optimize='AUC', n_iter=50, return_tuner=True)
+
+# 📌 Compute PSI
+def calculate_psi(expected, actual, buckets=10):
+    quantiles = np.linspace(0, 1, buckets + 1)
+    expected_bins = np.percentile(expected, quantiles * 100)
+    expected_bins[0], expected_bins[-1] = -np.inf, np.inf
+    expected_counts = np.histogram(expected, bins=expected_bins)[0] / len(expected)
+    actual_counts = np.histogram(actual, bins=expected_bins)[0] / len(actual)
+    expected_counts = np.where(expected_counts == 0, 0.0001, expected_counts)
+    actual_counts = np.where(actual_counts == 0, 0.0001, actual_counts)
+    psi_values = (expected_counts - actual_counts) * np.log(expected_counts / actual_counts)
+    return round(np.sum(psi_values) * 100, 4)
+
+psi_score = calculate_psi(X, raw_OOT[X.columns])
+display_dataframe("PSI Score", pd.DataFrame({'PSI Train vs OOT': [psi_score]}))
+
+# 📌 Compute Gain & Lift Charts
+def plot_gain_lift(y_true, y_scores):
+    fpr, tpr, _ = roc_curve(y_true, y_scores)
+    plt.figure()
+    plt.plot(fpr, tpr, marker='.', label='Model')
+    plt.plot([0, 1], [0, 1], linestyle='--', label='No Skill')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.legend()
+    plt.title('Gain & Lift Curve')
+    plt.savefig('/opt/jupyter/notebook/Output_RR/gain_lift_curve.png')
+    plt.show()
+
+train_preds = best_model.predict_proba(X)[:, 1]
+plot_gain_lift(y, train_preds)
+
+# 📌 Compute Rank Ordering
+def rank_order_analysis(data, target):
+    data['score_decile'] = pd.qcut(data[target], 10, labels=False)
+    rank_order_table = data.groupby('score_decile')[target].agg(['count', 'mean'])
+    return rank_order_table
+
+rank_order_table = rank_order_analysis(raw, 'mevent')
+display_dataframe("Rank Ordering", rank_order_table)
+
+# 📌 Save Final Model
+final_hyperparameters = tuned_models.trials_dataframe().nlargest(20, 'value').iloc[0]['params']
+final_model = tune_model(best_model, custom_grid=final_hyperparameters, optimize='AUC', n_iter=1)
+save_model(final_model, '/opt/jupyter/notebook/Output_RR/final_model')
+
+print("🚀 Final Model Successfully Saved!")
+
+
+
+
+
+
+
+
+
 # 📌 Identify Categorical Features
 categorical_cols = raw.select_dtypes(include=['object']).columns.tolist()
 print("🔹 Categorical Columns Detected:", categorical_cols)
