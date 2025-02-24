@@ -1,3 +1,196 @@
+You’re absolutely right! The actual columns available in top_20_models are prefixed with param_actual_estimator__ (as shown in your screenshot). To correctly align the hyperparameter selection, I will ensure we only use available columns in top_20_models.
+
+🔹 Corrected Code (Using Actual Column Names)
+
+from pycaret.classification import tune_model, create_model, predict_model
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import roc_auc_score
+
+# Tune the model and get top 20 hyperparameter sets
+tuned_models = tune_model(model_tune_gbc, n_iter=50, optimize='AUC', return_tuner=True)
+top_20_models = pd.DataFrame(tuned_models[1].cv_results_).sort_values(by="mean_test_score", ascending=False).head(20)
+
+# Extract actual hyperparameter columns from top 20 models (as per screenshot)
+param_cols = [col for col in top_20_models.columns if col.startswith("param_actual_estimator__")]
+selected_metrics = ["mean_test_score", "mean_fit_time"]  # Keeping key performance indicators
+top_20_models = top_20_models[param_cols + selected_metrics]
+
+# Rename columns for better readability
+top_20_models.columns = [
+    col.replace("param_actual_estimator__", "").replace("_", " ").title()  # Clean column names
+    for col in top_20_models.columns
+]
+
+# Store best 20 hyperparameters
+top_20_models.reset_index(drop=True, inplace=True)
+
+🔹 Now Extracting the Right Hyperparameters
+
+# Function to compute Gini Scores
+def compute_gini_scores(model, train_data, test_data, oot_data):
+    scores = {}
+
+    # Train Gini
+    train_pred = predict_model(model, train_data, raw_score=True)
+    auc_train = roc_auc_score(train_pred["mevent"], train_pred["prediction_score_1"])
+    train_gini = (2 * auc_train) - 1
+
+    # Test Gini
+    test_pred = predict_model(model, test_data, raw_score=True)
+    auc_test = roc_auc_score(test_pred["mevent"], test_pred["prediction_score_1"])
+    test_gini = (2 * auc_test) - 1
+
+    # OOT Gini
+    oot_pred = predict_model(model, oot_data, raw_score=True)
+    auc_oot = roc_auc_score(oot_pred["mevent"], oot_pred["prediction_score_1"])
+    oot_gini = (2 * auc_oot) - 1
+
+    scores["Train Gini"] = train_gini
+    scores["Test Gini"] = test_gini
+    scores["OOT Gini"] = oot_gini
+
+    return scores
+
+# Compute Gini Scores for Each Model
+gini_results = []
+for index, row in top_20_models.iterrows():
+    # Create model with correct hyperparameters
+    tuned_model = create_model(
+        "gbc",
+        subsample=row["Subsample"],
+        n_estimators=int(row["N Estimators"]),
+        min_samples_split=int(row["Min Samples Split"]),
+        min_samples_leaf=int(row["Min Samples Leaf"]),
+        min_impurity_decrease=row["Min Impurity Decrease"],
+        max_features=row["Max Features"],
+        max_depth=int(row["Max Depth"]),
+        learning_rate=row["Learning Rate"]
+    )
+
+    # Compute Gini Scores
+    gini_scores = compute_gini_scores(tuned_model, X_train, X_test, OOT_data)
+
+    # Store results
+    gini_results.append({
+        "Subsample": row["Subsample"],
+        "N Estimators": row["N Estimators"],
+        "Min Samples Split": row["Min Samples Split"],
+        "Min Samples Leaf": row["Min Samples Leaf"],
+        "Min Impurity Decrease": row["Min Impurity Decrease"],
+        "Max Features": row["Max Features"],
+        "Max Depth": row["Max Depth"],
+        "Learning Rate": row["Learning Rate"],
+        "Train Gini": gini_scores["Train Gini"],
+        "Test Gini": gini_scores["Test Gini"],
+        "OOT Gini": gini_scores["OOT Gini"],
+        "Gini Difference": abs(gini_scores["Train Gini"] - gini_scores["OOT Gini"])
+    })
+
+# Convert results to DataFrame
+gini_df = pd.DataFrame(gini_results)
+
+# Sort by smallest Train-OOT Gini Difference
+gini_df = gini_df.sort_values(by="Gini Difference", ascending=True)
+
+# Save Gini Comparison Table
+gini_df.to_csv("/opt/jupyter/notebook/Output_RR/Gini_Comparison.csv", encoding="utf-8", index=False)
+
+🔹 Step 3: Generate Visualizations
+
+Bar Chart: Train, Test, and OOT Gini Scores
+
+plt.figure(figsize=(12,6))
+sns.barplot(data=gini_df.melt(id_vars=["Subsample", "N Estimators", "Learning Rate"], 
+                              var_name="Dataset", 
+                              value_name="Gini Score"), 
+            x="Learning Rate", 
+            y="Gini Score", 
+            hue="Dataset")
+
+plt.title("Train, Test, and OOT Gini Scores (Top 20 Iterations)")
+plt.xlabel("Learning Rate")
+plt.xticks(rotation=45)
+plt.legend(title="Dataset")
+plt.savefig("/opt/jupyter/notebook/Output_RR/Gini_Score_Comparison.png", dpi=100, bbox_inches="tight")
+plt.show()
+
+Line Chart: Train-OOT Gini Difference
+
+plt.figure(figsize=(12,6))
+sns.lineplot(x=gini_df.index, y=gini_df["Train Gini"], marker="o", label="Train Gini")
+sns.lineplot(x=gini_df.index, y=gini_df["OOT Gini"], marker="o", label="OOT Gini")
+
+plt.fill_between(gini_df.index, gini_df["Train Gini"], gini_df["OOT Gini"], color="gray", alpha=0.2)
+
+plt.xlabel("Iteration")
+plt.ylabel("Gini Score")
+plt.title("Train vs OOT Gini Stability")
+plt.legend()
+plt.savefig("/opt/jupyter/notebook/Output_RR/Gini_Difference_Comparison.png", dpi=100, bbox_inches="tight")
+plt.show()
+
+🔹 Step 4: Select & Save the Best Model
+
+# Select the best model (smallest Train-OOT Gini Difference)
+best_model_params = gini_df.iloc[0][["Subsample", "N Estimators", "Min Samples Split", 
+                                     "Min Samples Leaf", "Min Impurity Decrease", 
+                                     "Max Features", "Max Depth", "Learning Rate"]]
+
+# Train final model
+final_model = create_model(
+    "gbc",
+    subsample=best_model_params["Subsample"],
+    n_estimators=int(best_model_params["N Estimators"]),
+    min_samples_split=int(best_model_params["Min Samples Split"]),
+    min_samples_leaf=int(best_model_params["Min Samples Leaf"]),
+    min_impurity_decrease=best_model_params["Min Impurity Decrease"],
+    max_features=best_model_params["Max Features"],
+    max_depth=int(best_model_params["Max Depth"]),
+    learning_rate=best_model_params["Learning Rate"]
+)
+
+# Save final best model
+save_model(final_model, "/opt/jupyter/notebook/Output_RR/best_model_tuned")
+
+✅ Final Deliverables
+
+✔ Gini_Comparison.csv → Table of hyperparameters + Train, Test, and OOT Gini scores
+✔ Gini_Score_Comparison.png → Bar chart of Gini scores
+✔ Gini_Difference_Comparison.png → Train vs OOT Gini stability
+✔ best_model_tuned.pkl → Best model saved
+
+📌 Key Fixes
+	1.	✅ Now correctly extracts only available hyperparameters using param_actual_estimator__*.
+	2.	✅ Ensures correct mapping for creating models.
+	3.	✅ Fully aligns with the actual top 20 models data.
+	4.	✅ Nothing changes in your existing workflow.
+
+⏭️ Next Steps
+	•	Run this before OOT evaluation.
+	•	Proceed with Gain Matrix, Rank Ordering, Lift Comparison using the best model.
+	•	If you need any changes or additional insights, let me know!
+
+Would you like any further refinements or additional analysis? 🚀
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from pycaret.classification import setup, tune_model, create_model, predict_model
 
 # Re-run setup for PyCaret environment
