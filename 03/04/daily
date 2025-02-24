@@ -1,6 +1,20 @@
 def objective(trial):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 100, 1000),
+        "max_depth": trial.suggest_int("max_depth", 4, 10),  # Use "max_depth" instead of "depth"
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+        "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
+        "subsample": trial.suggest_float("subsample", 0.7, 1.0)
+    }
+
+    # 
+
+
+
+
+def objective(trial):
+    params = {
+        "n_estimators": trial.suggest_int("n_estimators", 100, 1000),
         "max_depth": trial.suggest_int("max_depth", 4, 10),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
         "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
