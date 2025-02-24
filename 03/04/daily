@@ -1,3 +1,30 @@
+from pycaret.classification import setup, tune_model, create_model, predict_model
+
+# Re-run setup for PyCaret environment
+clf = setup(data=model_dev_data, 
+            target="mevent",
+            ignore_features=["cust_num", "samplingweight", "selection_month"],
+            numeric_imputation="mean",
+            categorical_imputation="mode",
+            remove_outliers=True,
+            train_size=0.70,
+            session_id=1992)  # Ensure a fixed session ID for reproducibility
+
+# Now, run tune_model() after setup is complete
+tuned_models = tune_model(model_tune_gbc, fold=10, round=2, n_iter=50, optimize="AUC", search_algorithm="tpe")
+
+
+
+
+
+
+
+
+
+
+
+
+
 Understood! Since you are in a controlled environment, I will ensure the code works without ace_tools and aligns perfectly with your workflow. Below is the fully integrated version that will generate the Train, Test, and Out-of-Time (OOT) Gini score comparison while keeping the rest of your pipeline unchanged.
 
 📌 Steps in This Code:
