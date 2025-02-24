@@ -1,3 +1,29 @@
+Here’s a professional and polite email response you can use:
+
+Subject: Re: KT Session Request
+
+Dear [Teammate’s Name],
+
+Thank you for reaching out. I appreciate the opportunity to be part of this KT session. However, at the moment, my bandwidth is fully occupied with existing deliverables that are critical and time-sensitive.
+
+Taking on additional tasks or participating in the KT session would require me to deprioritize some of these urgent commitments, which is not feasible at this stage. Given the current workload, I would like to discuss with [Manager’s Name] how we can best manage these priorities while ensuring all critical deadlines are met.
+
+[Manager’s Name], I would appreciate your guidance on how to navigate this so that we can find a feasible way forward. Please let me know how you’d like to proceed.
+
+Looking forward to your thoughts.
+
+Best regards,
+[Your Name]
+
+This keeps your tone professional and constructive while clearly communicating your constraints. Let me know if you’d like any refinements!
+
+
+
+
+
+
+
+
 /* Delete previous data */
 proc datasets lib=work nolist;
     delete backlog summary;
