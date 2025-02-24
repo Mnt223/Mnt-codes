@@ -1,3 +1,172 @@
+import pandas as pd
+import numpy as np
+
+# Function to compute PSI between two datasets
+def psi(X, Y):
+    # Assigning pentiles (bins) to the score column
+    X['pentile'] = pd.qcut(X['score'], 5, labels=False) + 1
+
+    # Finding boundary conditions for each pentile
+    X_tile = X.groupby("pentile")['score'].agg([np.min, np.max]).reset_index()
+    X_tile.columns = ['pentile', 'min', 'max']
+
+    # Fixing lowest and highest values for min and max
+    X_tile.loc[0, 'min'] = -np.inf  # Use -inf instead of an arbitrary small number
+    X_tile.loc[len(X_tile)-1, 'max'] = np.inf  # Use inf instead of an arbitrary large number
+
+    # Debugging: Check bin boundaries
+    print("\nX_tile (Bin Boundaries):")
+    print(X_tile)
+
+    # Fix bin edges by ensuring order and removing duplicates
+    bin_edges = sorted(set(X_tile["min"].tolist() + [X_tile["max"].iloc[-1]]))  # Ensure strictly increasing order
+
+    # Debugging: Check bin edges before applying pd.cut
+    print("Fixed Bin Edges:", bin_edges)
+
+    # Apply pd.cut() with corrected bins
+    Y["pentile"] = pd.cut(Y["score"], bins=bin_edges, labels=X_tile["pentile"], include_lowest=True)
+
+    # Counting occurrences per pentile in X and Y
+    X_counts = X.groupby('pentile').size().reset_index(name='X_count')
+    Y_counts = Y.groupby("pentile").size().reset_index(name="Y_count")
+
+    # Merging with total counts
+    X_total = len(X)
+    Y_total = len(Y)
+
+    X_counts['X_perc'] = X_counts['X_count'] / X_total
+    Y_counts['Y_perc'] = Y_counts['Y_count'] / Y_total
+
+    # Merging with pentile boundaries
+    psi_df = X_counts.merge(Y_counts, on="pentile", how="left").merge(X_tile, on="pentile", how="left")
+
+    # Handling missing values in Y_perc to avoid NaN-related errors in np.log()
+    psi_df["Y_perc"].fillna(1e-10, inplace=True)  # Assign small non-zero value to prevent log(0)
+
+    # Calculating PSI
+    psi_df['psi'] = (psi_df['X_perc'] - psi_df['Y_perc']) * np.log(psi_df['X_perc'] / psi_df['Y_perc'])
+
+    # Formatting score_band to match required output
+    psi_df["score_band"] = psi_df["min"].astype(int).astype(str) + "-" + psi_df["max"].astype(int).astype(str)
+
+    # Adjust first and last row labels
+    psi_df.loc[psi_df.index[0], "score_band"] = "low-" + str(int(psi_df.loc[psi_df.index[0], "max"]))
+    psi_df.loc[psi_df.index[-1], "score_band"] = str(int(psi_df.loc[psi_df.index[-1], "min"])) + "-high"
+
+    return psi_df[['score_band', 'X_perc', 'Y_perc', 'psi']]
+
+
+# Function to calculate pentile distribution for a dataset
+def pentile_calculation(data, bin_edges, col_name):
+    # Assign pentile bands based on corrected bins
+    data["pentile_band"] = pd.cut(
+        data["score"], bins=bin_edges, labels=range(1, len(bin_edges)), include_lowest=True
+    )
+
+    # Ensure 'samplingweight' column exists
+    if "samplingweight" not in data.columns:
+        data["samplingweight"] = 1
+
+    # Calculate the percentage of observations in each pentile band
+    pentile_summary = data.groupby("pentile_band")["samplingweight"].sum().reset_index()
+    pentile_summary[col_name] = (pentile_summary["samplingweight"] / data["samplingweight"].sum()) * 100
+
+    # Rename columns for clarity
+    pentile_summary = pentile_summary[["pentile_band", col_name]]
+
+    return pentile_summary
+
+
+# Function to generate a PSI table between training and validation datasets
+def psi_table(dev_data, val_data):
+    # Convert column names to lowercase for consistency
+    dev_data.columns = dev_data.columns.str.lower()
+    val_data.columns = val_data.columns.str.lower()
+
+    # Handling missing "samplingweight" column
+    if "samplingweight" not in dev_data.columns:
+        dev_data["samplingweight"] = 1
+    if "samplingweight" not in val_data.columns:
+        val_data["samplingweight"] = 1
+
+    # Assigning pentiles based on score
+    dev_data["pentile"] = pd.qcut(dev_data["score"], 5, labels=False) + 1
+
+    # Finding boundary conditions for each pentile
+    dev_tile = dev_data.groupby("pentile")["score"].agg([np.min, np.max]).reset_index()
+    dev_tile.columns = ["pentile", "min", "max"]
+
+    # Fixing lowest and highest values
+    dev_tile.loc[0, "min"] = -np.inf
+    dev_tile.loc[len(dev_tile)-1, "max"] = np.inf
+
+    # Debugging check for dev_tile
+    print("\nDevelopment Tile Boundaries:")
+    print(dev_tile)
+
+    # Fix bin edges by ensuring order and removing duplicates
+    bin_edges = sorted(set(dev_tile["min"].tolist() + [dev_tile["max"].iloc[-1]]))  # Ensure strictly increasing order
+
+    # Debugging: Check bin edges before applying pd.cut
+    print("Fixed Bin Edges:", bin_edges)
+
+    # Apply pd.cut() with corrected bins
+    val_data["pentile"] = pd.cut(val_data["score"], bins=bin_edges, labels=dev_tile["pentile"], include_lowest=True)
+
+    # Debugging: Check pentile distribution
+    print("Pentile Distribution in val_data:")
+    print(val_data["pentile"].value_counts())
+
+    # Counting occurrences per pentile in dev and val data
+    dev_pentile_summary = pentile_calculation(dev_data, bin_edges, "development_perc")
+    val_pentile_summary = pentile_calculation(val_data, bin_edges, "review_perc")
+
+    # Merging pentile summaries with dev_tile
+    pentile_summary = dev_tile.merge(dev_pentile_summary, on="pentile", how="inner")
+    pentile_summary = pentile_summary.merge(val_pentile_summary, on="pentile", how="inner")
+
+    # Formatting score bands
+    pentile_summary["score_band"] = pentile_summary["min"].astype(int).astype(str) + "-" + pentile_summary["max"].astype(int).astype(str)
+
+    # Adjust first and last row labels
+    pentile_summary.loc[pentile_summary.index[0], "score_band"] = "low-" + str(int(pentile_summary.loc[pentile_summary.index[0], "max"]))
+    pentile_summary.loc[pentile_summary.index[-1], "score_band"] = str(int(pentile_summary.loc[pentile_summary.index[-1], "min"])) + "-high"
+
+    # PSI Calculation
+    pentile_summary["psi"] = (pentile_summary["development_perc"] - pentile_summary["review_perc"]) * \
+                             np.log(pentile_summary["development_perc"] / pentile_summary["review_perc"])
+
+    # Sorting by pentile index
+    pentile_summary.sort_values(by="pentile", ascending=True, inplace=True)
+
+    return pentile_summary[["score_band", "development_perc", "review_perc", "psi"]]
+
+
+# Compute PSI between training and test data
+psi_train_test = psi_table(scr_train, scr_test)
+
+# Print Final PSI Table
+print("\nFinal PSI Table:")
+print(psi_train_test)
+
+# Print total PSI score
+print('\nTotal PSI - scr_train vs scr_test:', round(psi_train_test['psi'].sum(), 2))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Here’s a professional and polite email response you can use:
 
 Subject: Re: KT Session Request
