@@ -16,6 +16,379 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tools.tools import add_constant
 from IPython.display import display
 from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import RFECV, mutual_info_classif
+from sklearn.linear_model import LassoCV
+
+# 📌 Load Data From Hadoop
+get_ipython().system('hadoop fs -copyToLocal gs://RR_Model_Development_Data.csv /opt/jupyter/notebook/')
+data_path = '/opt/jupyter/notebook/RR_Model_Development_Data.csv'
+raw = pd.read_csv(data_path, encoding='cp1252')
+
+get_ipython().system('hadoop fs -copyToLocal gs://final_inv_oot_data.csv /opt/jupyter/notebook/')
+oot_path = '/opt/jupyter/notebook/final_inv_oot_data.csv'
+raw_OOT = pd.read_csv(oot_path, encoding='cp1252')
+
+# 📌 Data Preprocessing
+def preprocess_data(df):
+    df.columns = [x.lower() for x in df.columns]
+    df = df.rename(columns={'custid': 'cust_num'})
+    return df
+
+raw = preprocess_data(raw)
+raw_OOT = preprocess_data(raw_OOT)
+raw_OOT['selection_month'] = '202307'
+raw_OOT['samplingweight'] = 1
+
+# 📌 Drop Unnecessary Columns
+drop_columns = ['cust_num', 'samplingweight', 'selection_month', 'ga_cust_id', 
+                'gndr_cde', 'gbflag', 'model', 'fin_annual_sal_src', 'gender']
+raw = raw.drop(columns=drop_columns, errors='ignore')
+raw_OOT = raw_OOT.drop(columns=drop_columns, errors='ignore')
+
+# 📌 One-Hot Encoding with Column Alignment
+categorical_columns = ['onus_pil_auto_rpmt_ind']
+for col in categorical_columns:
+    if col in raw.columns:
+        # Process training data
+        raw = pd.get_dummies(raw, columns=[col], prefix=col.upper()[:5])
+        # Get dummy columns created
+        dummy_cols = [c for c in raw.columns if c.startswith(col.upper()[:5])]
+        # Process OOT data
+        if col in raw_OOT.columns:
+            raw_OOT = pd.get_dummies(raw_OOT, columns=[col], prefix=col.upper()[:5])
+            # Align OOT dummy columns with training
+            for c in dummy_cols:
+                if c not in raw_OOT.columns:
+                    raw_OOT[c] = 0
+            # Remove extra columns not in training
+            oot_dummy_cols = [c for c in raw_OOT.columns if c.startswith(col.upper()[:5])]
+            extra_cols = list(set(oot_dummy_cols) - set(dummy_cols))
+            raw_OOT.drop(columns=extra_cols, inplace=True)
+        else:
+            # Add all training dummy columns to OOT
+            for c in dummy_cols:
+                raw_OOT[c] = 0
+
+# 📌 Feature Selection
+def calculate_psi(expected, actual, bins=10, epsilon=1e-6):
+    """Calculate Population Stability Index with epsilon smoothing."""
+    cuts = np.percentile(expected, np.linspace(0, 100, bins+1))
+    expected_counts = pd.cut(expected, cuts, labels=False, include_lowest=True).value_counts().sort_index()
+    actual_counts = pd.cut(actual, cuts, labels=False, include_lowest=True).value_counts().sort_index()
+    
+    expected_percents = (expected_counts + epsilon) / (expected_counts.sum() + epsilon * bins)
+    actual_percents = (actual_counts + epsilon) / (actual_counts.sum() + epsilon * bins)
+    
+    psi = np.sum((actual_percents - expected_percents) * np.log(actual_percents / expected_percents))
+    return psi
+
+def calculate_csi(train_data, oot_data, feature, epsilon=1e-6):
+    """Calculate Characteristic Stability Index with epsilon smoothing."""
+    cuts = np.percentile(train_data[feature], np.linspace(0, 100, 11))
+    train_counts = pd.cut(train_data[feature], cuts).value_counts().sort_index()
+    oot_counts = pd.cut(oot_data[feature], cuts).value_counts().sort_index()
+    
+    train_percents = (train_counts + epsilon) / (train_counts.sum() + epsilon * 10)
+    oot_percents = (oot_counts + epsilon) / (oot_counts.sum() + epsilon * 10)
+    
+    csi = np.sum((oot_percents - train_percents) * np.log(oot_percents / train_percents))
+    return csi
+
+# Split data for feature selection
+X = raw.drop(columns=['mevent'])
+y = raw['mevent']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1992)
+
+# Remove Highly Correlated Features
+corr_matrix = X_train.corr().abs()
+upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+correlated_features = [column for column in upper.columns if any(upper[column] > 0.90)]
+X_train = X_train.drop(columns=correlated_features)
+X_test = X_test.drop(columns=correlated_features)
+
+# VIF Analysis
+def calculate_vif(X):
+    vif_data = add_constant(X)
+    vif = pd.DataFrame()
+    vif["Feature"] = vif_data.columns
+    vif["VIF"] = [variance_inflation_factor(vif_data.values, i) for i in range(vif_data.shape[1])]
+    return vif
+
+vif_df = calculate_vif(X_train)
+high_vif_features = vif_df[vif_df["VIF"] > 10]["Feature"].tolist()
+X_train = X_train.drop(columns=high_vif_features)
+X_test = X_test.drop(columns=high_vif_features)
+
+# Mutual Information
+mi_scores = mutual_info_classif(X_train, y_train)
+mi_df = pd.DataFrame({'Feature': X_train.columns, 'MI_Score': mi_scores})
+mi_df = mi_df.sort_values('MI_Score', ascending=False)
+
+# SHAP Feature Importance (Corrected for binary classification)
+initial_model = RandomForestClassifier(n_estimators=50, random_state=1992)
+initial_model.fit(X_train, y_train)
+explainer = shap.TreeExplainer(initial_model)
+shap_values = explainer.shap_values(X_train)
+shap_importance = pd.DataFrame({
+    'Feature': X_train.columns,
+    'SHAP_Importance': np.abs(shap_values[1]).mean(axis=0)  # Use class 1 SHAP values
+})
+shap_importance = shap_importance.sort_values('SHAP_Importance', ascending=False)
+
+# RFECV
+rfe = RFECV(estimator=RandomForestClassifier(random_state=1992), step=1, cv=5)
+rfe.fit(X_train, y_train)
+rfe_features = X_train.columns[rfe.support_].tolist()
+
+# LASSO Feature Selection
+lasso = LassoCV(cv=5, random_state=1992)
+lasso.fit(X_train, y_train)
+lasso_features = X_train.columns[lasso.coef_ != 0].tolist()
+
+# Combine Feature Selection Methods
+final_features = set(mi_df.head(30)['Feature']) & \
+                set(shap_importance.head(30)['Feature']) & \
+                set(rfe_features) & \
+                set(lasso_features)
+
+# Fallback to union if intersection is empty
+if not final_features:
+    final_features = set(mi_df.head(30)['Feature']) | \
+                    set(shap_importance.head(30)['Feature']) | \
+                    set(rfe_features) | \
+                    set(lasso_features)
+if not final_features:
+    raise ValueError("No features selected after combining methods.")
+
+# Apply Selected Features
+X_train = X_train[list(final_features)]
+X_test = X_test[list(final_features)]
+raw_OOT = raw_OOT[list(final_features) + ['mevent']]
+
+# 📌 Model Development with PyCaret
+clf = setup(data=pd.concat([X_train, y_train], axis=1), 
+           target='mevent', 
+           train_size=0.7,
+           session_id=1992,
+           silent=True,
+           feature_selection=False)  # Disable PyCaret's feature selection
+
+best_models = compare_models(n_select=3)
+
+# 📌 Optuna Hyperparameter Optimization
+class OptimizationResult:
+    def __init__(self):
+        self.trials = []
+        self.best_score = -np.inf
+        self.best_params = None
+
+opt_result = OptimizationResult()
+
+def objective(trial):
+    params = {
+        'n_estimators': trial.suggest_int('n_estimators', 50, 300, step=50),
+        'max_depth': trial.suggest_int('max_depth', 3, 20),
+        'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
+        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 5),
+        'max_features': trial.suggest_categorical('max_features', ['auto', 'sqrt', 'log2']),
+    }
+    
+    model = RandomForestClassifier(**params, random_state=1992)
+    model.fit(X_train, y_train)
+    
+    # Calculate metrics
+    train_score = roc_auc_score(y_train, model.predict_proba(X_train)[:, 1])
+    test_score = roc_auc_score(y_test, model.predict_proba(X_test)[:, 1])
+    oot_score = roc_auc_score(raw_OOT['mevent'], 
+                             model.predict_proba(raw_OOT.drop('mevent', axis=1))[:, 1])
+    
+    # Store trial results
+    trial_result = {
+        'trial_number': len(opt_result.trials) + 1,
+        'params': params,
+        'train_auc': train_score,
+        'test_auc': test_score,
+        'oot_auc': oot_score,
+        'train_oot_diff': abs(train_score - oot_score)
+    }
+    opt_result.trials.append(trial_result)
+    
+    if test_score > opt_result.best_score:
+        opt_result.best_score = test_score
+        opt_result.best_params = params
+    
+    return test_score
+
+study = optuna.create_study(direction='maximize')
+study.optimize(objective, n_trials=20)
+
+final_model = RandomForestClassifier(**study.best_params, random_state=1992)
+final_model.fit(X_train, y_train)
+
+# 📌 Model Validation Metrics
+def calculate_metrics(model, X, y, dataset_name=""):
+    y_pred_proba = model.predict_proba(X)[:, 1]
+    
+    auc = roc_auc_score(y, y_pred_proba)
+    ks_stat, _ = ks_2samp(y_pred_proba[y==1], y_pred_proba[y==0])
+    
+    decile_df = pd.DataFrame({'score': y_pred_proba, 'actual': y})
+    try:
+        decile_df['decile'] = pd.qcut(decile_df['score'], q=10, labels=False, duplicates='drop')
+    except ValueError:
+        decile_df['decile'] = pd.qcut(decile_df['score'], q=10, labels=False)
+    decile_analysis = decile_df.groupby('decile').agg({'actual': ['count', 'mean']}).round(4)
+    
+    try:
+        decile_df['pentile'] = pd.qcut(decile_df['score'], q=5, labels=False, duplicates='drop')
+    except ValueError:
+        decile_df['pentile'] = pd.qcut(decile_df['score'], q=5, labels=False)
+    pentile_analysis = decile_df.groupby('pentile').agg({'actual': ['count', 'mean']}).round(4)
+    
+    print(f"\n=== {dataset_name} Metrics ===")
+    print(f"ROC AUC: {auc:.4f}")
+    print(f"KS Statistic: {ks_stat:.4f}")
+    print("\nDecile Analysis:")
+    display(decile_analysis)
+    print("\nPentile Analysis:")
+    display(pentile_analysis)
+    
+    return auc, ks_stat, decile_analysis, pentile_analysis
+
+train_metrics = calculate_metrics(final_model, X_train, y_train, "Training")
+test_metrics = calculate_metrics(final_model, X_test, y_test, "Test")
+oot_metrics = calculate_metrics(final_model, raw_OOT.drop('mevent', axis=1), raw_OOT['mevent'], "OOT")
+
+# 📌 Visualizations (Corrected ROC plotting)
+def plot_roc_curves(model, dataset_pairs, labels):
+    plt.figure(figsize=(10, 6))
+    for (X, y), label in zip(dataset_pairs, labels):
+        y_pred_proba = model.predict_proba(X)[:, 1]
+        fpr, tpr, _ = roc_curve(y, y_pred_proba)
+        plt.plot(fpr, tpr, label=f"{label} (AUC={roc_auc_score(y, y_pred_proba):.4f})")
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curves Comparison')
+    plt.legend()
+    plt.show()
+
+dataset_pairs = [
+    (X_train, y_train),
+    (X_test, y_test),
+    (raw_OOT.drop('mevent', axis=1), raw_OOT['mevent'])
+]
+labels = ['Train', 'Test', 'OOT']
+plot_roc_curves(final_model, dataset_pairs, labels)
+
+# SHAP Summary Plot for Class 1
+explainer = shap.TreeExplainer(final_model)
+shap_values = explainer.shap_values(X_train)
+shap.summary_plot(shap_values[1], X_train, plot_type="bar")
+
+# Score Distribution Plot
+def plot_score_distribution(model, datasets, labels):
+    plt.figure(figsize=(12, 6))
+    for X, label in zip(datasets, labels):
+        scores = model.predict_proba(X)[:, 1]
+        sns.kdeplot(scores, label=label)
+    plt.xlabel('Predicted Probability')
+    plt.ylabel('Density')
+    plt.title('Score Distribution Comparison')
+    plt.legend()
+    plt.show()
+
+datasets = [X_train, X_test, raw_OOT.drop('mevent', axis=1)]
+plot_score_distribution(final_model, datasets, labels)
+
+# 📌 Save Final Model and Results
+output_dir = '/opt/jupyter/notebook/Output_RR/'
+os.makedirs(output_dir, exist_ok=True)
+
+model_path = f"{output_dir}final_model.pkl"
+results_path = f"{output_dir}model_results.pkl"
+feature_imp_path = f"{output_dir}feature_importance.csv"
+
+joblib.dump(final_model, model_path)
+
+results = {
+    'feature_importance': pd.DataFrame({
+        'feature': X_train.columns,
+        'importance': final_model.feature_importances_
+    }).sort_values('importance', ascending=False),
+    'optimization': {
+        'trials': opt_result.trials,
+        'best_params': study.best_params,
+        'best_score': study.best_value
+    },
+    'performance': {
+        'train': train_metrics,
+        'test': test_metrics,
+        'oot': oot_metrics,
+        'psi_test': calculate_psi(
+            final_model.predict_proba(X_train)[:, 1],
+            final_model.predict_proba(X_test)[:, 1]
+        ),
+        'psi_oot': calculate_psi(
+            final_model.predict_proba(X_train)[:, 1],
+            final_model.predict_proba(raw_OOT.drop('mevent', axis=1))[:, 1]
+        ),
+        'csi': {feature: calculate_csi(
+            pd.DataFrame(X_train, columns=X_train.columns),
+            pd.DataFrame(raw_OOT.drop('mevent', axis=1), columns=X_train.columns),
+            feature) for feature in X_train.columns
+        }
+    },
+    'model_info': {
+        'params': final_model.get_params(),
+        'features': list(X_train.columns),
+        'n_features': X_train.shape[1],
+        'train_samples': X_train.shape[0]
+    }
+}
+
+joblib.dump(results, results_path)
+results['feature_importance'].to_csv(feature_imp_path, index=False)
+
+print(f"\nModel saved to {model_path}")
+print(f"Results saved to {results_path}")
+print(f"Feature importance saved to {feature_imp_path}")
+
+print("\nModel Performance Summary:")
+print(f"Train AUC: {train_metrics[0]:.4f}")
+print(f"Test AUC: {test_metrics[0]:.4f}")
+print(f"OOT AUC: {oot_metrics[0]:.4f}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 📌 Install Required Libraries
+get_ipython().system('pip install --upgrade pandas numpy seaborn matplotlib shap pycaret scikit-learn optuna')
+
+# 📌 Import Libraries
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+import shap
+import optuna
+import joblib
+from sklearn.metrics import roc_auc_score, roc_curve, ks_2samp
+from sklearn.ensemble import RandomForestClassifier
+from pycaret.classification import setup, compare_models, create_model, tune_model, save_model, get_config
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+from IPython.display import display
+from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import RFECV
 from sklearn.linear_model import LassoCV
 
