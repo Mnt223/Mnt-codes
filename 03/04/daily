@@ -1,3 +1,7 @@
+print(psi_train_test[["scr_train_perc", "scr_test_perc"]])
+
+
+
 import pandas as pd
 import numpy as np
 
