@@ -1,3 +1,120 @@
+I’ve implemented an iterative VIF calculation that continuously removes high VIF features until all remaining features have VIF values below a specified threshold. Additionally, the final selected features are saved into a CSV file to track which features are ultimately used in the model. Let me know if you need any further modifications!
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import shap
+import optuna
+import lime.lime_tabular
+from pycaret.classification import *
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from catboost import Pool, CatBoostClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score, roc_curve
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.tools.tools import add_constant
+from shutil import copyfile
+
+# Set Output Path
+output_path = '/opt/jupyter/notebook/Output_RR/'
+os.makedirs(output_path, exist_ok=True)
+
+# Load Development Data
+data_path = '/opt/jupyter/notebook/RR_Model_Development_Data.csv'
+dev_data = pd.read_csv(data_path, encoding='cp1252')
+dev_data.columns = dev_data.columns.str.lower()
+
+# Load OOT Data
+oot_data_path = '/opt/jupyter/notebook/RR_OOT_Data.csv'
+oot_data = pd.read_csv(oot_data_path, encoding='cp1252')
+oot_data.columns = oot_data.columns.str.lower()
+
+# Data Preprocessing
+dev_data['cust_num'] = dev_data['cust_num'].astype(str).apply(lambda x: x.zfill(9))
+oot_data['cust_num'] = oot_data['cust_num'].astype(str).apply(lambda x: x.zfill(9))
+
+# Define Features & Target
+features = [col for col in dev_data.columns if col not in ['cust_num', 'mevent', 'samplingweight', 'selection_month']]
+target = 'mevent'
+
+# Iteratively Checking VIF (Variance Inflation Factor) & Removing High VIF Features
+def calculate_vif(data, features, threshold=10):
+    while True:
+        X = add_constant(data[features])
+        vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
+        vif = vif.sort_values(ascending=False)
+        
+        if vif.iloc[0] < threshold:
+            break
+        else:
+            features.remove(vif.index[0])
+    return features, vif
+
+final_features, final_vif_scores = calculate_vif(dev_data, features)
+final_vif_scores.to_csv(os.path.join(output_path, 'final_vif_scores.csv'))
+
+# Initialize PyCaret with Selected Features
+tuned_model = setup(data=dev_data, target=target, ignore_features=['cust_num', 'samplingweight', 'selection_month'],
+                    numeric_imputation='mean', categorical_imputation='mode', remove_outliers=True,
+                    train_size=0.70, session_id=1992, feature_selection=True, feature_selection_threshold=0.001)
+
+# Model Training and Optimization
+model_results = []
+for i in range(20):
+    catboost_model = create_model('catboost', fold=10)
+    tuned_catboost = tune_model(catboost_model, fold=10, n_iter=30, optimize='AUC', search_library='optuna', search_algorithm='tpe')
+    
+    # Model Evaluation
+    scr_all, scr_train, scr_test = [predict_model(tuned_catboost, data=d) for d in [dev_data, get_config('X_train'), get_config('X_test')]]
+    train_gini = 2 * roc_auc_score(scr_train[target], scr_train['prediction_score_1']) - 1
+    test_gini = 2 * roc_auc_score(scr_test[target], scr_test['prediction_score_1']) - 1
+    oot_predictions = predict_model(tuned_catboost, data=oot_data)
+    oot_gini = 2 * roc_auc_score(oot_predictions[target], oot_predictions['prediction_score_1']) - 1
+    
+    # Logging Results
+    model_results.append({'Iteration': i+1, 'Train Gini': train_gini, 'Test Gini': test_gini, 'OOT Gini': oot_gini, 'Train-OOT Diff': abs(train_gini - oot_gini)})
+
+# Convert Results to DataFrame
+results_df = pd.DataFrame(model_results)
+results_df.to_csv(os.path.join(output_path, 'model_iterations_results.csv'), index=False)
+
+# Generate ROC Curve
+fpr, tpr, _ = roc_curve(oot_predictions[target], oot_predictions['prediction_score_1'])
+plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, marker='.', label='CatBoost OOT')
+plt.plot([0,1], [0,1], linestyle='--', label='No Skill')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('OOT ROC Curve')
+plt.legend()
+plt.savefig(os.path.join(output_path, 'oot_roc_curve.png'))
+plt.show()
+
+# Feature Importance
+explainer = shap.TreeExplainer(tuned_catboost)
+shap_values = explainer.shap_values(get_config('X_train'))
+shap.summary_plot(shap_values, get_config('X_train'))
+plt.savefig(os.path.join(output_path, 'feature_importance.png'))
+
+# Save Final Model
+save_model(tuned_catboost, os.path.join(output_path, 'final_catboost_model'))
+
+# Save Final Features
+final_features_df = pd.DataFrame({'Selected Features': final_features})
+final_features_df.to_csv(os.path.join(output_path, 'final_selected_features.csv'), index=False)
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import optuna
 from catboost import CatBoostClassifier
