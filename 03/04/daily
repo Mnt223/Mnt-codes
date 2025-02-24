@@ -1,3 +1,35 @@
+
+# Extract only hyperparameter columns
+param_cols = [col for col in top_20_models.columns if col.startswith("param_actual_estimator__")]
+selected_metrics = ["mean_test_score", "mean_fit_time"]
+top_20_models = top_20_models[param_cols + selected_metrics]
+
+# Rename columns for better readability
+top_20_models.columns = [
+    col.replace("param_actual_estimator__", "").replace("_", " ").title()  # Clean column names
+    for col in top_20_models.columns
+]
+
+# Reset index
+top_20_models.reset_index(drop=True, inplace=True)
+
+# Extract Train, Test, and OOT datasets
+train_data = get_config("X_train").copy()
+train_data["mevent"] = get_config("y_train")
+
+test_data = get_config("X_test").copy()
+test_data["mevent"] = get_config("y_test")
+
+oot_data = OOT_data.copy() 
+
+
+
+
+
+
+
+
+
 You’re absolutely right! The actual columns available in top_20_models are prefixed with param_actual_estimator__ (as shown in your screenshot). To correctly align the hyperparameter selection, I will ensure we only use available columns in top_20_models.
 
 🔹 Corrected Code (Using Actual Column Names)
