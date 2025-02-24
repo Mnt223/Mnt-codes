@@ -1,3 +1,155 @@
+import pandas as pd
+import numpy as np
+import optuna
+import shap
+import os
+
+from sklearn.feature_selection import VarianceThreshold, RFE
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import roc_auc_score
+from pycaret.classification import *
+
+# Load Train Dataset
+data_path = "/opt/jupyter/notebook/RR_Model_Development_Data.csv"
+raw = pd.read_csv(data_path, encoding='cp1252')
+
+# Load OOT Dataset
+oot_path = "/opt/jupyter/notebook/final_inv_oot_data.csv"
+oot_data = pd.read_csv(oot_path, encoding='cp1252')
+
+# Preprocessing (Ensuring Consistency Across Datasets)
+for df in [raw, oot_data]:
+    df.columns = [x.lower().strip() for x in df.columns]
+    df.rename(columns={'custid': 'cust_num'}, inplace=True)
+    df['cust_num'] = df['cust_num'].astype(str).apply(lambda x: x.zfill(9))
+    df.fillna(df.mode().iloc[0], inplace=True)
+
+# Drop Irrelevant Columns
+drop_cols = ['ga_cust_id', 'gndr_cde', 'gbflag', 'model', 'fin_annual_sal_src', 'gender']
+raw.drop(columns=drop_cols, inplace=True)
+oot_data.drop(columns=drop_cols, inplace=True)
+
+# Define Target & Features
+target = 'mevent'
+features = [col for col in raw.columns if col not in ['cust_num', 'samplingweight', 'selection_month', target]]
+
+### **Feature Selection Process**
+print("Performing Feature Selection...")
+
+# **Step 1: Variance Thresholding**
+var_thresh = VarianceThreshold(threshold=0.01)
+train_data_var = raw.copy()
+train_data_var[features] = var_thresh.fit_transform(raw[features])
+
+# Retain only high-variance features
+selected_features = train_data_var.columns.tolist()
+
+# **Step 2: Remove Highly Correlated Features**
+corr_matrix = train_data_var[selected_features].corr().abs()
+upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+high_corr_features = [column for column in upper.columns if any(upper[column] > 0.90)]
+selected_features = [col for col in selected_features if col not in high_corr_features]
+
+# **Step 3: Recursive Feature Elimination (RFE) with Gradient Boosting**
+gbc = GradientBoostingClassifier(n_estimators=50, learning_rate=0.1, max_depth=3, random_state=1992)
+rfe = RFE(estimator=gbc, n_features_to_select=50)
+rfe.fit(raw[selected_features], raw[target])
+
+selected_features = [feature for feature, keep in zip(selected_features, rfe.support_) if keep]
+
+# **Step 4: SHAP Feature Importance - Keeping Top 30 Features**
+gbc.fit(raw[selected_features], raw[target])
+explainer = shap.TreeExplainer(gbc)
+shap_values = explainer.shap_values(raw[selected_features])
+shap_importance = pd.DataFrame({'Feature': selected_features, 'Importance': np.abs(shap_values).mean(axis=0)})
+shap_importance = shap_importance.sort_values(by="Importance", ascending=False).head(30)  # Keep Top 30 Features
+
+final_features = shap_importance['Feature'].tolist()
+print(f"Final Selected Features ({len(final_features)} features): {final_features}")
+
+# Apply final feature selection to Train, Test, and OOT
+raw = raw[final_features + [target]]
+oot_data = oot_data[final_features + [target]]  # Ensure OOT has the same features
+
+# **PyCaret Model Selection (Handles Train-Test Split)**
+clf = setup(data=raw, target=target, train_size=0.7, remove_outliers=True, session_id=1992)
+best_model = compare_models(fold=5, sort='AUC')
+
+# Optuna Hyperparameter Tuning
+def objective(trial):
+    params = {
+        'n_estimators': trial.suggest_int('n_estimators', 50, 200),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2),
+        'max_depth': trial.suggest_int('max_depth', 2, 6),
+        'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
+        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+    }
+    
+    model = GradientBoostingClassifier(**params, random_state=1992)
+    model.fit(get_config('X_train'), get_config('y_train'))
+    preds = model.predict_proba(get_config('X_test'))[:, 1]
+    return roc_auc_score(get_config('y_test'), preds)
+
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=50)
+
+best_params = study.best_params
+print(f"Best Hyperparameters: {best_params}")
+
+# **Generate 20 Iterations with Slightly Varying Parameters**
+results = []
+for i in range(20):
+    sampled_params = {key: np.random.choice([best_params[key], best_params[key] * 0.9, best_params[key] * 1.1]) for key in best_params}
+    sampled_params = {key: int(value) if isinstance(best_params[key], int) else float(value) for key, value in sampled_params.items()}
+
+    model = GradientBoostingClassifier(**sampled_params, random_state=1992)
+    model.fit(get_config('X_train'), get_config('y_train'))
+
+    train_pred = model.predict_proba(get_config('X_train'))[:, 1]
+    test_pred = model.predict_proba(get_config('X_test'))[:, 1]
+    oot_pred = model.predict_proba(oot_data[final_features])[:, 1]
+
+    train_gini = 2 * roc_auc_score(get_config('y_train'), train_pred) - 1
+    test_gini = 2 * roc_auc_score(get_config('y_test'), test_pred) - 1
+    oot_gini = 2 * roc_auc_score(oot_data[target], oot_pred) - 1
+
+    results.append({
+        'Iteration': i + 1,
+        'Train Gini': round(train_gini, 3),
+        'Test Gini': round(test_gini, 3),
+        'OOT Gini': round(oot_gini, 3),
+        'Gini Diff (Train-OOT)': round(abs(train_gini - oot_gini), 3)
+    })
+
+# Save Results
+results_df = pd.DataFrame(results)
+best_model_iteration = results_df.loc[results_df['Gini Diff (Train-OOT)'].idxmin()]
+
+model_path = "/opt/jupyter/notebook/Output_RR/"
+os.makedirs(model_path, exist_ok=True)
+
+results_df.to_csv(model_path + "hyperparameter_iterations.csv", index=False)
+best_model_iteration.to_csv(model_path + "best_stable_model.csv", index=False)
+
+# Save Final Model
+save_model(best_model, model_path + "final_best_model")
+
+print("Model Training & Evaluation Complete!")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # 📌 Install Required Libraries
 get_ipython().system('pip install --upgrade pandas numpy seaborn matplotlib shap pycaret scikit-learn optuna')
 
