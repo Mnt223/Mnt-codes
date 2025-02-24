@@ -1,3 +1,48 @@
+# Step 1: Tune the model and get top 20 hyperparameter sets
+tuned_models = tune_model(model_tune_gbc, n_iter=50, optimize="AUC", return_tuner=True)
+top_20_models = pd.DataFrame(tuned_models[1].cv_results_).sort_values(by="rank_test_score", ascending=True).head(20)
+
+# Extract only hyperparameter columns
+param_cols = [col for col in top_20_models.columns if col.startswith("param_actual_estimator__")]
+
+# Dynamically check if 'mean_test_score' or 'mean_fit_time' exist before selecting them
+selected_metrics = []
+if "mean_test_score" in top_20_models.columns:
+    selected_metrics.append("mean_test_score")
+if "mean_fit_time" in top_20_models.columns:
+    selected_metrics.append("mean_fit_time")
+
+# Combine selected columns
+top_20_models = top_20_models[param_cols + selected_metrics]
+
+# Rename columns for better readability
+top_20_models.columns = [
+    col.replace("param_actual_estimator__", "").replace("_", " ").title()  # Clean column names
+    for col in top_20_models.columns
+]
+
+# Reset index
+top_20_models.reset_index(drop=True, inplace=True)
+
+# Check if 'Mean Test Score' exists in the DataFrame
+if "Mean Test Score" in top_20_models.columns:
+    top_20_models = top_20_models.sort_values(by="Mean Test Score", ascending=False).head(20)
+else:
+    print("⚠️ Warning: 'Mean Test Score' column is missing. Proceeding without sorting.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Extract only hyperparameter columns
 param_cols = [col for col in top_20_models.columns if col.startswith("param_actual_estimator__")]
