@@ -1,4 +1,92 @@
 import pandas as pd
+import optuna
+from catboost import CatBoostClassifier
+from sklearn.metrics import roc_auc_score
+
+# Placeholder for results storage
+results = []
+
+# Select Features and Target (Ensure train_data, test_data, and out_of_time_data are loaded)
+features = [col for col in train_data.columns if col not in ["mevent", "cust_num", "samplingweight", "selection_month"]]
+target = "mevent"
+
+# Define objective function
+def objective(trial):
+    params = {
+        "iterations": trial.suggest_int("iterations", 100, 1000),
+        "depth": trial.suggest_int("depth", 4, 10),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1, 10),
+        "random_strength": trial.suggest_float("random_strength", 1, 10)
+    }
+
+    # Train CatBoost Model
+    model = CatBoostClassifier(**params, verbose=0)
+    model.fit(train_data[features], train_data[target])
+
+    # Predictions
+    preds_train = model.predict_proba(train_data[features])[:, 1]
+    preds_test = model.predict_proba(test_data[features])[:, 1]
+    preds_oot = model.predict_proba(out_of_time_data[features])[:, 1]
+
+    # Gini Scores Calculation
+    gini_train = 2 * roc_auc_score(train_data[target], preds_train) - 1
+    gini_test = 2 * roc_auc_score(test_data[target], preds_test) - 1
+    gini_oot = 2 * roc_auc_score(out_of_time_data[target], preds_oot) - 1
+
+    # Store Results
+    results.append({
+        "Iteration": trial.number + 1,
+        "Iterations": params["iterations"],
+        "Depth": params["depth"],
+        "Learning Rate": params["learning_rate"],
+        "L2 Leaf Reg": params["l2_leaf_reg"],
+        "Random Strength": params["random_strength"],
+        "Gini Train": gini_train,
+        "Gini Test": gini_test,
+        "Gini OOT": gini_oot,
+        "Train-OOT Diff": abs(gini_train - gini_oot)
+    })
+
+    return gini_test  # Optimize based on test Gini score
+
+# Run Optuna Optimization
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=20)
+
+# Convert Results to DataFrame
+df_results = pd.DataFrame(results)
+
+# Identify the iteration with the smallest Train-OOT Gini difference
+best_iteration = df_results["Train-OOT Diff"].idxmin()
+df_results.loc[best_iteration, "Best"] = "<<< Best Match"
+
+# Print Results Table
+print(df_results)
+
+# Save to CSV for analysis
+df_results.to_csv("optuna_results.csv", index=False)
+print("\nResults saved to 'optuna_results.csv'.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+yt
+
+import pandas as pd
 import numpy as np
 import optuna
 import shap
