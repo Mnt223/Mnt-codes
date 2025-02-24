@@ -1,3 +1,175 @@
+Understood! Since you are in a controlled environment, I will ensure the code works without ace_tools and aligns perfectly with your workflow. Below is the fully integrated version that will generate the Train, Test, and Out-of-Time (OOT) Gini score comparison while keeping the rest of your pipeline unchanged.
+
+📌 Steps in This Code:
+	1.	Retrieve the Best 20 Iterations from the tuned model.
+	2.	Compute Train, Test, and OOT Gini Scores for each iteration.
+	3.	Store Hyperparameters & Gini Scores in a DataFrame.
+	4.	Highlight the Best Model (smallest Train-OOT Gini difference).
+	5.	Generate Visualizations:
+	•	Gini Score Comparison (Bar Chart)
+	•	Train vs OOT Gini Difference (Line Chart)
+	6.	Save Results for Further Analysis.
+
+🔹 Step 1: Retrieve the Best 20 Hyperparameter Iterations
+
+from pycaret.classification import tune_model, create_model, predict_model
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import roc_auc_score
+
+# Tune the model and get top 20 hyperparameter sets
+tuned_models = tune_model(model_tune_gbc, n_iter=50, optimize='AUC', return_tuner=True)
+top_20_models = pd.DataFrame(tuned_models[1].cv_results_).sort_values(by="mean_test_score", ascending=False).head(20)
+
+# Select relevant hyperparameters
+top_20_models = top_20_models[["param_learning_rate", "param_max_depth", "param_subsample", "mean_train_score", "mean_test_score"]]
+top_20_models.columns = ["Learning Rate", "Max Depth", "Subsample", "Train AUC", "Test AUC"]
+
+# Store best 20 hyperparameters
+top_20_models.reset_index(drop=True, inplace=True)
+
+🔹 Step 2: Function to Compute Train, Test, and OOT Gini Scores
+
+# Function to compute Gini Score
+def compute_gini_scores(model, train_data, test_data, oot_data):
+    scores = {}
+
+    # Train Gini
+    train_pred = predict_model(model, train_data, raw_score=True)
+    auc_train = roc_auc_score(train_pred["mevent"], train_pred["prediction_score_1"])
+    train_gini = (2 * auc_train) - 1
+
+    # Test Gini
+    test_pred = predict_model(model, test_data, raw_score=True)
+    auc_test = roc_auc_score(test_pred["mevent"], test_pred["prediction_score_1"])
+    test_gini = (2 * auc_test) - 1
+
+    # OOT Gini
+    oot_pred = predict_model(model, oot_data, raw_score=True)
+    auc_oot = roc_auc_score(oot_pred["mevent"], oot_pred["prediction_score_1"])
+    oot_gini = (2 * auc_oot) - 1
+
+    scores["Train Gini"] = train_gini
+    scores["Test Gini"] = test_gini
+    scores["OOT Gini"] = oot_gini
+
+    return scores
+
+🔹 Step 3: Apply Gini Computation to the Best 20 Models
+
+# Store results
+gini_results = []
+
+for index, row in top_20_models.iterrows():
+    # Create model with the specific hyperparameters
+    tuned_model = create_model(
+        "gbc",
+        learning_rate=row["Learning Rate"],
+        max_depth=row["Max Depth"],
+        subsample=row["Subsample"]
+    )
+
+    # Compute Gini Scores
+    gini_scores = compute_gini_scores(tuned_model, X_train, X_test, OOT_data)
+
+    # Append results
+    gini_results.append({
+        "Learning Rate": row["Learning Rate"],
+        "Max Depth": row["Max Depth"],
+        "Subsample": row["Subsample"],
+        "Train Gini": gini_scores["Train Gini"],
+        "Test Gini": gini_scores["Test Gini"],
+        "OOT Gini": gini_scores["OOT Gini"],
+        "Gini Difference": abs(gini_scores["Train Gini"] - gini_scores["OOT Gini"])
+    })
+
+# Convert results to DataFrame
+gini_df = pd.DataFrame(gini_results)
+
+# Sort by smallest Train-OOT Gini Difference
+gini_df = gini_df.sort_values(by="Gini Difference", ascending=True)
+
+# Store best iteration
+best_model_index = gini_df.index[0]  # First row is the best model
+
+# Save the Gini score comparison table
+gini_df.to_csv("/opt/jupyter/notebook/Output_RR/Gini_Comparison.csv", encoding="utf-8", index=False)
+
+🔹 Step 4: Visualization of Gini Scores
+
+Bar Chart: Gini Scores for Best 20 Iterations
+
+plt.figure(figsize=(12,6))
+sns.barplot(x=gini_df.index, y=gini_df["Train Gini"], color="blue", label="Train Gini")
+sns.barplot(x=gini_df.index, y=gini_df["Test Gini"], color="orange", label="Test Gini")
+sns.barplot(x=gini_df.index, y=gini_df["OOT Gini"], color="green", label="OOT Gini")
+plt.xlabel("Iteration")
+plt.ylabel("Gini Score")
+plt.title("Train, Test, and OOT Gini Scores (Top 20 Iterations)")
+plt.legend()
+plt.xticks(rotation=45)
+plt.savefig("/opt/jupyter/notebook/Output_RR/Gini_Score_Comparison.png", dpi=100, bbox_inches="tight")
+plt.show()
+
+Line Chart: Train-OOT Gini Difference
+
+plt.figure(figsize=(12,6))
+sns.lineplot(x=gini_df.index, y=gini_df["Gini Difference"], marker="o", label="Train vs OOT Gini Difference")
+plt.axhline(y=gini_df["Gini Difference"].min(), color="red", linestyle="--", label="Best Iteration")
+plt.xlabel("Iteration")
+plt.ylabel("Gini Difference")
+plt.title("Train vs OOT Gini Difference (Top 20 Iterations)")
+plt.legend()
+plt.xticks(rotation=45)
+plt.savefig("/opt/jupyter/notebook/Output_RR/Gini_Difference_Comparison.png", dpi=100, bbox_inches="tight")
+plt.show()
+
+🔹 Step 5: Select the Best Model
+
+# Retrieve best hyperparameters
+best_hyperparams = gini_df.iloc[0][["Learning Rate", "Max Depth", "Subsample"]]
+
+# Train final model
+final_model = create_model(
+    "gbc",
+    learning_rate=best_hyperparams["Learning Rate"],
+    max_depth=best_hyperparams["Max Depth"],
+    subsample=best_hyperparams["Subsample"]
+)
+
+# Save final best model
+save_model(final_model, "/opt/jupyter/notebook/Output_RR/best_model_tuned")
+
+💾 Outputs Saved in:
+	1.	Gini_Comparison.csv → Table of Train, Test, OOT Gini for 20 best iterations.
+	2.	Gini_Score_Comparison.png → Bar chart of Gini scores.
+	3.	Gini_Difference_Comparison.png → Line chart of Train vs OOT Gini Difference.
+	4.	best_model_tuned.pkl → Best model saved.
+
+📌 Summary
+
+✅ Fully aligns with your existing workflow
+✅ Replaces direct OOT scoring with structured evaluation
+✅ Ensures the rest of your pipeline (Gains Matrix, Rank Ordering, Lift Comparison, etc.) remains unchanged
+✅ Saves all relevant outputs for further analysis
+
+🔹 Next Steps
+	•	Run this instead of directly scoring OOT.
+	•	Proceed with Gains Matrix, Rank Ordering, Lift Comparison, etc., as before.
+	•	If you need additional visualizations, let me know!
+
+Would you like any modifications before running? 🚀
+
+
+
+
+
+
+
+
+
 print(psi_train_test[["scr_train_perc", "scr_test_perc"]])
 
 
