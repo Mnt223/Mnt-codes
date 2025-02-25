@@ -1,3 +1,75 @@
+gini_results = []
+
+# Iterate through each of the 20 best hyperparameter sets
+for index, row in top_20_models.iterrows():
+    print(f"\n🚀 Processing Model {index+1}/{len(top_20_models)} with Hyperparameters:\n", row.to_dict())  
+
+    try:
+        # Train model using hyperparameters
+        tuned_model = create_model(
+            "gbc",
+            subsample=row["Subsample"],
+            n_estimators=int(row["N Estimators"]),
+            min_samples_split=int(row["Min Samples Split"]),
+            min_samples_leaf=int(row["Min Samples Leaf"]),
+            min_impurity_decrease=row["Min Impurity Decrease"],
+            max_features=row["Max Features"],
+            max_depth=int(row["Max Depth"]),
+            learning_rate=row["Learning Rate"]
+        )
+
+        # Compute Gini Scores (NO PRINTING HERE)
+        gini_scores = compute_gini_scores(tuned_model, train_data, test_data, oot_data)
+
+        # Store results in a structured list (NO PRINTING HERE)
+        gini_results.append({
+            "Model ID": index + 1,
+            "Subsample": row["Subsample"],
+            "N Estimators": row["N Estimators"],
+            "Min Samples Split": row["Min Samples Split"],
+            "Min Samples Leaf": row["Min Samples Leaf"],
+            "Min Impurity Decrease": row["Min Impurity Decrease"],
+            "Max Features": row["Max Features"],
+            "Max Depth": row["Max Depth"],
+            "Learning Rate": row["Learning Rate"],
+            "Train Gini": gini_scores["Train Gini"],
+            "Test Gini": gini_scores["Test Gini"],
+            "OOT Gini": gini_scores["OOT Gini"],
+            "Gini Difference": abs(gini_scores["Train Gini"] - gini_scores["OOT Gini"])
+        })
+
+    except Exception as e:
+        print(f"⚠️ Error in Model {index+1}: {e}")
+        continue  # Continue loop even if an error occurs
+
+# Convert results to DataFrame
+gini_df = pd.DataFrame(gini_results)
+
+# Save Gini Score Table (Final Structured Output)
+gini_df.to_csv("/opt/jupyter/notebook/Output_RR/Gini_Comparison.csv", encoding="utf-8", index=False)
+
+# Display final structured table
+print("\n✅ Gini Scores for 20 Models (Train, Test, OOT Gini per model):")
+print(gini_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Step 1: Tune the model and get top 20 hyperparameter sets
 tuned_models = tune_model(model_tune_gbc, n_iter=50, optimize="AUC", return_tuner=True)
 top_20_models = pd.DataFrame(tuned_models[1].cv_results_).sort_values(by="rank_test_score", ascending=True).head(20)
