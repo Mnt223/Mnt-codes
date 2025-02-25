@@ -1,3 +1,19 @@
+# Directly extract hyperparameters from best_model_row
+best_hyperparams = best_model_row[[
+    "Subsample", "N Estimators", "Min Samples Split", 
+    "Min Samples Leaf", "Min Impurity Decrease", 
+    "Max Features", "Max Depth", "Learning Rate"
+]]
+
+print("\n✅ Best Hyperparameters Selected Correctly:\n", best_hyperparams)
+
+
+
+
+
+
+
+
 # Extract the hyperparameters for the best model
 best_hyperparams = top_20_models.iloc[best_model_row["Model ID"] - 1]  # Since Model ID starts from 1
 
