@@ -1,3 +1,29 @@
+# Apply best hyperparameters to the existing tuned model
+tuned_models.set_params(
+    subsample=best_hyperparams["Subsample"],
+    n_estimators=int(best_hyperparams["N Estimators"]),
+    min_samples_split=int(best_hyperparams["Min Samples Split"]),
+    min_samples_leaf=int(best_hyperparams["Min Samples Leaf"]),
+    min_impurity_decrease=best_hyperparams["Min Impurity Decrease"],
+    max_features=best_hyperparams["Max Features"],
+    max_depth=int(best_hyperparams["Max Depth"]),
+    learning_rate=best_hyperparams["Learning Rate"]
+)
+
+# Final model is the updated tuned model
+final_model = tuned_models
+
+print("\n✅ Best Hyperparameters Applied to Existing Tuned Model!")
+
+
+
+
+
+
+
+
+
+
 # Directly extract hyperparameters from best_model_row
 best_hyperparams = best_model_row[[
     "Subsample", "N Estimators", "Min Samples Split", 
