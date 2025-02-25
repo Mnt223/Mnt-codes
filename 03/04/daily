@@ -1,3 +1,39 @@
+def compute_gini_scores(model, train_data, test_data, oot_data):
+    scores = {}
+
+    # Apply model to train, test, and OOT data
+    train_pred = predict_model(model, train_data, raw_score=True)
+    test_pred = predict_model(model, test_data, raw_score=True)
+    oot_pred = predict_model(model, oot_data, raw_score=True)  # 🔥 This was missing before!
+
+    # Compute AUC and Gini
+    auc_train = roc_auc_score(train_pred["mevent"], train_pred["prediction_score_1"])
+    train_gini = (2 * auc_train) - 1
+
+    auc_test = roc_auc_score(test_pred["mevent"], test_pred["prediction_score_1"])
+    test_gini = (2 * auc_test) - 1
+
+    auc_oot = roc_auc_score(oot_pred["mevent"], oot_pred["prediction_score_1"])
+    oot_gini = (2 * auc_oot) - 1
+
+    scores["Train Gini"] = train_gini
+    scores["Test Gini"] = test_gini
+    scores["OOT Gini"] = oot_gini
+
+    return scores
+
+
+
+
+
+
+
+
+
+
+
+
+
 gini_results = []
 
 # Iterate through each of the 20 best hyperparameter sets
