@@ -1,3 +1,23 @@
+# Remove models with zero Gini scores (where the model failed to learn)
+gini_df_filtered = gini_df[
+    (gini_df["Train Gini"] > 0) & 
+    (gini_df["Test Gini"] > 0) & 
+    (gini_df["OOT Gini"] > 0)
+]
+
+# Check if any valid models remain
+if gini_df_filtered.empty:
+    raise ValueError("\n❌ ERROR: No valid models found! All models had zero Gini scores.")
+
+
+
+
+
+
+
+
+
+
 # Compute absolute differences
 gini_df["Train-Test Gini Diff"] = abs(gini_df["Train Gini"] - gini_df["Test Gini"])
 gini_df["Train-OOT Gini Diff"] = abs(gini_df["Train Gini"] - gini_df["OOT Gini"])
