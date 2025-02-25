@@ -1,3 +1,59 @@
+import pandas as pd
+import numpy as np
+
+# Load scr_all (Make sure scr_all is already defined in your environment)
+# scr_all = pd.read_csv("path_to_your_scr_all.csv")
+
+# Define top 6 features you want to bucket
+top_6_features = ["feature1", "feature2", "feature3", "feature4", "feature5", "feature6"]  # Replace with actual feature names
+
+# Define score bucket cut-offs (5 equal quantile-based bands)
+scr_all["score_band"] = pd.qcut(scr_all["score"], q=5, labels=["E. <=175", "D. 175-192", "C. 192-208", "B. 208-229", "A. >229"])
+
+# Function to create 5 buckets dynamically for any feature
+def create_feature_buckets(df, feature):
+    df[feature + "_bucket"] = pd.qcut(df[feature], q=5, duplicates="drop", labels=["E", "D", "C", "B", "A"])
+    return df
+
+# Apply the function to all 6 selected features
+for feature in top_6_features:
+    scr_all = create_feature_buckets(scr_all, feature)
+
+# Initialize an empty dictionary to store bucketed data
+bucket_results = {}
+
+# Group by Score Band and Feature Buckets to calculate Frequency
+for feature in top_6_features:
+    grouped_data = scr_all.groupby(["score_band", feature + "_bucket"]).size().reset_index(name="freq")
+    bucket_results[feature] = grouped_data
+
+# Display the first bucket result as an example
+for feature, df in bucket_results.items():
+    print(f"\n✅ Feature: {feature}")
+    print(df.head())
+
+# Save all bucketed data to CSV files
+for feature, df in bucket_results.items():
+    df.to_csv(f"/opt/jupyter/notebook/Output_RR/{feature}_buckets.csv", index=False)
+
+print("\n✅ All bucketed data saved successfully!")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Apply best hyperparameters to the existing tuned model
 tuned_models.set_params(
     subsample=best_hyperparams["Subsample"],
