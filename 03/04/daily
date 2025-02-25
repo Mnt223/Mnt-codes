@@ -1,3 +1,18 @@
+# Compute absolute differences
+gini_df["Train-Test Gini Diff"] = abs(gini_df["Train Gini"] - gini_df["Test Gini"])
+gini_df["Train-OOT Gini Diff"] = abs(gini_df["Train Gini"] - gini_df["OOT Gini"])
+
+# Select the model with the smallest overall difference
+best_model_row = gini_df.loc[gini_df["Train-OOT Gini Diff"].idxmin()]
+
+print("\n🏆 Best Model Based on Minimum Train-OOT Gini Difference:\n", best_model_row)
+
+
+
+
+
+
+
 def compute_gini_scores(model, train_data, test_data, oot_data):
     scores = {}
 
