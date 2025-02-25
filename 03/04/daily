@@ -1,3 +1,64 @@
+Branch ID,Branch Name,City,State,Address,Latitude,Longitude,Revenue (INR Crores),RM Count
+001,HSBC Mumbai Nariman Point,Mumbai,Maharashtra,"Free Press House, Nariman Point",18.9260,72.8226,15.0,12
+002,HSBC Mumbai Bandra,Mumbai,Maharashtra,"Linking Road, Bandra West",19.0552,72.8275,12.5,10
+003,HSBC Delhi Connaught,Delhi,Delhi,"Statesman House, Barakhamba Road",28.6328,77.2197,14.0,15
+004,HSBC Delhi Saket,Delhi,Delhi,"Select Citywalk, Saket",28.5245,77.2191,10.8,9
+005,HSBC Bengaluru MG Road,Bengaluru,Karnataka,"Metro Station, MG Road",12.9758,77.6049,13.2,11
+006,HSBC Bengaluru Whitefield,Bengaluru,Karnataka,"Prestige Tech Park, ITPL Road",12.9716,77.7233,9.5,8
+007,HSBC Hyderabad Hitech City,Hyderabad,Telangana,"Cyber Towers, Hitech City",17.4474,78.3762,11.0,10
+008,HSBC Chennai T. Nagar,Chennai,Tamil Nadu,"Nandanam, T. Nagar",13.0478,80.2427,8.5,7
+009,HSBC Kolkata Park Street,Kolkata,West Bengal,"Park Street, Camac Street",22.5519,88.3516,9.0,8
+010,HSBC Pune Koregaon Park,Pune,Maharashtra,"North Main Road, Koregaon Park",18.5362,73.8904,8.0,7
+011,HSBC Ahmedabad CG Road,Ahmedabad,Gujarat,"CG Road, Navrangpura",23.0375,72.5623,7.5,6
+012,HSBC Jaipur MI Road,Jaipur,Rajasthan,"MI Road, Bani Park",26.9124,75.7873,6.8,5
+013,HSBC Lucknow Hazratganj,Lucknow,Uttar Pradesh,"Hazratganj Market",26.8467,80.9462,6.5,5
+014,HSBC Chandigarh Sector 17,Chandigarh,Chandigarh,"Sector 17 Plaza",30.7333,76.7794,7.0,6
+015,HSBC Coimbatore RS Puram,Coimbatore,Tamil Nadu,"DB Road, RS Puram",11.0055,76.9661,5.5,4
+016,HSBC Kochi Marine Drive,Kochi,Kerala,"Marine Drive, Ernakulam",9.9816,76.2999,6.0,5
+017,HSBC Visakhapatnam Beach Rd,Visakhapatnam,Andhra Pradesh,"Beach Road, MVP Colony",17.7231,83.3013,5.8,4
+018,HSBC Nagpur Sitabuldi,Nagpur,Maharashtra,"Sitabuldi Main Road",21.1539,79.0836,5.0,4
+019,HSBC Indore Vijay Nagar,Indore,Madhya Pradesh,"Vijay Nagar Square",22.7196,75.8577,5.2,4
+020,HSBC Vadodara Alkapuri,Vadodara,Gujarat,"Alkapuri Road",22.3073,73.1812,6.2,5
+021,HSBC Bhopal MP Nagar,Bhopal,Madhya Pradesh,"Zone 1, MP Nagar",23.2599,77.4126,4.8,3
+022,HSBC Ludhiana Feroze Gandhi,Ludhiana,Punjab,"Feroze Gandhi Market",30.9010,75.8573,5.5,4
+023,HSBC Surat Athwa Lines,Surat,Gujarat,"Athwa Road, Piplod",21.1702,72.8311,7.2,6
+024,HSBC Nashik College Road,Nashik,Maharashtra,"College Road, Nashik",20.0059,73.7620,4.5,3
+025,HSBC Madurai East Masi St,Madurai,Tamil Nadu,"East Masi Street",9.9252,78.1198,4.0,3
+026,HSBC Bhubaneswar Janpath,Bhubaneswar,Odisha,"Janpath Road, Saheed Nagar",20.2961,85.8245,5.0,4
+027,HSBC Thiruvananthapuram MG,Thiruvananthapuram,Kerala,"MG Road, Kowdiar",8.5241,76.9366,4.2,3
+028,HSBC Guwahati GS Road,Guwahati,Assam,"GS Road, Dispur",26.1445,91.7362,3.8,3
+029,HSBC Patna Fraser Road,Patna,Bihar,"Fraser Road, Patna",25.6157,85.1355,4.5,3
+030,HSBC Raipur GE Road,Raipur,Chhattisgarh,"GE Road, Telibandha",21.2514,81.6296,3.5,2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 
