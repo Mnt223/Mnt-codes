@@ -1,3 +1,16 @@
+# Extract the hyperparameters for the best model
+best_hyperparams = top_20_models.iloc[best_model_row["Model ID"] - 1]  # Since Model ID starts from 1
+
+print("\n✅ Best Hyperparameters:\n", best_hyperparams)
+
+
+
+
+
+
+
+
+
 # Remove models with zero Gini scores (where the model failed to learn)
 gini_df_filtered = gini_df[
     (gini_df["Train Gini"] > 0) & 
