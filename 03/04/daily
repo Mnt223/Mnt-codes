@@ -1,3 +1,106 @@
+# ----------------------
+# 1. Data Loading & Column Cleaning (Unchanged)
+# ----------------------
+import os
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from pycaret.classification import *
+
+path = os.path.join(os.getcwd(), 'Output_RR/')
+data_path = '/opt/jupyter/notebook/RR_Model_Development_Data.csv'
+raw = pd.read_csv(data_path, encoding='cp1252')
+raw.columns = [x.lower() for x in raw.columns]
+raw = raw.rename(columns={'custid': 'cust_num'})
+
+# ----------------------
+# 2. Missing Value Handling (Fixed)
+# ----------------------
+# Split FIRST to prevent data leakage
+train_data, test_data = train_test_split(raw, test_size=0.3, random_state=1992)
+
+# Impute using TRAINING DATA only
+numeric_features = train_data.select_dtypes(include=['int64', 'float64']).columns.tolist()
+categorical_features = train_data.select_dtypes(include=['object']).columns.tolist()
+
+# Impute numeric with mean (train-based)
+num_imputer = SimpleImputer(strategy='mean')
+train_data[numeric_features] = num_imputer.fit_transform(train_data[numeric_features])
+test_data[numeric_features] = num_imputer.transform(test_data[numeric_features])
+
+# Impute categorical with mode (train-based)
+cat_imputer = SimpleImputer(strategy='most_frequent')
+train_data[categorical_features] = cat_imputer.fit_transform(train_data[categorical_features])
+test_data[categorical_features] = cat_imputer.transform(test_data[categorical_features])
+
+# ----------------------
+# 3. Feature Engineering & Filtering (Unchanged)
+# ----------------------
+# Your existing feature engineering code here
+# ...
+
+# ----------------------
+# 4. Parallel OOT Processing
+# ----------------------
+# Load and preprocess OOT data using SAME imputers
+oot_path = '/path/to/OOT_data.csv'
+oot_data = pd.read_csv(oot_path, encoding='cp1252')
+oot_data = oot_data[raw.columns]  # Ensure same columns
+
+# Apply same transformations
+oot_data[numeric_features] = num_imputer.transform(oot_data[numeric_features])
+oot_data[categorical_features] = cat_imputer.transform(oot_data[categorical_features])
+
+# ----------------------
+# 5. PyCaret Setup with Feature Selection
+# ----------------------
+# Define categorical features explicitly
+cat_features_clean = [col for col in categorical_features if col not in ['cust_num', 'selection_month']]
+
+clf = setup(
+    data=train_data,
+    target='mevent',
+    ignore_features=['selectionprob', 'cust_num', 'samplingweight', 'selection_month', 'key', 'age_yr_gam', 'age_flag'],
+    numeric_features=numeric_features,
+    categorical_features=cat_features_clean,
+    numeric_imputation='mean',  # Already handled, but PyCaret needs to know
+    categorical_imputation='mode',  # Already handled
+    remove_outliers=False,  # Disabled to prevent hidden leakage
+    feature_selection=True,  # Enable feature selection
+    feature_selection_method='classic',  # Mutual information
+    feature_selection_estimator='lightgbm',
+    n_features_to_select=50,  # Keep top 50 features
+    train_size=0.7,
+    session_id=1992
+)
+
+# Get best features
+best_features = get_config('X_train').columns.tolist()
+
+# Apply feature selection to all datasets
+train_data = train_data[best_features + ['mevent']]
+test_data = test_data[best_features + ['mevent']]
+oot_data = oot_data[best_features + ['mevent']]
+
+# ----------------------
+# 6. Final Data Validation
+# ----------------------
+print(f"Train shape: {train_data.shape}")
+print(f"Test shape: {test_data.shape}")
+print(f"OOT shape: {oot_data.shape}")
+
+
+
+
+
+
+
+
+
+
+
+
 Branch ID,Branch Name,City,State,Address,Latitude,Longitude,Revenue (INR Crores),RM Count
 001,HSBC Mumbai Nariman Point,Mumbai,Maharashtra,"Free Press House, Nariman Point",18.9260,72.8226,15.0,12
 002,HSBC Mumbai Bandra,Mumbai,Maharashtra,"Linking Road, Bandra West",19.0552,72.8275,12.5,10
