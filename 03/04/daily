@@ -1,3 +1,30 @@
+# Load Data
+dev_data = pd.read_csv('/opt/jupyter/notebook/dev_data.csv', encoding='utf-8')
+oot_data = pd.read_csv('/opt/jupyter/notebook/oot_data.csv', encoding='utf-8')
+
+# Get column lists
+dev_columns = set(dev_data.columns)
+oot_columns = set(oot_data.columns)
+
+# Find missing columns in OOT
+missing_in_oot = dev_columns - oot_columns
+# Find extra columns in OOT
+extra_in_oot = oot_columns - dev_columns
+
+print("Columns in Main (Dev) but missing in OOT:", missing_in_oot)
+print("Columns in OOT but missing in Main (Dev):", extra_in_oot)
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
