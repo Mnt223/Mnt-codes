@@ -1,3 +1,34 @@
+import numpy as np
+from sklearn.feature_selection import VarianceThreshold
+
+# Ensure X contains only numerical columns
+X_numeric = X.select_dtypes(include=['int64', 'float64'])
+
+# Handle NaNs and infinite values
+X_numeric = X_numeric.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+# Check if all features have at least 2 unique values
+if X_numeric.nunique().min() <= 1:
+    print("Warning: Some columns have only one unique value. Removing them.")
+    X_numeric = X_numeric.loc[:, X_numeric.nunique() > 1]
+
+# Apply VarianceThreshold
+selector = VarianceThreshold(threshold=0.01)
+X_var = X_numeric.loc[:, selector.fit(X_numeric).get_support()]
+
+print(f"Step 1: Features after variance thresholding: {X_var.shape[1]}")
+
+
+
+
+
+
+
+
+
+
+
+
 ns numeric features
 X_numeric = X.select_dtypes(include=['int64', 'float64'])
 
