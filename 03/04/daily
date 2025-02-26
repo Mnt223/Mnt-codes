@@ -1,3 +1,17 @@
+dev_data['mevent'] = pd.to_numeric(dev_data['mevent'], errors='coerce')
+y = dev_data['mevent']
+print(y.dtype)  # Should be int64
+
+
+
+
+
+
+
+
+
+
+
 dev_data.columns = dev_data.columns.str.strip().str.lower()
 y = dev_data['mevent']
 
