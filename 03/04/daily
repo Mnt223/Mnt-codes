@@ -1,3 +1,39 @@
+# Step 7: Final Feature Selection by Combining Methods
+final_features = list(set(top_features_lgb) & set(selected_rfe_features) & set(top_features_shap))
+
+# Ensure we have ~50 features by adding additional unique ones if needed
+unique_features = list(set(top_features_lgb) | set(selected_rfe_features) | set(top_features_shap))
+
+# Remove already selected features from the unique list
+unique_features = [feat for feat in unique_features if feat not in final_features]
+
+# Add more features until we reach 50
+while len(final_features) < 50 and len(unique_features) > 0:
+    final_features.append(unique_features.pop(0))  # Take from the front to avoid index errors
+
+print(f"Final Selected Features Count: {len(final_features)}")
+
+# Save Selected Features
+pd.DataFrame({'Selected_Features': final_features}).to_csv('/opt/jupyter/notebook/selected_features.csv', index=False)
+
+# Apply the same feature selection on OOT Data
+X_oot = oot_data[final_features]
+X_oot.to_csv('/opt/jupyter/notebook/oot_selected_features.csv', index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 from sklearn.feature_selection import VarianceThreshold
 
