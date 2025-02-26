@@ -1,3 +1,85 @@
+import pandas as pd
+import numpy as np
+from pycaret.classification import create_model, tune_model, predict_model, pull
+from sklearn.metrics import roc_auc_score
+
+# Function to calculate Gini coefficient
+def gini_score(y_true, y_pred):
+    return 2 * roc_auc_score(y_true, y_pred) - 1
+
+# Load datasets
+train_test_data = model_dev_data  # Your main dataset (Train & Test)
+oot_data = oot_dataset  # Out-of-time dataset
+
+# Target variable
+target_col = 'mevent'
+
+# Store results
+results = []
+
+# Run 20 iterations of hyperparameter tuning
+for i in range(20):
+    print(f"Iteration {i+1}/20...")
+
+    # Step 1: Create and Tune CatBoost Model
+    Cb = create_model('catboost')
+    tuned_model = tune_model(Cb, fold=10, optimize='AUC', search_library='optuna', search_algorithm='tpe', n_iter=1)
+
+    # Extract best hyperparameters
+    best_params = tuned_model.get_params()
+
+    # Step 2: Extract Train & Test Predictions
+    train_test_preds_df = predict_model(tuned_model, data=train_test_data)
+    
+    # Pull train-test split performance
+    train_test_results = pull()  # Extracts performance summary
+    train_gini = train_test_results.loc["AUC"]["Train"] * 2 - 1
+    test_gini = train_test_results.loc["AUC"]["Test"] * 2 - 1
+
+    # Step 3: Apply model to OOT Data
+    oot_preds_df = predict_model(tuned_model, data=oot_data)
+    oot_preds = oot_preds_df['Score']
+    oot_actual = oot_data[target_col]
+    oot_gini = gini_score(oot_actual, oot_preds)
+
+    # Step 4: Store Hyperparameters & Gini Scores
+    results.append({
+        "Iteration": i+1,
+        "Max Depth": best_params.get("depth"),
+        "Learning Rate": best_params.get("learning_rate"),
+        "L2 Leaf Reg": best_params.get("l2_leaf_reg"),
+        "Train Gini": train_gini,
+        "Test Gini": test_gini,  # Fixed this to be independent from Train Gini
+        "OOT Gini": oot_gini,
+        "Train-Test Gini Diff": abs(train_gini - test_gini),  # Stability metric 1
+        "Train-OOT Gini Diff": abs(train_gini - oot_gini),  # Stability metric 2
+    })
+
+# Convert results to DataFrame
+results_df = pd.DataFrame(results)
+
+# Sort models by Train-OOT Gini Difference (least overfitting)
+sorted_results = results_df.sort_values(by="Train-OOT Gini Diff")
+
+# Display the table
+import ace_tools as tools
+tools.display_dataframe_to_user(name="CatBoost Hyperparameter Tuning Results", dataframe=sorted_results)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Step 7: Final Feature Selection by Combining Methods
 final_features = list(set(top_features_lgb) & set(selected_rfe_features) & set(top_features_shap))
 
