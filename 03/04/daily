@@ -1,3 +1,121 @@
+import pandas as pd
+import numpy as np
+import lightgbm as lgb
+from sklearn.feature_selection import VarianceThreshold, SelectKBest, chi2, f_classif, RFE
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+import shap
+
+# Load Data
+dev_data = pd.read_csv('/opt/jupyter/notebook/dev_data.csv', encoding='utf-8')
+oot_data = pd.read_csv('/opt/jupyter/notebook/oot_data.csv', encoding='utf-8')
+
+# Separate Features & Target
+X = dev_data.drop(columns=['mevent'])
+y = dev_data['mevent']
+
+# Step 1: Remove Low-Variance Features
+selector = VarianceThreshold(threshold=0.01)  
+X_var = X.loc[:, selector.fit(X).get_support()]
+print(f"Step 1: Features after variance thresholding: {X_var.shape[1]}")
+
+# Step 2: Remove Highly Correlated Features
+corr_matrix = X_var.corr().abs()
+upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+drop_cols = [column for column in upper_triangle.columns if any(upper_triangle[column] > 0.90)]
+X_uncorr = X_var.drop(columns=drop_cols)
+print(f"Step 2: Features after removing high correlation: {X_uncorr.shape[1]}")
+
+# Step 3: Statistical Feature Selection (Chi-Square & ANOVA)
+X_cat = X_uncorr.select_dtypes(include=['object', 'category'])
+X_num = X_uncorr.select_dtypes(include=['int64', 'float64'])
+
+# Apply Chi-Square for categorical & ANOVA for numerical features
+chi2_selector = SelectKBest(chi2, k=min(30, len(X_cat.columns))) if not X_cat.empty else None
+anova_selector = SelectKBest(f_classif, k=min(30, len(X_num.columns))) if not X_num.empty else None
+
+selected_cat_features = chi2_selector.fit_transform(X_cat.fillna("Missing"), y) if chi2_selector else []
+selected_num_features = anova_selector.fit_transform(X_num.fillna(0), y) if anova_selector else []
+
+cat_feature_names = X_cat.columns[chi2_selector.get_support()] if chi2_selector else []
+num_feature_names = X_num.columns[anova_selector.get_support()] if anova_selector else []
+
+selected_stat_features = list(cat_feature_names) + list(num_feature_names)
+X_stat_selected = X_uncorr[selected_stat_features]
+print(f"Step 3: Features after statistical selection: {X_stat_selected.shape[1]}")
+
+# Step 4: Feature Importance from LightGBM
+lgb_model = lgb.LGBMClassifier(n_estimators=100, random_state=42)
+lgb_model.fit(X_stat_selected, y)
+feature_importance = pd.DataFrame({'Feature': X_stat_selected.columns, 'Importance': lgb_model.feature_importances_})
+feature_importance = feature_importance.sort_values(by='Importance', ascending=False)
+
+top_features_lgb = feature_importance.iloc[:50]['Feature'].tolist()
+X_lgb_selected = X_stat_selected[top_features_lgb]
+print(f"Step 4: Features after LightGBM importance: {X_lgb_selected.shape[1]}")
+
+# Step 5: Recursive Feature Elimination (RFE)
+rfe_model = LogisticRegression(max_iter=500)
+rfe = RFE(rfe_model, n_features_to_select=50)
+rfe.fit(X_lgb_selected, y)
+selected_rfe_features = X_lgb_selected.columns[rfe.support_]
+X_rfe_selected = X_lgb_selected[selected_rfe_features]
+print(f"Step 5: Features after Recursive Feature Elimination: {X_rfe_selected.shape[1]}")
+
+# Step 6: SHAP Feature Selection
+shap_explainer = shap.Explainer(lgb_model)
+shap_values = shap_explainer.shap_values(X_rfe_selected)
+shap_summary = np.abs(shap_values).mean(axis=0)
+shap_feature_importance = pd.DataFrame({'Feature': X_rfe_selected.columns, 'SHAP_Importance': shap_summary})
+shap_feature_importance = shap_feature_importance.sort_values(by='SHAP_Importance', ascending=False)
+
+top_features_shap = shap_feature_importance.iloc[:50]['Feature'].tolist()
+X_shap_selected = X_rfe_selected[top_features_shap]
+print(f"Step 6: Features after SHAP selection: {X_shap_selected.shape[1]}")
+
+# Step 7: Final Feature Selection by Combining Methods
+final_features = list(set(top_features_lgb) & set(selected_rfe_features) & set(top_features_shap))
+
+# Ensure we have ~50 features by adding additional unique ones if needed
+while len(final_features) < 50:
+    unique_features = list(set(top_features_lgb) | set(selected_rfe_features) | set(top_features_shap))
+    final_features.append(unique_features[len(final_features)])
+
+print(f"Final Selected Features Count: {len(final_features)}")
+
+# Save Selected Features
+pd.DataFrame({'Selected_Features': final_features}).to_csv('/opt/jupyter/notebook/selected_features.csv', index=False)
+
+# Apply the same feature selection on OOT Data
+X_oot = oot_data[final_features]
+X_oot.to_csv('/opt/jupyter/notebook/oot_selected_features.csv', index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import pandas as pd
 from pycaret.classification import *
