@@ -1,3 +1,164 @@
+import os
+import pandas as pd
+from pycaret.classification import *
+
+# Define Paths
+path = os.path.join(os.getcwd(), 'Output_RR')
+main_data_path = '/opt/jupyter/notebook/RR_Model_Development_Data.csv'
+oot_data_path = '/opt/jupyter/notebook/RR_OOT_Data.csv'
+
+# Load Main Data
+raw = pd.read_csv(main_data_path, encoding='cp1252')
+raw.columns = [x.lower() for x in raw.columns]
+raw = raw.rename(columns={'custid': 'cust_num'})
+
+# Load OOT Data
+raw_oot = pd.read_csv(oot_data_path, encoding='cp1252')
+raw_oot.columns = [x.lower() for x in raw_oot.columns]
+raw_oot = raw_oot.rename(columns={'custid': 'cust_num'})
+
+# Ensure Columns Are the Same
+assert list(raw.columns) == list(raw_oot.columns), "Column mismatch between main and OOT data"
+
+# Check Dataset Shapes
+print("Main Data Shape:", raw.shape)
+print("OOT Data Shape:", raw_oot.shape)
+
+# Check Target Distribution
+print("Main Data Target Distribution:\n", raw['mevent'].value_counts())
+print("OOT Data Target Distribution:\n", raw_oot['mevent'].value_counts())
+
+# Ensure cust_num is String with Zero Padding (Both Datasets)
+raw['cust_num'] = raw['cust_num'].astype(str).apply(lambda x: x.zfill(9))
+raw_oot['cust_num'] = raw_oot['cust_num'].astype(str).apply(lambda x: x.zfill(9))
+
+# Handle Missing Values (Both Datasets)
+missing_cols = raw.columns[raw.isna().any()].tolist()
+raw.fillna(raw.mode().iloc[0], inplace=True)
+raw_oot.fillna(raw_oot.mode().iloc[0], inplace=True)
+
+# Drop Unnecessary Columns
+drop_cols = ['ga_cust_id', 'gndr_cde', 'gbflag', 'model', 'fin_annual_sal_sre', 'gender']
+dataset_main = raw.drop(columns=drop_cols, axis=1)
+dataset_oot = raw_oot.drop(columns=drop_cols, axis=1)
+
+# Save Variable Distribution
+var_dist_main = dataset_main.describe()
+var_dist_oot = dataset_oot.describe()
+var_dist_main.to_excel(os.path.join(path, 'variable_distribution_main.xlsx'), encoding='utf-8')
+var_dist_oot.to_excel(os.path.join(path, 'variable_distribution_oot.xlsx'), encoding='utf-8')
+
+# Prepare Data for Modeling
+dev_data = dataset_main.copy()
+oot_data = dataset_oot.copy()
+
+print("Main Data Shape:", dev_data.shape)
+print("OOT Data Shape:", oot_data.shape)
+
+# Save Processed Data
+dev_data.to_csv(os.path.join(path, 'dev_data.csv'), encoding='utf-8', index=False)
+oot_data.to_csv(os.path.join(path, 'oot_data.csv'), encoding='utf-8', index=False)
+
+# Read Development & OOT Data Again
+dev_data = pd.read_csv(os.path.join(path, 'dev_data.csv'), encoding='utf-8')
+oot_data = pd.read_csv(os.path.join(path, 'oot_data.csv'), encoding='utf-8')
+
+# Identify Categorical and Numerical Features
+cat_feat = list(dev_data.select_dtypes(include=['object']).columns)
+num_feat = list(dev_data.select_dtypes(include=['int64', 'float64']).columns)
+num_feat.remove('mevent')
+
+# PyCaret Setup for Model Training on Main Data
+clf = setup(
+    data=dev_data,
+    target='mevent',
+    ignore_features=['selectionprob', 'cust_num', 'samplingweight', 'selection_month', 'key', 'age_yr_gam', 'age_flag'],
+    numeric_imputation='mean',
+    categorical_imputation='mode',
+    categorical_features=cat_feat,
+    numeric_features=num_feat,
+    remove_outliers=True,
+    train_size=0.70,
+    session_id=1992
+)
+
+# Compare Models
+best_model = compare_models()
+
+# Tune Hyperparameters (20 Iterations)
+tuned_model = tune_model(best_model, n_iter=20, optimize='AUC')
+
+# Store Gini Scores for Train, Test & OOT
+results = []
+for i in range(20):
+    tuned_model = tune_model(best_model, n_iter=1, optimize='AUC')
+    train_gini = tuned_model.score(dev_data[num_feat], dev_data['mevent']) * 2 - 1
+    test_gini = tuned_model.score(oot_data[num_feat], oot_data['mevent']) * 2 - 1
+    results.append((i+1, train_gini, test_gini))
+
+# Convert to DataFrame
+gini_df = pd.DataFrame(results, columns=['Iteration', 'Train Gini', 'OOT Gini'])
+gini_df['Gap'] = abs(gini_df['Train Gini'] - gini_df['OOT Gini'])
+
+# Highlight Best Model with Minimal Gini Gap
+best_iteration = gini_df.loc[gini_df['Gap'].idxmin()]
+print("Best Model with Minimal Gini Gap:\n", best_iteration)
+
+# Save Gini Score Table
+gini_df.to_excel(os.path.join(path, 'gini_scores.xlsx'), index=False)
+
+# SHAP Analysis
+import shap
+explainer = shap.Explainer(tuned_model)
+shap_values = explainer.shap_values(dev_data[num_feat])
+shap.summary_plot(shap_values, dev_data[num_feat])
+
+# PSI Calculation
+def calculate_psi(expected, actual, bins=10):
+    expected_counts, bin_edges = pd.cut(expected, bins, retbins=True, labels=False)
+    actual_counts = pd.cut(actual, bin_edges, labels=False)
+    
+    expected_distribution = expected_counts.value_counts(normalize=True)
+    actual_distribution = actual_counts.value_counts(normalize=True)
+    
+    psi = sum((expected_distribution - actual_distribution) * np.log(expected_distribution / actual_distribution))
+    return psi
+
+psi_train_test = calculate_psi(dev_data['mevent'], oot_data['mevent'])
+print("PSI Train vs OOT:", psi_train_test)
+
+# Gain Chart (Train, Test, OOT)
+import matplotlib.pyplot as plt
+plt.plot(sorted(dev_data['mevent'], reverse=True), label="Train")
+plt.plot(sorted(oot_data['mevent'], reverse=True), label="OOT")
+plt.legend()
+plt.title("Gain Chart Comparison")
+plt.show()
+
+# Save Processed Files
+gini_df.to_csv(os.path.join(path, 'gini_results.csv'), index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ----------------------
 # 1. Import Libraries
 # ----------------------
