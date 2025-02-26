@@ -1,4 +1,132 @@
 # ----------------------
+# 1. Import Libraries
+# ----------------------
+import os
+import pandas as pd
+import numpy as np
+from pycaret.classification import *
+from sklearn.metrics import roc_auc_score
+import shap
+
+# ----------------------
+# 2. Load & Preprocess Data
+# ----------------------
+# Load main dataset
+data_path = '/opt/jupyter/notebook/RR_Model_Development_Data.csv'
+raw = pd.read_csv(data_path, encoding='cp1252')
+raw.columns = [x.lower() for x in raw.columns]
+raw = raw.rename(columns={'custid': 'cust_num'})
+
+# Load OOT dataset
+oot_path = '/path/to/RR_OOT_Data.csv'
+raw_OOT = pd.read_csv(oot_path, encoding='cp1252')
+raw_OOT.columns = [x.lower() for x in raw_OOT.columns]
+raw_OOT = raw_OOT.rename(columns={'custid': 'cust_num'})
+
+# Ensure OOT has same columns as main data
+raw_OOT = raw_OOT[raw.columns]
+
+# ----------------------
+# 3. PyCaret Setup & Feature Selection
+# ----------------------
+clf = setup(
+    data=raw,
+    target='mevent',
+    ignore_features=['cust_num', 'selection_month', 'samplingweight', 'key'],
+    numeric_imputation='mean',
+    categorical_imputation='mode',
+    feature_selection=True,
+    feature_selection_method='boruta',
+    feature_selection_estimator='lightgbm',
+    n_features_to_select=100,
+    train_size=0.7,
+    session_id=1992
+)
+
+# Get selected features
+best_features = get_config('X_train').columns.tolist()
+
+# ----------------------
+# 4. Trim Datasets to Selected Features
+# ----------------------
+raw = raw[best_features + ['mevent']]
+raw_OOT = raw_OOT[best_features + ['mevent']]
+
+# ----------------------
+# 5. Model Training & Tuning
+# ----------------------
+best_model = compare_models(sort='AUC', n_select=1)
+tuned_model = tune_model(best_model, n_iter=20, optimize='AUC')
+final_model = finalize_model(tuned_model)  # Train on full main data
+
+# ----------------------
+# 6. Calculate Gini Scores
+# ----------------------
+# Get PyCaret's internal train/test data
+X_train = get_config('X_train')
+y_train = get_config('y_train')
+train_data = pd.concat([X_train, y_train], axis=1)
+
+# Predictions
+train_pred = predict_model(final_model, data=train_data)
+test_pred = predict_model(final_model)
+oot_pred = predict_model(final_model, data=raw_OOT)
+
+# Gini Calculations
+train_gini = 2 * roc_auc_score(train_pred['mevent'], train_pred['Score']) - 1
+test_gini = 2 * roc_auc_score(test_pred['mevent'], test_pred['Score']) - 1
+oot_gini = 2 * roc_auc_score(raw_OOT['mevent'], oot_pred['Score']) - 1
+
+print(f"\nGini Scores:")
+print(f"Train: {train_gini:.3f}")
+print(f"Test: {test_gini:.3f}")
+print(f"OOT: {oot_gini:.3f}")
+
+# ----------------------
+# 7. SHAP Analysis
+# ----------------------
+explainer = shap.TreeExplainer(final_model)
+shap_values = explainer.shap_values(raw[best_features])
+
+print("\nSHAP Summary Plot:")
+shap.summary_plot(shap_values, raw[best_features])
+
+# ----------------------
+# 8. Stability Checks (PSI/CSI)
+# ----------------------
+def calculate_psi(train, test, feature):
+    train_counts = np.histogram(train[feature], bins=10)[0] + 1e-10
+    test_counts = np.histogram(test[feature], bins=10)[0] + 1e-10
+    return np.sum((test_counts - train_counts) * np.log(test_counts / train_counts))
+
+print("\nPSI Scores (Train vs OOT):")
+for feature in best_features[:10]:  # Check top 10 features
+    psi = calculate_psi(raw[feature], raw_OOT[feature])
+    print(f"{feature}: {psi:.3f}")
+
+# CSI using SHAP correlation
+shap_oot = explainer.shap_values(raw_OOT[best_features])
+csi = np.corrcoef(shap_values[0].mean(axis=0), shap_oot[0].mean(axis=0))[0,1]
+print(f"\nCSI (SHAP Correlation): {csi:.3f}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ----------------------
 # 1. Data Loading & Column Cleaning (Unchanged)
 # ----------------------
 import os
