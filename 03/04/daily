@@ -1,3 +1,10 @@
+dev_data.columns = dev_data.columns.str.strip().str.lower()
+y = dev_data['mevent']
+
+
+
+
+
 
 import pandas as pd
 import numpy as np
