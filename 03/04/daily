@@ -1,3 +1,23 @@
+import subprocess
+import sys
+
+# Define proxy settings
+proxy = "http://your_proxy:your_port"
+
+# Install spacy using subprocess
+try:
+    subprocess.run([sys.executable, "-m", "pip", "install", "spacy", f"--proxy={proxy}", "--no-cache-dir"], check=True)
+    print("✅ Spacy installed successfully in JupyterLab!")
+except subprocess.CalledProcessError as e:
+    print(f"❌ Installation failed: {e}")
+
+
+
+
+
+
+
+
 Here's how to install various Python libraries using the subprocess module in Jupyter:
 
 ```python
