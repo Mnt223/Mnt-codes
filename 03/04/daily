@@ -1,3 +1,61 @@
+import pandas as pd
+from scipy.stats import ks_2samp
+
+def calculate_csi(train_df, compare_df, threshold=0.01):
+    """
+    Computes CSI (Characteristic Stability Index) using the KS Test.
+    Outputs results in a structured table format with 'Impacted/Working' classification.
+    
+    Parameters:
+        train_df: Training dataset
+        compare_df: Comparison dataset (Test or OOT)
+        threshold: Threshold to classify 'Impacted' vs 'Working' (default 0.01)
+    
+    Returns:
+        CSI summary as a Pandas DataFrame
+    """
+    csi_results = []
+    
+    for feature in train_df.columns:
+        ks_stat, _ = ks_2samp(train_df[feature], compare_df[feature])
+        
+        # Determine if the variable is 'Impacted' or 'Working' based on threshold
+        status = "Impacted" if ks_stat > threshold else "Working"
+        
+        # Append results
+        csi_results.append([feature, ks_stat, status])
+    
+    # Convert to DataFrame
+    csi_summary = pd.DataFrame(csi_results, columns=['Variable', 'CSI Value', 'Status'])
+    
+    return csi_summary
+
+# Compute CSI for Train vs Test
+csi_train_test = calculate_csi(scr_train, scr_test)
+
+# Compute CSI for Train vs OOT
+csi_train_oot = calculate_csi(scr_train, scr_oot)
+
+# Display the CSI table in Jupyter Notebook
+print("CSI Train vs OOT Summary:")
+display(csi_train_oot)  # Works in Jupyter Notebook
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
