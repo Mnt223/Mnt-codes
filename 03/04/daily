@@ -1,3 +1,67 @@
+import pandas as pd
+import numpy as np
+
+def calculate_gain_matrix(data, target_col='mevent', bins=10):
+    """
+    Compute the Gain Matrix with Deciles, Cumulative Events, and Separation.
+    """
+
+    # ✅ Ensure 'score' column exists
+    if "score" not in data.columns:
+        raise ValueError("Error: 'score' column missing in dataset!")
+
+    # ✅ Sort data by score descending (higher scores = higher risk)
+    data = data.sort_values(by="score", ascending=False).reset_index(drop=True)
+
+    # ✅ Create deciles (10 equal-sized bins)
+    data["Decile"] = pd.qcut(data["score"], q=bins, labels=False, duplicates="drop") + 1  # 1 = highest score
+
+    # ✅ Compute gain matrix metrics
+    gain_matrix = data.groupby("Decile").agg(
+        Total=("score", "count"),
+        Non_Events=(target_col, lambda x: (x == 0).sum()),  # Non-defaults
+        Events=(target_col, "sum"),  # Defaults
+        Score_Min=("score", "min"),
+        Score_Max=("score", "max")
+    ).reset_index()
+
+    # ✅ Compute cumulative sums
+    gain_matrix["Cum_Non_Events"] = gain_matrix["Non_Events"].cumsum()
+    gain_matrix["Cum_Events"] = gain_matrix["Events"].cumsum()
+    gain_matrix["Cumulative Total"] = gain_matrix["Total"].cumsum()
+
+    # ✅ Compute event rates
+    gain_matrix["% Cum Non-Events"] = (gain_matrix["Cum_Non_Events"] / gain_matrix["Non_Events"].sum()) * 100
+    gain_matrix["% Cum Events"] = (gain_matrix["Cum_Events"] / gain_matrix["Events"].sum()) * 100
+    gain_matrix["Event Rate"] = (gain_matrix["Events"] / gain_matrix["Total"]) * 100
+
+    # ✅ Compute Cumulative Event Rate and Separation
+    gain_matrix["Cum Event Rate"] = (gain_matrix["Cum_Events"] / gain_matrix["Cumulative Total"]) * 100
+    gain_matrix["Separation"] = gain_matrix["% Cum Events"] - gain_matrix["% Cum Non-Events"]
+
+    return gain_matrix
+
+# ✅ Compute Gain Matrix for Train, Test, and OOT
+gain_matrix_train = calculate_gain_matrix(scr_train)
+gain_matrix_test = calculate_gain_matrix(scr_test)
+gain_matrix_oot = calculate_gain_matrix(scr_oot)
+
+# ✅ Save to CSV
+gain_matrix_train.to_csv("gain_matrix_train.csv", index=False)
+gain_matrix_test.to_csv("gain_matrix_test.csv", index=False)
+gain_matrix_oot.to_csv("gain_matrix_oot.csv", index=False)
+
+print("\n✅ Gain matrices saved as 'gain_matrix_train.csv', 'gain_matrix_test.csv', and 'gain_matrix_oot.csv'.")
+
+# ✅ Display output
+display(gain_matrix_train)
+display(gain_matrix_test)
+display(gain_matrix_oot)
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
