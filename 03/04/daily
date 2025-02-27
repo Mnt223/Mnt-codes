@@ -1,3 +1,168 @@
+import numpy as np
+import pandas as pd
+import shap
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import ks_2samp
+from sklearn.metrics import roc_auc_score
+from pycaret.classification import predict_model, get_config
+
+# ✅ Step 1: Define Model Scoring Function
+def model_score(main_data, oot_data, model_name):
+    train = get_config('X_train').index
+    test = get_config('X_test').index
+
+    predict = predict_model(model_name, main_data, raw_score=True)
+    predict_oot = predict_model(model_name, oot_data, raw_score=True)  # Apply to OOT
+
+    predict['odds'] = predict['prediction_score_1'] / predict['prediction_score_0']
+    predict['score'] = 200 + 28.8539 * np.log(predict['odds'])
+    predict['score'] = predict['score'].round(0).astype(int)
+
+    predict_train = predict.loc[train]
+    predict_test = predict.loc[test]
+
+    auc_train = roc_auc_score(predict_train['mevent'], predict_train['prediction_score_1'])
+    auc_test = roc_auc_score(predict_test['mevent'], predict_test['prediction_score_1'])
+    auc_oot = roc_auc_score(predict_oot['mevent'], predict_oot['prediction_score_1'])  # OOT AUC
+
+    print("Gini train: %.3f" % (2*auc_train-1))
+    print("Gini test: %.3f" % (2*auc_test-1))
+    print("Gini OOT: %.3f" % (2*auc_oot-1))  # Print OOT Gini
+
+    return predict, predict_train, predict_test, predict_oot
+
+# ✅ Step 2: Call Model Scoring Function
+scr_all, scr_train, scr_test, scr_oot = model_score(dev_data1, oot_data, best_model)
+
+# ✅ Step 3: Compute Gini Scores
+train_gini = 2 * roc_auc_score(scr_train['mevent'], scr_train['prediction_score_1']) - 1
+test_gini = 2 * roc_auc_score(scr_test['mevent'], scr_test['prediction_score_1']) - 1
+oot_gini = 2 * roc_auc_score(scr_oot['mevent'], scr_oot['prediction_score_1']) - 1
+
+# ✅ Step 4: Store Gini Scores
+gini_results = pd.DataFrame({
+    "Dataset": ["Train", "Test", "OOT"],
+    "Gini Score": [train_gini, test_gini, oot_gini]
+})
+
+# ✅ Step 5: Display Gini Scores
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Gini Scores Table", dataframe=gini_results)
+
+# ✅ Step 6: Compute PSI (Using Weighted Pentiles)
+def calculate_weighted_psi(expected_df, actual_df, bins=5):
+    expected_df["Bucket"] = pd.qcut(expected_df["Score"], q=bins, labels=False, duplicates="drop")
+    actual_df["Bucket"] = pd.qcut(actual_df["Score"], q=bins, labels=False, duplicates="drop")
+
+    expected_dist = expected_df.groupby("Bucket").agg(Expected_Count=("Weight", "sum"))
+    actual_dist = actual_df.groupby("Bucket").agg(Actual_Count=("Weight", "sum"))
+
+    psi_df = expected_dist.merge(actual_dist, on="Bucket", how="left").fillna(0)
+
+    psi_df["Expected_Percent"] = psi_df["Expected_Count"] / psi_df["Expected_Count"].sum()
+    psi_df["Actual_Percent"] = psi_df["Actual_Count"] / psi_df["Actual_Count"].sum()
+
+    psi_df["PSI"] = (psi_df["Expected_Percent"] - psi_df["Actual_Percent"]) * np.log(psi_df["Expected_Percent"] / psi_df["Actual_Percent"])
+    
+    return psi_df["PSI"].sum(), psi_df
+
+psi_train_test, psi_table_train_test = calculate_weighted_psi(scr_train, scr_test)
+psi_train_oot, psi_table_train_oot = calculate_weighted_psi(scr_train, scr_oot)
+
+tools.display_dataframe_to_user(name="PSI Table (Train vs Test)", dataframe=psi_table_train_test)
+tools.display_dataframe_to_user(name="PSI Table (Train vs OOT)", dataframe=psi_table_train_oot)
+
+# ✅ Step 7: Compute CSI (Using KS Test)
+def calculate_csi(train_df, compare_df):
+    csi_results = {}
+    for feature in train_df.columns:
+        ks_stat, _ = ks_2samp(train_df[feature], compare_df[feature])
+        csi_results[feature] = ks_stat
+    return csi_results
+
+csi_train_test = calculate_csi(scr_train, scr_test)
+csi_train_oot = calculate_csi(scr_train, scr_oot)
+
+# ✅ Step 8: Compute Weighted Gain Matrix
+def calculate_weighted_gain_matrix(data, target_col='Score', bins=10):
+    data["Decile"] = pd.qcut(data[target_col], q=bins, labels=False, duplicates="drop")
+    gain_matrix = data.groupby("Decile").agg(
+        Total=("Weight", "sum"),
+        Score_Min=("Score", "min"),
+        Score_Max=("Score", "max")
+    ).reset_index()
+
+    gain_matrix["Cumulative Total"] = gain_matrix["Total"].cumsum()
+    gain_matrix["Percent Cumulative"] = gain_matrix["Cumulative Total"] / gain_matrix["Total"].sum() * 100
+
+    return gain_matrix
+
+gain_matrix_train = calculate_weighted_gain_matrix(scr_train)
+gain_matrix_test = calculate_weighted_gain_matrix(scr_test)
+gain_matrix_oot = calculate_weighted_gain_matrix(scr_oot)
+
+tools.display_dataframe_to_user(name="Weighted Gain Matrix (Train)", dataframe=gain_matrix_train)
+tools.display_dataframe_to_user(name="Weighted Gain Matrix (Test)", dataframe=gain_matrix_test)
+tools.display_dataframe_to_user(name="Weighted Gain Matrix (OOT)", dataframe=gain_matrix_oot)
+
+# ✅ Step 9: Compute Weighted Deciles & Pentiles
+def create_weighted_buckets(data, score_col="Score"):
+    data["Decile"] = pd.qcut(data[score_col], q=10, labels=False, duplicates="drop")
+    data["Pentile"] = pd.qcut(data[score_col], q=5, labels=False, duplicates="drop")
+    return data
+
+scr_train = create_weighted_buckets(scr_train)
+scr_test = create_weighted_buckets(scr_test)
+scr_oot = create_weighted_buckets(scr_oot)
+
+tools.display_dataframe_to_user(name="Train Data with Deciles & Pentiles", dataframe=scr_train)
+tools.display_dataframe_to_user(name="Test Data with Deciles & Pentiles", dataframe=scr_test)
+tools.display_dataframe_to_user(name="OOT Data with Deciles & Pentiles", dataframe=scr_oot)
+
+# ✅ Step 10: SHAP Feature Importance
+explainer = shap.TreeExplainer(best_model)
+shap_values = explainer.shap_values(dev_data1.drop(columns=['mevent']))
+
+shap.summary_plot(shap_values, dev_data1.drop(columns=['mevent']))
+
+# ✅ Step 11: Feature Importance Bar Chart
+feature_importance = pd.DataFrame({
+    "Feature": best_model.feature_names_in_,
+    "Importance": best_model.feature_importances_
+}).sort_values(by="Importance", ascending=True)
+
+plt.figure(figsize=(10,6))
+plt.barh(feature_importance["Feature"], feature_importance["Importance"])
+plt.xlabel("Importance")
+plt.ylabel("Feature")
+plt.title("Feature Importance")
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+uy
 import pandas as pd
 import numpy as np
 import shap
