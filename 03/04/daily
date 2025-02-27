@@ -1,3 +1,100 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from pycaret.classification import tune_model, predict_model, pull
+from sklearn.metrics import roc_auc_score
+
+# ✅ Run 20 iterations of hyperparameter tuning
+results = []
+for i in range(20):
+    print(f"Iteration {i+1}/20...")
+
+    # ✅ Switch to PyCaret's built-in tuning method (Random or Grid)
+    tuned_model = tune_model(Cb, fold=10, round=2, optimize='AUC', search_algorithm='random')
+
+    # ✅ Ensure tuning worked
+    if tuned_model is None:
+        print(f"Warning: Iteration {i+1} - Tuning failed. Skipping iteration...")
+        continue
+
+    # Extract best hyperparameters safely
+    best_params = tuned_model.get_params()
+
+    # ✅ Ensure hyperparameters exist, otherwise assign default values
+    max_depth = best_params.get("depth", "Missing")
+    learning_rate = best_params.get("learning_rate", "Missing")
+    l2_leaf_reg = best_params.get("l2_leaf_reg", "Missing")
+
+    # ✅ Debugging Print (Check if Parameters Are Found)
+    print(f"Iteration {i+1} - Tuned Params: {best_params}")
+
+    # Pull Train & Test Gini from PyCaret
+    train_test_results = pull()
+
+    if "AUC" in train_test_results.columns:
+        train_auc = train_test_results.loc[train_test_results["Dataset"] == "Train", "AUC"].values[0]
+        test_auc = train_test_results.loc[train_test_results["Dataset"] == "Test", "AUC"].values[0]
+
+        train_gini = 2 * train_auc - 1
+        test_gini = 2 * test_auc - 1
+    else:
+        print(f"Warning: Iteration {i+1} - No AUC column found. Using fallback value...")
+        train_gini, test_gini = np.nan, np.nan
+
+    # Apply model to OOT Data
+    oot_preds_df = predict_model(tuned_model, data=oot_data)
+    oot_preds = oot_preds_df['prediction_score_1']
+    oot_actual = oot_data['mevent']
+    oot_gini = 2 * roc_auc_score(oot_actual, oot_preds) - 1
+
+    # Store hyperparameters & Gini Scores
+    results.append({
+        "Iteration": i+1,
+        "Max Depth": max_depth,
+        "Learning Rate": learning_rate,
+        "L2 Leaf Reg": l2_leaf_reg,
+        "Train Gini": train_gini,
+        "Test Gini": test_gini,
+        "OOT Gini": oot_gini,
+        "Train-Test Gini Diff": abs(train_gini - test_gini),
+        "Train-OOT Gini Diff": abs(train_gini - oot_gini),
+    })
+
+# ✅ Convert results to DataFrame and sort
+results_df = pd.DataFrame(results)
+sorted_results = results_df.sort_values(by="Train-OOT Gini Diff")
+
+# ✅ Save results to CSV
+sorted_results.to_csv("catboost_tuning_results.csv", index=False)
+
+# ✅ Display results in Jupyter Notebook
+from IPython.display import display
+display(sorted_results)
+
+# ✅ Plot Train vs OOT Gini Difference
+plt.figure(figsize=(10, 5))
+plt.plot(sorted_results["Iteration"], sorted_results["Train-OOT Gini Diff"], marker='o', linestyle='-')
+plt.xlabel("Iteration")
+plt.ylabel("Train-OOT Gini Difference")
+plt.title("Train vs OOT Gini Stability")
+plt.grid()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+yt
 # Run 20 iterations of hyperparameter tuning
 results = []
 for i in range(20):
