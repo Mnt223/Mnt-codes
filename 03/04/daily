@@ -1,3 +1,15 @@
+filename unzip pipe "gunzip -c /path/to/yourfile.gz > /path/to/yourfile.txt";
+
+
+
+
+
+
+
+
+
+
+
 import subprocess
 import sys
 
