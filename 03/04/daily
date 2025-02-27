@@ -3,6 +3,88 @@ import pandas as pd
 
 def psi_table(train_data, compare_data, bins=10, compare_label="OOT"):
     """
+    Generate a stable PSI table for Train vs Test or Train vs OOT.
+    """
+
+    # ✅ Ensure 'score' column exists
+    if "score" not in train_data.columns or "score" not in compare_data.columns:
+        raise ValueError("Error: 'score' column missing in train or compare dataset!")
+
+    # ✅ Define fixed bins based on Train data percentiles
+    bin_edges = np.percentile(train_data["score"], np.linspace(0, 100, bins+1))
+    bin_edges[0] = -np.inf  # ✅ Lowest bin includes all low values
+    bin_edges[-1] = np.inf  # ✅ Highest bin includes all high values
+
+    # ✅ Apply binning using same bins for Train & Compare
+    train_data["score_band"] = pd.cut(train_data["score"], bins=bin_edges, labels=False, include_lowest=True)
+    compare_data["score_band"] = pd.cut(compare_data["score"], bins=bin_edges, labels=False, include_lowest=True)
+
+    # ✅ Compute percentage distributions
+    train_distribution = train_data["score_band"].value_counts(normalize=True).sort_index() * 100
+    compare_distribution = compare_data["score_band"].value_counts(normalize=True).sort_index() * 100
+
+    # ✅ Handle missing bins by applying a floor value (1e-6)
+    train_distribution = train_distribution.reindex(range(len(bin_edges)-1), fill_value=1e-6)
+    compare_distribution = compare_distribution.reindex(range(len(bin_edges)-1), fill_value=1e-6)
+
+    # ✅ Fix PSI Formula (Avoid Inf & NaN Issues)
+    psi_values = (train_distribution - compare_distribution) * np.log(
+        np.where(compare_distribution == 0, 1e-6, train_distribution) /
+        np.where(compare_distribution == 0, 1e-6, compare_distribution)
+    )
+
+    # ✅ Fix Score Band Labels (Handling Inf Values)
+    score_labels = [f"{round(bin_edges[i], 1)}-{round(bin_edges[i+1], 1)}" if i < bins-1 else f"{round(bin_edges[i], 1)}-high"
+                    for i in range(len(bin_edges)-1)]
+
+    # ✅ Create PSI table
+    psi_table = pd.DataFrame({
+        "score_band": score_labels,
+        "development_%": train_distribution.values.round(2),
+        f"{compare_label}_%": compare_distribution.values.round(2),
+        "psi": psi_values.values.round(3)
+    })
+
+    # ✅ Compute total PSI
+    total_psi = round(psi_values.sum(), 3)
+    
+    # ✅ Print table in Jupyter Notebook
+    print(f"\n📊 PSI Table: Train vs {compare_label} (Total PSI = {total_psi})")
+    print(psi_table.to_string(index=False))
+
+    return psi_table
+
+# ✅ Generate PSI Tables for Train vs Test and Train vs OOT
+psi_train_test = psi_table(scr_train, scr_test, compare_label="Test")
+psi_train_oot = psi_table(scr_train, scr_oot, compare_label="OOT")
+
+# ✅ Save tables as CSV files
+psi_train_test.to_csv("psi_train_test.csv", index=False)
+psi_train_oot.to_csv("psi_train_oot.csv", index=False)
+
+print("\n✅ PSI tables saved as 'psi_train_test.csv' and 'psi_train_oot.csv'")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
+def psi_table(train_data, compare_data, bins=10, compare_label="OOT"):
+    """
     Generate PSI table for Train vs Test or Train vs OOT dataset.
     """
     
