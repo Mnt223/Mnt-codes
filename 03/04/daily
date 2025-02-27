@@ -1,3 +1,184 @@
+# Define parameter grid with wide ranges to ensure diversity
+param_grid = {
+    'depth': [4, 5, 6, 7, 8, 9, 10, 12],
+    'learning_rate': [0.01, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2],
+    'l2_leaf_reg': [1, 2, 3, 5, 7, 10, 15, 20]
+}
+
+# Generate 20 unique parameter combinations
+all_combinations = list(ParameterGrid(param_grid))
+np.random.seed(42)  # For reproducibility
+selected_combinations = np.random.choice(len(all_combinations), size=20, replace=False)
+parameter_sets = [all_combinations[i] for i in selected_combinations]
+
+# Store results
+results = []
+
+# Run 20 iterations with different parameter sets
+for i, params in enumerate(parameter_sets):
+    iteration_num = i + 1
+    print(f"\n{'='*50}\nIteration {iteration_num}/20...\n{'='*50}")
+    print(f"Testing parameters: {params}")
+    
+    # Create a new CatBoost model with specific parameters
+    model_params = {
+        'depth': params['depth'],
+        'learning_rate': params['learning_rate'],
+        'l2_leaf_reg': params['l2_leaf_reg'],
+        'random_seed': 42 + i  # Different seed for each model
+    }
+    
+    # Create a CatBoost model directly
+    catboost_model = cb.CatBoostClassifier(**model_params)
+    
+    # If you need to use PyCaret's framework
+    # Assuming train_data is your training dataset
+    # catboost_model = create_model('catboost', **model_params)
+    
+    # Fit the model
+    # If using PyCaret's framework, this is handled by create_model
+    # Otherwise, fit directly:
+    try:
+        # Assuming 'mevent' is your target column
+        # If using direct CatBoost approach:
+        X_train = train_data.drop('mevent', axis=1)
+        y_train = train_data['mevent']
+        catboost_model.fit(X_train, y_train)
+        
+        # Calculate metrics on train data
+        train_preds = catboost_model.predict_proba(X_train)[:, 1]
+        train_auc = roc_auc_score(y_train, train_preds)
+        train_gini = 2 * train_auc - 1
+        
+        # Calculate metrics on test data
+        X_test = test_data.drop('mevent', axis=1)
+        y_test = test_data['mevent']
+        test_preds = catboost_model.predict_proba(X_test)[:, 1]
+        test_auc = roc_auc_score(y_test, test_preds)
+        test_gini = 2 * test_auc - 1
+        
+        # Calculate metrics on OOT data
+        X_oot = oot_data.drop('mevent', axis=1)
+        y_oot = oot_data['mevent']
+        oot_preds = catboost_model.predict_proba(X_oot)[:, 1]
+        oot_auc = roc_auc_score(y_oot, oot_preds)
+        oot_gini = 2 * oot_auc - 1
+        
+        # If you want to use PyCaret's predict_model instead:
+        # Wrap the model for PyCaret
+        # train_preds_df = predict_model(catboost_model, data=train_data)
+        # test_preds_df = predict_model(catboost_model, data=test_data)
+        # oot_preds_df = predict_model(catboost_model, data=oot_data)
+        
+        # ... then extract predictions similar to before
+        
+        print(f"Train Gini: {train_gini:.4f}")
+        print(f"Test Gini: {test_gini:.4f}")
+        print(f"OOT Gini: {oot_gini:.4f}")
+        
+        # Store results
+        results.append({
+            "Iteration": iteration_num,
+            "Max Depth": params['depth'],
+            "Learning Rate": params['learning_rate'],
+            "L2 Leaf Reg": params['l2_leaf_reg'],
+            "Train Gini": train_gini,
+            "Test Gini": test_gini,
+            "OOT Gini": oot_gini,
+            "Train-Test Gini Diff": abs(train_gini - test_gini),
+            "Train-OOT Gini Diff": abs(train_gini - oot_gini),
+            "Model": catboost_model  # Store the actual model for later use
+        })
+        
+        # Save intermediate results
+        temp_results_df = pd.DataFrame([{k: v for k, v in d.items() if k != 'Model'} for d in results])
+        temp_results_df.to_csv(f"catboost_tuning_results_intermediate_{iteration_num}.csv", index=False)
+        
+    except Exception as e:
+        print(f"Error in iteration {iteration_num}: {str(e)}")
+        # Add a placeholder entry to maintain 20 rows
+        results.append({
+            "Iteration": iteration_num,
+            "Max Depth": params['depth'],
+            "Learning Rate": params['learning_rate'],
+            "L2 Leaf Reg": params['l2_leaf_reg'],
+            "Train Gini": np.nan,
+            "Test Gini": np.nan,
+            "OOT Gini": np.nan,
+            "Train-Test Gini Diff": np.nan,
+            "Train-OOT Gini Diff": np.nan,
+            "Model": None
+        })
+
+# Convert results to DataFrame (excluding Model column)
+results_df = pd.DataFrame([{k: v for k, v in d.items() if k != 'Model'} for d in results])
+
+# Sort by Train-OOT Gini Difference
+sorted_results = results_df.sort_values(by="Train-OOT Gini Diff")
+
+# Save final results to CSV
+sorted_results.to_csv("catboost_tuning_results.csv", index=False)
+
+# Display results
+from IPython.display import display
+display(sorted_results)
+
+# Plot Train vs OOT Gini Difference
+plt.figure(figsize=(10, 5))
+plt.plot(sorted_results["Iteration"], sorted_results["Train-OOT Gini Diff"], marker='o', linestyle='-')
+plt.xlabel("Iteration")
+plt.ylabel("Train-OOT Gini Difference")
+plt.title("Train vs OOT Gini Stability")
+plt.grid()
+plt.savefig("train_oot_gini_diff.png")
+plt.show()
+
+# Save the best model
+if len(results) > 0:
+    # Find the best model (lowest Train-OOT Gini difference)
+    valid_results = [r for r in results if r['Model'] is not None and not np.isnan(r['Train-OOT Gini Diff'])]
+    
+    if valid_results:
+        best_result = min(valid_results, key=lambda x: x['Train-OOT Gini Diff'])
+        best_model = best_result['Model']
+        best_iteration = best_result['Iteration']
+        
+        print(f"\nBest model found at iteration {best_iteration}")
+        print(f"Parameters: Depth={best_result['Max Depth']}, "
+              f"Learning Rate={best_result['Learning Rate']}, "
+              f"L2 Leaf Reg={best_result['L2 Leaf Reg']}")
+        print(f"Train Gini: {best_result['Train Gini']:.4f}")
+        print(f"Test Gini: {best_result['Test Gini']:.4f}")
+        print(f"OOT Gini: {best_result['OOT Gini']:.4f}")
+        print(f"Train-OOT Gini Diff: {best_result['Train-OOT Gini Diff']:.4f}")
+        
+        # Save using CatBoost's native save method
+        best_model.save_model("best_catboost_model.cbm")
+        print("Best model saved as 'best_catboost_model.cbm'")
+        
+        # If using PyCaret, you can also save using its method
+        # save_model(best_model, 'best_catboost_model')
+    else:
+        print("No valid models found. Check for errors in the training process.")
+else:
+    print("No results generated. Check for errors in the script.")
+
+
+
+
+
+
+
+
+
+
+
+
+gh
+
+
+
+
 # Find the model with the lowest Train-OOT Gini difference
 best_iteration = sorted_results.iloc[0]["Iteration"]
 print(f"Best model found at iteration {best_iteration} with Train-OOT Gini Diff: {sorted_results.iloc[0]['Train-OOT Gini Diff']:.4f}")
