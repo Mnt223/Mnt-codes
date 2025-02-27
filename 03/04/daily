@@ -1,3 +1,201 @@
+The error occurs because PyCaret's `tune_model()` expects the `custom_grid` values to be **iterable** (e.g., a list or range) for hyperparameter tuning. However, in our code, we're passing **single values** (e.g., `learning_rate=0.029150530628251757`) instead of a list of values. Here's the corrected version:
+
+---
+
+### **Fixed Code**
+
+```python
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from pycaret.classification import setup, create_model, tune_model, predict_model, pull
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import ParameterSampler
+
+# Initialize PyCaret environment
+clf1 = setup(data=Dev_data1, target='mevent', fold=10, session_id=42)
+
+# Define extended parameter space for CatBoost
+param_dist = {
+    'depth': list(range(4, 12)),  # Convert to list
+    'learning_rate': list(np.logspace(-3, -0.5, 100)),  # Convert to list
+    'l2_leaf_reg': list(np.logspace(-1, 2, 50)),  # Convert to list
+    'iterations': [500, 1000, 1500],  # Already a list
+    'grow_policy': ['SymmetricTree', 'Depthwise', 'Lossguide']  # Already a list
+}
+
+# Generate 20 unique parameter combinations
+param_sets = list(ParameterSampler(param_dist, n_iter=20, random_state=42))
+
+# Store results
+results = []
+
+for i, params in enumerate(param_sets):
+    try:
+        print(f"\n{'='*40}\nIteration {i+1}/20 - Tuning Parameters\n{'='*40}")
+        print(pd.Series(params).to_string())
+        
+        # Create fresh model instance for each iteration
+        base_model = create_model('catboost', verbose=False)
+        
+        # Convert single values to lists for custom_grid
+        tuning_grid = {k: [v] for k, v in params.items()}
+        
+        # Perform hyperparameter tuning with custom parameters
+        tuned = tune_model(
+            estimator=base_model,
+            custom_grid=tuning_grid,  # Pass as a dictionary of lists
+            optimize='AUC',
+            fold=10,
+            verbose=False
+        )
+        
+        # Get best parameters from pipeline
+        best_params = tuned.get_params()
+        param_values = {
+            'Depth': best_params.get('depth', 'N/A'),
+            'Learning Rate': best_params.get('learning_rate', 'N/A'),
+            'L2 Reg': best_params.get('l2_leaf_reg', 'N/A'),
+            'Iterations': best_params.get('iterations', 'N/A'),
+            'Grow Policy': best_params.get('grow_policy', 'N/A')
+        }
+        
+        # Get CV results
+        results_df = pull()
+        train_auc = results_df.loc[results_df['Dataset'] == 'Train', 'AUC'].values[0]
+        test_auc = results_df.loc[results_df['Dataset'] == 'Test', 'AUC'].values[0]
+        
+        # Calculate Gini coefficients
+        train_gini = 2 * train_auc - 1
+        test_gini = 2 * test_auc - 1
+        
+        # OOT Validation
+        oot_preds = predict_model(tuned, data=X_oot)
+        oot_auc = roc_auc_score(X_oot['mevent'], oot_preds['prediction_score_1'])
+        oot_gini = 2 * oot_auc - 1
+
+        # Store results
+        results.append({
+            'Iteration': i+1,
+            **param_values,
+            'Train Gini': train_gini,
+            'Test Gini': test_gini,
+            'OOT Gini': oot_gini,
+            'Train-Test Diff': abs(train_gini - test_gini),
+            'Train-OOT Diff': abs(train_gini - oot_gini)
+        })
+        
+    except Exception as e:
+        print(f"Iteration {i+1} failed: {str(e)}")
+        results.append({
+            'Iteration': i+1,
+            'Depth': 'Failed',
+            'Learning Rate': 'Failed',
+            'L2 Reg': 'Failed',
+            'Iterations': 'Failed',
+            'Grow Policy': 'Failed',
+            'Train Gini': np.nan,
+            'Test Gini': np.nan,
+            'OOT Gini': np.nan,
+            'Train-Test Diff': np.nan,
+            'Train-OOT Diff': np.nan
+        })
+
+# Convert to DataFrame and sort
+results_df = pd.DataFrame(results).sort_values('Train-OOT Diff')
+
+# Save and display results
+results_df.to_csv('catboost_tuning_results.csv', index=False)
+print("\nFinal Results:")
+display(results_df)
+
+# Plotting
+plt.figure(figsize=(12, 6))
+plt.plot(results_df['Iteration'], results_df['Train-OOT Diff'], 'bo-')
+plt.title('Model Stability Across Iterations')
+plt.xlabel('Iteration Number')
+plt.ylabel('Train-OOT Gini Difference')
+plt.grid(True)
+plt.savefig('gini_stability_plot.png', dpi=300)
+plt.show()
+```
+
+---
+
+### **Key Fixes**
+1. **Custom Grid Format**:
+   - PyCaret's `custom_grid` requires values to be **lists** (even if single values).
+   - Added `tuning_grid = {k: [v] for k, v in params.items()}` to convert single values to lists.
+
+2. **Parameter Sampling**:
+   - Ensured all parameter distributions are **lists** (e.g., `list(np.logspace(...))`).
+
+3. **Error Handling**:
+   - Added detailed error messages for debugging.
+   - Ensures failed iterations still produce output rows.
+
+4. **Progress Tracking**:
+   - Clear iteration headers.
+   - Parameter display before tuning.
+
+---
+
+### **How It Works**
+1. **Parameter Sampling**:
+   - Generates 20 unique combinations of hyperparameters using `ParameterSampler`.
+   - Ensures diversity in the hyperparameter space.
+
+2. **Tuning**:
+   - For each iteration, creates a fresh CatBoost model.
+   - Uses `tune_model` with a single set of hyperparameters (wrapped in a list).
+
+3. **Validation**:
+   - Calculates Gini scores for train, test, and OOT datasets.
+   - Tracks differences between train-test and train-OOT Gini scores.
+
+4. **Output**:
+   - Saves results to a CSV file.
+   - Generates a plot of Train-OOT Gini differences.
+
+---
+
+### **Expected Output**
+- A CSV file (`catboost_tuning_results.csv`) with 20 rows, each containing:
+  - Hyperparameters (depth, learning rate, L2 reg, etc.)
+  - Train, Test, and OOT Gini scores
+  - Differences between Train-Test and Train-OOT Gini scores
+- A plot showing the stability of the model across iterations.
+
+---
+
+### **Example Output**
+| Iteration | Depth | Learning Rate | L2 Reg | Iterations | Grow Policy | Train Gini | Test Gini | OOT Gini | Train-Test Diff | Train-OOT Diff |
+|-----------|-------|---------------|--------|------------|-------------|------------|-----------|----------|-----------------|----------------|
+| 1         | 6     | 0.029         | 1.5    | 1000       | SymmetricTree | 0.45       | 0.43      | 0.42     | 0.02            | 0.03           |
+| 2         | 8     | 0.015         | 2.0    | 1500       | Depthwise    | 0.47       | 0.44      | 0.41     | 0.03            | 0.06           |
+
+---
+
+This version should now work without errors and produce the desired results. Let me know if you encounter any further issues!
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+iyb
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
