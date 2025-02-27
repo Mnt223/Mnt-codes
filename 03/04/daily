@@ -1,3 +1,109 @@
+import pandas as pd
+import numpy as np
+import shap
+import matplotlib.pyplot as plt
+from pycaret.classification import create_model, tune_model, predict_model, pull, save_model
+from sklearn.metrics import roc_auc_score
+from scipy.stats import ks_2samp
+from IPython.display import display
+
+# Function to calculate Gini coefficient
+def gini_score(y_true, y_pred):
+    return 2 * roc_auc_score(y_true, y_pred) - 1
+
+# Load datasets
+train_test_data = dev_data1  # PyCaret will split internally into Train & Test
+oot_data = oot_data  # Out-of-time dataset
+target_col = 'mevent'
+
+# Store results
+results = []
+
+# Run 20 iterations of hyperparameter tuning
+for i in range(20):
+    print(f"Iteration {i+1}/20...")
+
+    # Create and Tune CatBoost Model
+    Cb = create_model('catboost')
+    tuned_model = tune_model(Cb, fold=10, optimize='AUC', search_library='optuna', search_algorithm='tpe', n_iter=1)
+
+    # Extract best hyperparameters
+    best_params = tuned_model.get_params()
+
+    # Pull Train & Test Gini from PyCaret
+    train_test_results = pull()
+    train_gini = train_test_results["AUC"].mean() * 2 - 1
+    test_gini = train_test_results["AUC"].mean() * 2 - 1
+
+    # Apply model to OOT Data
+    oot_preds_df = predict_model(tuned_model, data=oot_data)
+    oot_preds = oot_preds_df['Score']
+    oot_actual = oot_data[target_col]
+    oot_gini = gini_score(oot_actual, oot_preds)
+
+    # Store hyperparameters & Gini Scores
+    results.append({
+        "Iteration": i+1,
+        "Max Depth": best_params.get("depth"),
+        "Learning Rate": best_params.get("learning_rate"),
+        "L2 Leaf Reg": best_params.get("l2_leaf_reg"),
+        "Train Gini": train_gini,
+        "Test Gini": test_gini,
+        "OOT Gini": oot_gini,
+        "Train-Test Gini Diff": abs(train_gini - test_gini),
+        "Train-OOT Gini Diff": abs(train_gini - oot_gini),
+    })
+
+# Convert results to DataFrame and sort
+results_df = pd.DataFrame(results)
+sorted_results = results_df.sort_values(by="Train-OOT Gini Diff")
+
+# Display Results
+display(sorted_results)
+
+# Save as CSV & Excel
+sorted_results.to_csv("catboost_tuning_results.csv", index=False)
+sorted_results.to_excel("catboost_tuning_results.xlsx", index=False)
+print("Results saved as 'catboost_tuning_results.csv' and 'catboost_tuning_results.xlsx'")
+
+# Save the best model
+best_model_params = sorted_results.iloc[0]  
+best_model = create_model('catboost', 
+                          depth=int(best_model_params["Max Depth"]), 
+                          learning_rate=best_model_params["Learning Rate"], 
+                          l2_leaf_reg=best_model_params["L2 Leaf Reg"])
+save_model(best_model, "best_catboost_model")
+
+print(f"Best model saved as 'best_catboost_model.pkl'")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ty
 
 import pandas as pd
