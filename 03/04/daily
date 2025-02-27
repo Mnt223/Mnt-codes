@@ -1,3 +1,48 @@
+import numpy as np
+import pandas as pd
+
+def pentile_calculation(dev_data, val_data, oot_data, col_name):
+    """
+    Creates pentile bins for development (train), validation (test), and OOT datasets.
+    
+    Parameters:
+        dev_data: Training dataset (used to determine pentile cutoffs)
+        val_data: Validation dataset (Test)
+        oot_data: Out-of-Time dataset (OOT)
+        col_name: The column to create pentiles on (e.g., score)
+    
+    Returns:
+        Pentile summary table with min, max, and sample percentages.
+    """
+
+    # **Step 1: Define Pentile Cutoffs Using Train Data**
+    dev_tile = dev_data[col_name].quantile([0.2, 0.4, 0.6, 0.8, 1.0]).reset_index(drop=True)
+    
+    # **Step 2: Apply the Same Cutoffs to Train, Test, and OOT**
+    dev_data['pentile'] = pd.cut(dev_data[col_name], 
+                                 bins=[-float('inf')] + dev_tile.tolist(), 
+                                 labels=[1, 2, 3, 4, 5])
+
+    val_data['pentile'] = pd.cut(val_data[col_name], 
+                                 bins=[-float('inf')] + dev_tile.tolist(), 
+                                 labels=[1, 2, 3, 4, 5])
+
+    oot_data['pentile'] = pd.cut(oot_data[col_name], 
+                                 bins=[-float('inf')] + dev_tile.tolist(), 
+                                 labels=[1, 2, 3, 4, 5])
+
+    # **Step 3: Calculate Pentile Summary**
+    pentile_summary = dev_data.groupby('pentile').agg({col_name: ['min', 'max']}).reset_index()
+    
+    # **Step 4: Calculate Percentage of Observations per Pentile**
+    pentile_summary['sample_percent'] = dev_data['pentile'].value_counts(normalize=True).sort_index() * 100
+
+    return pentile_summary
+
+
+
+
+
 filename unzip pipe "gunzip -c /path/to/yourfile.gz > /path/to/yourfile.txt";
 
 
