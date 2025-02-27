@@ -1,3 +1,28 @@
+# Find the model with the lowest Train-OOT Gini difference
+best_iteration = sorted_results.iloc[0]["Iteration"]
+print(f"Best model found at iteration {best_iteration} with Train-OOT Gini Diff: {sorted_results.iloc[0]['Train-OOT Gini Diff']:.4f}")
+
+# Re-run the tuning for the best model to recreate it
+print(f"Recreating best model (Iteration {best_iteration})...")
+best_model = tune_model(Cb, fold=10, round=2, optimize='AUC', search_algorithm='random', 
+                       # Set random state to ensure reproducibility
+                       custom_grid={
+                           'depth': [sorted_results.iloc[0]['Max Depth']],
+                           'learning_rate': [sorted_results.iloc[0]['Learning Rate']],
+                           'l2_leaf_reg': [sorted_results.iloc[0]['L2 Leaf Reg']]
+                       })
+
+# Save the model using PyCaret's save_model function
+from pycaret.classification import save_model
+save_model(best_model, 'best_catboost_model')
+
+print("Best model saved as 'best_catboost_model'")
+
+
+
+
+
+
 # Store results
 results = []
 
