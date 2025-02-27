@@ -1,3 +1,105 @@
+ty
+
+import pandas as pd
+import numpy as np
+from pycaret.classification import create_model, tune_model, predict_model, pull
+from sklearn.metrics import roc_auc_score
+from IPython.display import display
+
+# Function to calculate Gini coefficient
+def gini_score(y_true, y_pred):
+    return 2 * roc_auc_score(y_true, y_pred) - 1
+
+# Load datasets
+train_test_data = model_dev_data  # PyCaret will split internally into Train & Test
+oot_data = oot_dataset  # Out-of-time dataset
+
+# Target variable
+target_col = 'mevent'
+
+# Store results
+results = []
+
+# Run 20 iterations of hyperparameter tuning
+for i in range(20):
+    print(f"Iteration {i+1}/20...")
+
+    # Step 1: Create and Tune CatBoost Model
+    Cb = create_model('catboost')
+    tuned_model = tune_model(Cb, fold=10, optimize='AUC', search_library='optuna', search_algorithm='tpe', n_iter=1)
+
+    # **Check if tuning changed the model** (to avoid issues when extracting results)
+    if tuned_model == Cb:
+        print(f"Warning: Iteration {i+1} - Tuned model was not better than the base model. Skipping...")
+        continue  # Skip this iteration and do not log results
+
+    # Extract best hyperparameters
+    best_params = tuned_model.get_params()
+
+    # Step 2: **Pull Train & Test Gini Directly from PyCaret**
+    train_test_results = pull()  # Extracts PyCaret's train-test split metrics
+
+    # Debugging: Print available columns if needed
+    if i == 0:  # Only print once
+        print("Available Metrics in train_test_results:")
+        print(train_test_results.columns)
+
+    # **Fix: Access AUC as a column, not an index**
+    if "AUC" in train_test_results.columns:
+        train_gini = train_test_results["AUC"].mean() * 2 - 1
+        test_gini = train_test_results["AUC"].mean() * 2 - 1
+    else:
+        print(f"Warning: Iteration {i+1} - No AUC column found. Skipping...")
+        continue  # Skip this iteration
+
+    # Step 3: Apply the tuned model to OOT Data and compute OOT Gini
+    oot_preds_df = predict_model(tuned_model, data=oot_data)
+    oot_preds = oot_preds_df['Score']
+    oot_actual = oot_data[target_col]
+    oot_gini = gini_score(oot_actual, oot_preds)
+
+    # Step 4: Store hyperparameters & Gini Scores
+    results.append({
+        "Iteration": i+1,
+        "Max Depth": best_params.get("depth"),
+        "Learning Rate": best_params.get("learning_rate"),
+        "L2 Leaf Reg": best_params.get("l2_leaf_reg"),
+        "Train Gini": train_gini,  # Directly from PyCaret
+        "Test Gini": test_gini,  # Directly from PyCaret
+        "OOT Gini": oot_gini,  # Calculated separately
+        "Train-Test Gini Diff": abs(train_gini - test_gini),  # Stability metric 1
+        "Train-OOT Gini Diff": abs(train_gini - oot_gini),  # Stability metric 2
+    })
+
+# Convert results to DataFrame
+results_df = pd.DataFrame(results)
+
+# Sort models by Train-OOT Gini Difference (least overfitting)
+sorted_results = results_df.sort_values(by="Train-OOT Gini Diff")
+
+# Display results in Jupyter Notebook
+display(sorted_results)
+
+# Save the results as CSV
+sorted_results.to_csv("catboost_tuning_results.csv", index=False)
+print("Results saved as 'catboost_tuning_results.csv'")
+
+# Save the results as Excel
+sorted_results.to_excel("catboost_tuning_results.xlsx", index=False)
+print("Results saved as 'catboost_tuning_results.xlsx'")
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from pycaret.classification import create_model, tune_model, predict_model, pull
