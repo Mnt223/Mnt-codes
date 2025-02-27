@@ -1,3 +1,77 @@
+# Run 20 iterations of hyperparameter tuning
+results = []
+for i in range(20):
+    print(f"Iteration {i+1}/20...")
+
+    # Create and Tune CatBoost Model
+    tuned_model = tune_model(Cb, fold=10, round=2, optimize='AUC', search_library='optuna')
+
+    # Extract best hyperparameters
+    best_params = tuned_model.get_params()
+
+    # ✅ Fix: Pull and extract Train & Test AUC separately
+    train_test_results = pull()
+
+    if "AUC" in train_test_results.columns:
+        # Extract Train and Test AUC separately
+        train_auc = train_test_results.loc[train_test_results["Dataset"] == "Train", "AUC"].values[0]
+        test_auc = train_test_results.loc[train_test_results["Dataset"] == "Test", "AUC"].values[0]
+
+        # Convert AUC to Gini
+        train_gini = 2 * train_auc - 1
+        test_gini = 2 * test_auc - 1
+    else:
+        print(f"Warning: Iteration {i+1} - No AUC column found. Using fallback value...")
+        train_gini = np.nan
+        test_gini = np.nan
+
+    # Apply model to OOT Data
+    oot_preds_df = predict_model(tuned_model, data=oot_data)
+    oot_preds = oot_preds_df['prediction_score_1']
+    oot_actual = oot_data['mevent']
+    oot_gini = 2 * roc_auc_score(oot_actual, oot_preds) - 1
+
+    # Store hyperparameters & Gini Scores
+    results.append({
+        "Iteration": i+1,
+        "Max Depth": best_params.get("depth"),
+        "Learning Rate": best_params.get("learning_rate"),
+        "L2 Leaf Reg": best_params.get("l2_leaf_reg"),
+        "Train Gini": train_gini,
+        "Test Gini": test_gini,
+        "OOT Gini": oot_gini,
+        "Train-Test Gini Diff": abs(train_gini - test_gini),
+        "Train-OOT Gini Diff": abs(train_gini - oot_gini),
+    })
+
+# Convert results to DataFrame and sort
+results_df = pd.DataFrame(results)
+sorted_results = results_df.sort_values(by="Train-OOT Gini Diff")
+
+# Save and display results
+import ace_tools as tools
+tools.display_dataframe_to_user(name="CatBoost Hyperparameter Tuning Results", dataframe=sorted_results)
+sorted_results.to_csv("catboost_tuning_results.csv", index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+mmm
+
 import numpy as np
 import pandas as pd
 import shap
