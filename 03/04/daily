@@ -1,3 +1,60 @@
+selected_features = [
+    # Your selected variables
+    "balance_balcon_6m_max",
+    "max_acct_mob_1m",
+    "cc_amt_1m",
+    "val_cc_maxlmt_offus",
+    "cc_nodecr_amt_1_6",
+    "dsr_unsec_1m",
+    "fc_net_7_12m_min",
+    "fin_annual_sal_adj",
+    "min_offus_ln_open_mob",
+    "mpd_6m_min",
+    "offus_unsec_cnt",
+    "onus_baltospendamt_1m",
+    "delq_amt_offus",
+    "onus_unsec_bal_1_6",
+    "pay_ratio_1m",
+    "onus_lending_bal_1m",
+    "payment_1m",
+    "retail_rev_cust_7_9m_sum",
+    "utilization_3m_min",
+
+    # Additional recommended variables
+    "MOB_revolver",                     # Months since customer started revolving
+    "MOB_last_full_payment",            # Months since last full balance payment
+    "Cash_Advance_Usage_6M",            # Number of cash advances in last 6 months
+    "Cash_Advance_Amount_6M",           # Total cash advance amount in last 6 months
+    "Over_Limit_Transaction_Count_6M",  # Number of times the credit limit was exceeded
+    "FC_ratio",                         # Finance charge as % of total spend
+    "Revolving_Balance_Change_3M",      # Growth in revolving balance over last 3 months
+    "Revolving_Balance_Growth_6M",      # Growth in revolving balance over last 6 months
+    "Payment_Ratio_Variability_6M",     # Variability in payment-to-balance ratio
+    "MinPay_6M_Freq"                    # % of months where only the minimum payment was made
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 from scipy.stats import ks_2samp
 
