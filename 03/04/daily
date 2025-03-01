@@ -1,3 +1,91 @@
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Sort feature importance for better visualization
+feature_importance = feature_importance.sort_values(by="Importance", ascending=True)
+
+# Increase figure size and use Seaborn for better aesthetics
+plt.figure(figsize=(14,8))
+sns.barplot(x="Importance", y="Feature", data=feature_importance, palette="viridis")
+plt.xlabel("Feature Importance Score", fontsize=14)
+plt.ylabel("Features", fontsize=14)
+plt.title("Feature Importance from Random Forest", fontsize=16)
+plt.xticks(fontsize=12)
+plt.yticks(fontsize=12)
+plt.grid(axis="x", linestyle="--", alpha=0.7)
+plt.show()
+
+from sklearn.tree import plot_tree
+
+# Increase figure size for better readability
+plt.figure(figsize=(30,15))
+
+# Plot a single decision tree from the trained Random Forest model
+plot_tree(
+    rf_model.estimators_[0],
+    feature_names=selected_features,
+    class_names=["Non-Revolver", "Revolver"],
+    filled=True,
+    rounded=True,
+    fontsize=12
+)
+
+plt.title("Decision Tree Visualization (Single Tree from Random Forest)", fontsize=18)
+plt.show()
+
+from sklearn.tree import export_text
+
+# Print decision tree rules with better formatting
+tree_rules = export_text(rf_model.estimators_[0], feature_names=selected_features)
+
+# Save to a text file for easier reading (optional)
+with open("decision_tree_rules.txt", "w") as f:
+    f.write(tree_rules)
+
+# Print tree rules (use Jupyter Notebook or scroll for better readability)
+print(tree_rules)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Get feature importance from Random Forest model
 feature_importance = pd.DataFrame({
     'Feature': selected_features,
