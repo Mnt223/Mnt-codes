@@ -1,3 +1,43 @@
+import shap
+
+# Initialize SHAP Explainer
+explainer = shap.TreeExplainer(rf_model)
+shap_values = explainer.shap_values(X)
+
+# Summary Plot (shows feature importance + effect direction)
+shap.summary_plot(shap_values[1], X)
+
+
+from sklearn.inspection import permutation_importance
+
+# Compute Permutation Importance
+perm_importance = permutation_importance(rf_model, X, y, n_repeats=10, random_state=42)
+
+# Convert to DataFrame
+perm_importance_df = pd.DataFrame({
+    "Feature": selected_features,
+    "Importance": perm_importance.importances_mean
+}).sort_values(by="Importance", ascending=False)
+
+# Plot Permutation Importance
+plt.figure(figsize=(12,6))
+plt.barh(perm_importance_df["Feature"], perm_importance_df["Importance"], color="green")
+plt.xlabel("Permutation Importance Score")
+plt.ylabel("Features")
+plt.title("Permutation Feature Importance")
+plt.gca().invert_yaxis()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 
