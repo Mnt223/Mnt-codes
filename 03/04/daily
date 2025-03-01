@@ -1,3 +1,392 @@
+import pandas as pd
+import numpy as np
+from sklearn.metrics import roc_auc_score, classification_report
+from pycaret.classification import *
+import logging
+import gc
+import shap
+import matplotlib.pyplot as plt
+from hyperopt import hp, fmin, tpe, Trials
+from functools import partial
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('model_tuning.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class ModelOptimizer:
+    def __init__(self, config):
+        self.config = config
+        self.best_model = None
+        self.trials = Trials()
+        self._validate_config()
+        
+    def _validate_config(self):
+        required_keys = ['data_path', 'target_column', 'oot_path']
+        for key in required_keys:
+            if key not in self.config:
+                raise ValueError(f"Missing required config key: {key}")
+
+    def _load_data(self):
+        """Enhanced data loading with validation"""
+        logger.info("Loading datasets...")
+        try:
+            # Load main dataset
+            main_data = pd.read_csv(self.config['data_path'])
+            logger.info(f"Main data loaded: {main_data.shape}")
+            
+            # Validate target existence
+            if self.config['target_column'] not in main_data.columns:
+                raise ValueError(f"Target column {self.config['target_column']} not found in main data")
+            
+            # Load OOT data
+            oot_data = pd.read_csv(self.config['oot_path'])
+            logger.info(f"OOT data loaded: {oot_data.shape}")
+            
+            # Check feature consistency
+            main_features = set(main_data.columns) - {self.config['target_column']}
+            oot_features = set(oot_data.columns)
+            if self.config['target_column'] in oot_features:
+                oot_features.remove(self.config['target_column'])
+            
+            if main_features != oot_features:
+                missing = main_features - oot_features
+                extra = oot_features - main_features
+                logger.warning(f"Feature mismatch - Missing in OOT: {missing}, Extra in OOT: {extra}")
+            
+            return main_data, oot_data
+        
+        except Exception as e:
+            logger.error(f"Data loading failed: {str(e)}")
+            raise
+
+    def _setup_environment(self, data):
+        """Configure PyCaret with enhanced settings"""
+        logger.info("Setting up PyCaret environment")
+        return setup(
+            data=data,
+            target=self.config['target_column'],
+            session_id=42,
+            normalize=True,
+            remove_multicollinearity=True,
+            multicollinearity_threshold=0.95,
+            fold_strategy='stratifiedkfold',
+            fold=5,
+            log_experiment=True,
+            experiment_name='catboost_optimization',
+            use_gpu=True if self.config.get('use_gpu') else False,
+            silent=True,
+            verbose=False
+        )
+
+    def _objective_function(self, params):
+        """Bayesian optimization objective with enhanced metrics"""
+        try:
+            # Create model with current parameters
+            model = create_model(
+                'catboost',
+                fold=self.config.get('cv_folds', 5),
+                verbose=False,
+                **params
+            )
+            
+            # Cross-validated metrics
+            cv_results = pull()
+            avg_auc = cv_results['AUC Mean'].mean()
+            
+            # OOT validation
+            oot_proba = predict_model(model, data=self.oot_data).iloc[:, -2]
+            oot_auc = roc_auc_score(self.oot_data[self.config['target_column']], oot_proba)
+            
+            # Complexity penalty
+            complexity_penalty = params['depth'] * params['l2_leaf_reg'] * 0.001
+            
+            # Combined score (maximize AUC, minimize complexity and variance)
+            score = (avg_auc * 0.6) + (oot_auc * 0.4) - complexity_penalty
+            
+            return -score  # Minimize negative score
+            
+        except Exception as e:
+            logger.error(f"Objective function failed: {str(e)}")
+            return np.inf
+
+    def optimize(self):
+        """Enhanced optimization process with Bayesian search"""
+        try:
+            # Load and prepare data
+            main_data, oot_data = self._load_data()
+            self.oot_data = oot_data
+            
+            # Setup PyCaret environment
+            exp = self._setup_environment(main_data)
+            
+            # Define search space
+            space = {
+                'depth': hp.quniform('depth', 4, 12, 1),
+                'learning_rate': hp.loguniform('learning_rate', np.log(0.005), np.log(0.3)),
+                'iterations': hp.quniform('iterations', 100, 2000, 100),
+                'l2_leaf_reg': hp.quniform('l2_leaf_reg', 1, 10, 1),
+                'border_count': hp.choice('border_count', [32, 64, 128, 256]),
+                'grow_policy': hp.choice('grow_policy', ['SymmetricTree', 'Depthwise', 'Lossguide'])
+            }
+            
+            # Run optimization
+            best = fmin(
+                fn=self._objective_function,
+                space=space,
+                algo=tpe.suggest,
+                max_evals=self.config.get('max_evals', 50),
+                trials=self.trials,
+                rstate=np.random.default_rng(42)
+            
+            # Train final model with best params
+            self.best_model = self._train_final_model(best)
+            return self
+            
+        except Exception as e:
+            logger.error(f"Optimization process failed: {str(e)}")
+            raise
+
+    def _train_final_model(self, params):
+        """Final model training with enhanced tracking"""
+        logger.info("Training final model with optimized parameters")
+        try:
+            # Convert float parameters to int where needed
+            params = {
+                'depth': int(params['depth']),
+                'iterations': int(params['iterations']),
+                'l2_leaf_reg': int(params['l2_leaf_reg']),
+                'border_count': [32, 64, 128, 256][params['border_count']],
+                'grow_policy': ['SymmetricTree', 'Depthwise', 'Lossguide'][params['grow_policy']]
+            }
+            
+            final_model = create_model(
+                'catboost',
+                **params,
+                verbose=False
+            )
+            
+            # Feature importance analysis
+            self._analyze_features(final_model)
+            
+            # SHAP value analysis
+            self._shap_analysis(final_model)
+            
+            # Final validation
+            self._validate_model(final_model)
+            
+            return finalize_model(final_model)
+            
+        except Exception as e:
+            logger.error(f"Final model training failed: {str(e)}")
+            raise
+
+    def _analyze_features(self, model):
+        """Enhanced feature analysis"""
+        logger.info("Performing feature analysis")
+        try:
+            # Get feature importance
+            importance = pd.DataFrame({
+                'feature': model.feature_name_,
+                'importance': model.feature_importances_
+            }).sort_values('importance', ascending=False)
+            
+            # Plot top features
+            plt.figure(figsize=(10, 6))
+            importance.head(20).plot.barh(x='feature', y='importance')
+            plt.title('Top 20 Feature Importance')
+            plt.tight_layout()
+            plt.savefig('feature_importance.png')
+            plt.close()
+            
+            # Save importance data
+            importance.to_csv('feature_importance.csv', index=False)
+            
+        except Exception as e:
+            logger.warning(f"Feature analysis failed: {str(e)}")
+
+    def _shap_analysis(self, model):
+        """SHAP value explanation"""
+        logger.info("Generating SHAP explanations")
+        try:
+            # Create SHAP explainer
+            explainer = shap.TreeExplainer(model.named_steps['trained_model'])
+            X_shap = get_config('X_train').sample(1000, random_state=42)
+            shap_values = explainer.shap_values(X_shap)
+            
+            # Summary plot
+            plt.figure()
+            shap.summary_plot(shap_values, X_shap, plot_type="bar", show=False)
+            plt.tight_layout()
+            plt.savefig('shap_summary.png')
+            plt.close()
+            
+        except Exception as e:
+            logger.warning(f"SHAP analysis failed: {str(e)}")
+
+    def _validate_model(self, model):
+        """Comprehensive model validation"""
+        logger.info("Performing final validation")
+        try:
+            # Cross-validated metrics
+            cv_results = pull()
+            logger.info("\nCross-Validation Metrics:")
+            logger.info(cv_results.to_string())
+            
+            # OOT evaluation
+            oot_pred = predict_model(model, data=self.oot_data)
+            oot_report = classification_report(
+                self.oot_data[self.config['target_column']],
+                oot_pred['prediction_label'],
+                output_dict=True
+            )
+            logger.info("\nOOT Classification Report:")
+            logger.info(pd.DataFrame(oot_report).transpose().to_string())
+            
+            # Threshold analysis
+            self._threshold_analysis(model)
+            
+        except Exception as e:
+            logger.warning(f"Model validation failed: {str(e)}")
+
+    def _threshold_analysis(self, model):
+        """Threshold optimization analysis"""
+        logger.info("Performing threshold analysis")
+        try:
+            # Get predicted probabilities
+            train_proba = predict_model(model, verbose=False).iloc[:, -2]
+            oot_proba = predict_model(model, data=self.oot_data, verbose=False).iloc[:, -2]
+            
+            # Calculate metrics across thresholds
+            thresholds = np.linspace(0.1, 0.9, 17)
+            results = []
+            
+            for thresh in thresholds:
+                train_pred = (train_proba >= thresh).astype(int)
+                oot_pred = (oot_proba >= thresh).astype(int)
+                
+                train_report = classification_report(
+                    get_config('y_train'),
+                    train_pred,
+                    output_dict=True
+                )
+                
+                oot_report = classification_report(
+                    self.oot_data[self.config['target_column']],
+                    oot_pred,
+                    output_dict=True
+                )
+                
+                results.append({
+                    'threshold': thresh,
+                    'train_precision': train_report['weighted avg']['precision'],
+                    'train_recall': train_report['weighted avg']['recall'],
+                    'train_f1': train_report['weighted avg']['f1-score'],
+                    'oot_precision': oot_report['weighted avg']['precision'],
+                    'oot_recall': oot_report['weighted avg']['recall'],
+                    'oot_f1': oot_report['weighted avg']['f1-score']
+                })
+            
+            threshold_df = pd.DataFrame(results)
+            threshold_df.to_csv('threshold_analysis.csv', index=False)
+            
+            # Plot threshold analysis
+            plt.figure(figsize=(10, 6))
+            plt.plot(threshold_df['threshold'], threshold_df['train_f1'], label='Train F1')
+            plt.plot(threshold_df['threshold'], threshold_df['oot_f1'], label='OOT F1')
+            plt.xlabel('Threshold')
+            plt.ylabel('F1 Score')
+            plt.title('Threshold Analysis')
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig('threshold_analysis.png')
+            plt.close()
+            
+        except Exception as e:
+            logger.warning(f"Threshold analysis failed: {str(e)}")
+
+    def save_artifacts(self):
+        """Save all artifacts with version control"""
+        if not self.best_model:
+            raise ValueError("No trained model available")
+            
+        version = datetime.now().strftime("%Y%m%d_%H%M%S")
+        artifact_dir = f"model_artifacts_{version}"
+        os.makedirs(artifact_dir, exist_ok=True)
+        
+        try:
+            # Save model
+            save_model(self.best_model, f"{artifact_dir}/best_model")
+            
+            # Save configuration
+            pd.Series(self.config).to_csv(f"{artifact_dir}/config.csv")
+            
+            # Save hyperparameters
+            pd.Series(self.best_model.get_params()).to_csv(
+                f"{artifact_dir}/model_params.csv"
+            )
+            
+            # Save evaluation plots
+            for plot_file in ['feature_importance.png', 'shap_summary.png', 
+                            'threshold_analysis.png']:
+                if os.path.exists(plot_file):
+                    shutil.copy(plot_file, artifact_dir)
+            
+            logger.info(f"All artifacts saved to {artifact_dir}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save artifacts: {str(e)}")
+            raise
+
+if __name__ == "__main__":
+    config = {
+        'data_path': 'Dev_data1.csv',
+        'oot_path': 'X_oot.csv',
+        'target_column': 'target',
+        'use_gpu': True,
+        'max_evals': 100
+    }
+    
+    try:
+        optimizer = ModelOptimizer(config)
+        optimizer.optimize()
+        optimizer.save_artifacts()
+        
+        logger.info("Optimization process completed successfully")
+        print("\nNext steps:")
+        print("1. Review generated plots (feature importance, SHAP, threshold analysis)")
+        print("2. Check threshold_analysis.csv for optimal decision threshold")
+        print("3. Validate model artifacts in the created directory")
+        
+    except Exception as e:
+        logger.error(f"Main process failed: {str(e)}")
+        exit(1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import shap
 
 # Initialize SHAP Explainer
