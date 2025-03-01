@@ -1,3 +1,51 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import export_text, plot_tree
+from sklearn.model_selection import train_test_split
+
+# Import dataset (Replace 'your_dataset.csv' with actual file path)
+df = pd.read_csv("your_dataset.csv")  # Ensure this dataset contains your selected features + target
+
+# Define selected features (Replace with actual feature names from your dataset)
+selected_features = [
+    "balance_balcon_6m_max", "max_acct_mob_1m", "cc_amt_1m",
+    "val_cc_maxlmt_offus", "cc_nodecr_amt_1_6", "dsr_unsec_1m",
+    "fc_net_7_12m_min", "fin_annual_sal_adj", "min_offus_ln_open_mob",
+    "mpd_6m_min", "offus_unsec_cnt", "onus_baltospendamt_1m",
+    "delq_amt_offus", "onus_unsec_bal_1_6", "pay_ratio_1m",
+    "onus_lending_bal_1m", "payment_1m", "retail_rev_cust_7_9m_sum",
+    "utilization_3m_min"
+]
+
+# Define Target Variable (Replace 'mevent' with actual target column in your dataset)
+target_variable = "mevent"
+
+# Drop rows with missing values in selected features or target
+df = df[selected_features + [target_variable]].dropna()
+
+# Split Data into Training & Testing Sets
+X = df[selected_features]
+y = df[target_variable]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train Random Forest Model
+rf_model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+rf_model.fit(X_train, y_train)
+
+
+
+
+
+
+
+
+
+
+
+
 selected_features = [
     # Your selected variables
     "balance_balcon_6m_max",
