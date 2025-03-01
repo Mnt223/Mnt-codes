@@ -1,3 +1,73 @@
+import shap
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+
+# ✅ Load dataset (Ensure it contains selected features + target)
+df = pd.read_csv("your_dataset.csv")  # Change this to your actual dataset file
+
+# ✅ Define features and target variable
+selected_features = [
+    "balance_balcon_6m_max", "max_acct_mob_1m", "cc_amt_1m",
+    "val_cc_maxlmt_offus", "cc_nodecr_amt_1_6", "dsr_unsec_1m",
+    "fc_net_7_12m_min", "fin_annual_sal_adj", "min_offus_ln_open_mob",
+    "mpd_6m_min", "offus_unsec_cnt", "onus_baltospendamt_1m",
+    "delq_amt_offus", "onus_unsec_bal_1_6", "pay_ratio_1m",
+    "onus_lending_bal_1m", "payment_1m", "retail_rev_cust_7_9m_sum",
+    "utilization_3m_min"
+]
+
+target_variable = "mevent"  # Change this to your actual target column name
+
+# ✅ Drop missing values
+df = df[selected_features + [target_variable]].dropna()
+
+# ✅ Split into X and y
+X = df[selected_features]
+y = df[target_variable]
+
+# ✅ Train a RandomForestClassifier
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rf_model.fit(X, y)
+
+# ✅ Create background dataset (100 random samples from X)
+background_data = X.sample(n=100, random_state=42)
+
+try:
+    # ✅ Initialize SHAP Explainer using TreeExplainer
+    explainer = shap.TreeExplainer(rf_model, background_data, feature_perturbation="interventional")
+    
+    # ✅ Compute SHAP values for the probability of class 1 (Revolver)
+    shap_values = explainer.shap_values(X)
+
+    # ✅ Summary Plot for Binary Classification
+    shap.summary_plot(shap_values[1], X)
+    
+except Exception as e:
+    print("TreeExplainer failed. Switching to KernelExplainer...")
+    print("Error:", str(e))
+
+    # ✅ Use Kernel SHAP as a fallback (Slower but universal)
+    kernel_explainer = shap.KernelExplainer(rf_model.predict_proba, background_data)
+    shap_values = kernel_explainer.shap_values(X.sample(500))  # Use a small sample to avoid high computation time
+    shap.summary_plot(shap_values[1], X.sample(500))  # Plot for a subset of data
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.metrics import roc_auc_score, classification_report
