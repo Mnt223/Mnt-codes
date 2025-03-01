@@ -1,3 +1,47 @@
+# Get feature importance from Random Forest model
+feature_importance = pd.DataFrame({
+    'Feature': selected_features,
+    'Importance': rf_model.feature_importances_
+}).sort_values(by="Importance", ascending=False)
+
+# Plot feature importance
+plt.figure(figsize=(12,6))
+plt.barh(feature_importance["Feature"], feature_importance["Importance"], color="blue")
+plt.xlabel("Feature Importance Score")
+plt.ylabel("Features")
+plt.title("Feature Importance from Random Forest")
+plt.gca().invert_yaxis()
+plt.show()
+
+# Print top features in table format
+print(feature_importance.head(10))
+
+# Visualize a single decision tree from the trained Random Forest model
+plt.figure(figsize=(20,10))
+plot_tree(rf_model.estimators_[0], feature_names=selected_features, class_names=["Non-Revolver", "Revolver"], filled=True)
+plt.show()
+
+# Print tree structure in text format (useful for understanding splits)
+tree_rules = export_text(rf_model.estimators_[0], feature_names=selected_features)
+print(tree_rules)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
