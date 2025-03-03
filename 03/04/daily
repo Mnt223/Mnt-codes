@@ -1,3 +1,43 @@
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+
+# Extract feature importance from the trained model
+feature_importance = pd.DataFrame({
+    "Feature": X_train.columns, 
+    "Importance": final_model.feature_importances_
+})
+
+# Sort by importance
+feature_importance = feature_importance.sort_values(by="Importance", ascending=False)
+
+# Plot Feature Importance
+plt.figure(figsize=(8, 5))
+sns.barplot(data=feature_importance[:10], x="Importance", y="Feature")
+plt.title("Top 10 Feature Importance - Gradient Boosting")
+plt.xlabel("Importance Score")
+plt.ylabel("Feature Name")
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
