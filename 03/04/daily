@@ -1,5 +1,207 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve
+import joblib
+
+# Load Data (Ensure `Dev_data1` and `X_oot` are preloaded as DataFrames)
+target_column = "mevent"  # Update with actual target variable name
+
+# Split Dev_data1 into Train (70%) and Test (30%)
+X = Dev_data1.drop(columns=[target_column])
+y = Dev_data1[target_column]
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# Prepare OOT dataset (Ensure features match Train/Test datasets)
+y_oot = X_oot[target_column]
+X_oot_features = X_oot.drop(columns=[target_column])
+X_oot_features = X_oot_features[X_train.columns]  # Ensure feature consistency
+
+# Function to calculate Gini Score
+def calculate_gini(model, X, y):
+    y_pred = model.predict_proba(X)[:, 1]  # Get probabilities
+    auc = roc_auc_score(y, y_pred)
+    gini = 2 * auc - 1  # Convert AUC to Gini
+    return gini
+
+# Function to plot AUC curve
+def plot_auc(model, X, y, dataset_name):
+    y_pred = model.predict_proba(X)[:, 1]
+    fpr, tpr, _ = roc_curve(y, y_pred)
+    auc_score = roc_auc_score(y, y_pred)
+    
+    plt.figure(figsize=(6, 4))
+    plt.plot(fpr, tpr, label=f"AUC = {auc_score:.2f}")
+    plt.plot([0, 1], [0, 1], "k--")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title(f"AUC Curve - {dataset_name}")
+    plt.legend()
+    plt.show()
+
+# Function to plot Gain Chart
+def plot_gain_chart(model, X, y, dataset_name):
+    y_pred = model.predict_proba(X)[:, 1]
+    precision, recall, _ = precision_recall_curve(y, y_pred)
+    
+    plt.figure(figsize=(6, 4))
+    plt.plot(recall, precision, label="Gain Curve")
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title(f"Gain Chart - {dataset_name}")
+    plt.legend()
+    plt.show()
+
+# Function to plot Lift Chart
+def plot_lift_chart(model, X, y, dataset_name):
+    y_pred = model.predict_proba(X)[:, 1]
+    sorted_indices = np.argsort(y_pred)[::-1]
+    sorted_y = np.array(y)[sorted_indices]
+    cumulative_gain = np.cumsum(sorted_y) / np.sum(sorted_y)
+    deciles = np.linspace(0, 1, len(cumulative_gain))
+    
+    plt.figure(figsize=(6, 4))
+    plt.plot(deciles, cumulative_gain, label="Lift Curve")
+    plt.xlabel("Percentage of Population")
+    plt.ylabel("Cumulative Gain")
+    plt.title(f"Lift Chart - {dataset_name}")
+    plt.legend()
+    plt.show()
+
+# Define Hyperparameter Search Space (20 Iterations)
+param_grid = {
+    "learning_rate": np.linspace(0.01, 0.3, 10),
+    "max_depth": np.arange(3, 10),
+    "min_samples_leaf": np.arange(1, 50, 5),
+    "n_estimators": np.arange(100, 1000, 100),
+    "subsample": np.linspace(0.5, 1.0, 5)
+}
+
+# Gradient Boosting Classifier
+gb_model = GradientBoostingClassifier()
+
+# Use RandomizedSearchCV for Hyperparameter Tuning (20 Iterations)
+random_search = RandomizedSearchCV(
+    estimator=gb_model,
+    param_distributions=param_grid,
+    n_iter=20,  # 20 Iterations
+    scoring="roc_auc",
+    cv=5,
+    random_state=42,
+    verbose=1,
+    n_jobs=-1
+)
+
+# Fit the Model
+random_search.fit(X_train, y_train)
+
+# Store Results for Each Iteration
+results = []
+for i, params in enumerate(random_search.cv_results_["params"]):
+    model = GradientBoostingClassifier(**params)
+    model.fit(X_train, y_train)
+
+    # Compute Gini Scores
+    train_gini = calculate_gini(model, X_train, y_train)
+    test_gini = calculate_gini(model, X_test, y_test)
+    oot_gini = calculate_gini(model, X_oot_features, y_oot)
+
+    # Compute Underfitting & Overfitting Indicators
+    train_test_diff = abs(train_gini - test_gini)
+    train_oot_diff = abs(train_gini - oot_gini)
+
+    # Store iteration results
+    results.append({
+        "Iteration": i + 1,
+        "Learning Rate": params.get("learning_rate"),
+        "Max Depth": params.get("max_depth"),
+        "Min Samples Leaf": params.get("min_samples_leaf"),
+        "Estimators": params.get("n_estimators"),
+        "Subsample": params.get("subsample"),
+        "Train Gini": train_gini,
+        "Test Gini": test_gini,
+        "OOT Gini": oot_gini,
+        "Train-Test Gini Diff": train_test_diff,
+        "Train-OOT Gini Diff": train_oot_diff
+    })
+
+# Convert results into DataFrame
+results_df = pd.DataFrame(results)
+
+# **Step 5: Select Best Model Based on All Factors**
+best_model_row = results_df[
+    (results_df["Train-OOT Gini Diff"] < 0.05) &  # Ensure model is stable
+    (results_df["Train-Test Gini Diff"] < 0.03)  # Ensure no overfitting
+].nlargest(1, "Test Gini")  # Select the one with the highest Test Gini
+
+if not best_model_row.empty:
+    best_params = best_model_row.iloc[0][["Learning Rate", "Max Depth", "Min Samples Leaf", "Estimators", "Subsample"]].to_dict()
+else:
+    best_model_row = results_df.nlargest(1, "Test Gini")  # If no model met conditions, pick highest Test Gini
+    best_params = best_model_row.iloc[0][["Learning Rate", "Max Depth", "Min Samples Leaf", "Estimators", "Subsample"]].to_dict()
+
+final_model = GradientBoostingClassifier(
+    learning_rate=best_params["Learning Rate"],
+    max_depth=int(best_params["Max Depth"]),
+    min_samples_leaf=int(best_params["Min Samples Leaf"]),
+    n_estimators=int(best_params["Estimators"]),
+    subsample=best_params["Subsample"]
+)
+
+final_model.fit(X_train, y_train)
+joblib.dump(final_model, "best_gradient_boosting.pkl")  # Save Model
+
+# **Step 6: Generate Charts**
+plot_auc(final_model, X_train, y_train, "Train")
+plot_auc(final_model, X_test, y_test, "Test")
+plot_auc(final_model, X_oot_features, y_oot, "OOT")
+
+plot_gain_chart(final_model, X_train, y_train, "Train")
+plot_gain_chart(final_model, X_test, y_test, "Test")
+plot_gain_chart(final_model, X_oot_features, y_oot, "OOT")
+
+plot_lift_chart(final_model, X_train, y_train, "Train")
+plot_lift_chart(final_model, X_test, y_test, "Test")
+plot_lift_chart(final_model, X_oot_features, y_oot, "OOT")
+
+# **Step 7: Display Results Table**
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Gradient Boosting Hyperparameter Tuning Results", dataframe=results_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ujthh
+
+
+
+import numpy as np
+import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.metrics import roc_auc_score
