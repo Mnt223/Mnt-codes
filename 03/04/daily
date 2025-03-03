@@ -1,5 +1,76 @@
 import numpy as np
 import pandas as pd
+
+# Function to calculate PSI
+def calculate_psi(expected, actual, bins=5):
+    expected_counts, bin_edges = np.histogram(expected, bins=bins, density=True)
+    actual_counts, _ = np.histogram(actual, bins=bin_edges, density=True)
+
+    # Convert to percentages
+    expected_percents = expected_counts / expected_counts.sum()
+    actual_percents = actual_counts / actual_counts.sum()
+
+    expected_percents += 1e-10  # Avoid division by zero
+    actual_percents += 1e-10
+
+    psi_values = (expected_percents - actual_percents) * np.log(expected_percents / actual_percents)
+    psi = np.sum(psi_values)
+
+    return psi, bin_edges, expected_percents, actual_percents
+
+# Get model predicted scores
+train_scores = best_model.predict_proba(X_train)[:, 1]
+test_scores = best_model.predict_proba(X_test)[:, 1]
+oot_scores = best_model.predict_proba(X_oot_features)[:, 1]
+
+# Compute PSI values and get bin ranges
+psi_train_test, bins, train_percents, test_percents = calculate_psi(train_scores, test_scores)
+psi_train_oot, _, train_percents_oot, oot_percents = calculate_psi(train_scores, oot_scores)
+
+# Format Data into a Table
+psi_df = pd.DataFrame({
+    "Score Band": [f"{int(bins[i])}-{int(bins[i+1])}" for i in range(len(bins)-1)],
+    "Train % (A)": np.round(train_percents * 100, 2),
+    "Test % (B)": np.round(test_percents * 100, 2),
+    "OOT % (C)": np.round(oot_percents * 100, 2),
+    "A - B": np.round(train_percents - test_percents, 4),
+    "A - C": np.round(train_percents - oot_percents, 4),
+    "Ln(A/B)": np.round(np.log(train_percents / test_percents), 4),
+    "Ln(A/C)": np.round(np.log(train_percents / oot_percents), 4),
+    "PSI (Train vs Test)": np.round((train_percents - test_percents) * np.log(train_percents / test_percents), 4),
+    "PSI (Train vs OOT)": np.round((train_percents - oot_percents) * np.log(train_percents / oot_percents), 4)
+})
+
+# Add PSI Summary Row
+psi_df.loc[len(psi_df)] = ["Total PSI", "", "", "", "", "", "", "", psi_train_test, psi_train_oot]
+
+# **Save PSI Table to Excel**
+psi_df.to_excel("PSI_Table.xlsx", index=False)
+
+# **Print PSI Table in Console**
+print("\nPSI Table - Train vs Test & Train vs OOT")
+print(psi_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import roc_auc_score
