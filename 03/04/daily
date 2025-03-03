@@ -1,3 +1,95 @@
+# Import necessary libraries
+from pycaret.classification import *
+import pandas as pd
+import numpy as np
+from sklearn.metrics import roc_auc_score
+
+# Load dataset (Ensure `Dev_data1` and `X_oot` are preloaded as DataFrames)
+target_column = "mevent"  # Update with your actual target column name
+
+# PyCaret Setup: Train (70%) / Test (30%) Split
+clf = setup(
+    data=Dev_data1, 
+    target=target_column,
+    ignore_features=["cust_num", "samplingweight", "selection"],  # Adjust if necessary
+    numeric_imputation="mean",
+    categorical_imputation="mode",
+    remove_outliers=True,
+    train_size=0.70,
+    session_id=1992  # Ensures reproducibility
+)
+
+# Step 1: Compare Models & Select the Best One Based on AUC
+best_model = compare_models(fold=10, round=2, sort='AUC', n_select=1)
+
+# Step 2: Tune the Best Model with 20 Hyperparameter Iterations
+tuned_model = tune_model(best_model, n_iter=20, optimize='AUC')
+
+# Step 3: Evaluate Tuned Model
+evaluate_model(tuned_model)
+
+# Step 4: Get Train, Test, and OOT Gini Scores
+def calculate_gini(model, X, y):
+    y_pred = model.predict_proba(X)[:, 1]  # Get predicted probabilities
+    auc = roc_auc_score(y, y_pred)
+    gini = 2 * auc - 1  # Gini calculation
+    return gini
+
+# Get Train and Test Data Splits from PyCaret
+X_train, X_test = get_config("X_train"), get_config("X_test")
+y_train, y_test = get_config("y_train"), get_config("y_test")
+
+# Calculate Gini Scores
+train_gini = calculate_gini(tuned_model, X_train, y_train)
+test_gini = calculate_gini(tuned_model, X_test, y_test)
+
+# Evaluate OOT (X_oot)
+X_oot_features = X_oot.drop(columns=[target_column], errors='ignore')  # Remove target if present
+y_oot = X_oot[target_column] if target_column in X_oot.columns else None
+oot_gini = calculate_gini(tuned_model, X_oot_features, y_oot) if y_oot is not None else None
+
+# Step 5: Store Results in a Table
+results_df = pd.DataFrame([{
+    "Model": "CatBoost",
+    "Train Gini": train_gini,
+    "Test Gini": test_gini,
+    "OOT Gini": oot_gini,
+    "Train-OOT Gini Diff": abs(train_gini - oot_gini) if oot_gini is not None else None
+}])
+
+# Step 6: Select Best Model with Smallest Train-OOT Gini Gap
+best_model_row = results_df[(results_df["Train-OOT Gini Diff"] < 0.05)].nlargest(1, "Test Gini")
+
+# Step 7: Finalize & Save the Best Model
+final_model = finalize_model(tuned_model)
+save_model(final_model, "best_catboost_pycaret")
+
+# Display Results
+import ace_tools as tools
+tools.display_dataframe_to_user(name="CatBoost Gini Scores", dataframe=results_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.metrics import roc_auc_score, classification_report
