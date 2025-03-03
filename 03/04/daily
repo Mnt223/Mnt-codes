@@ -1,3 +1,32 @@
+
+# Load the saved best model
+best_model = joblib.load("best_gradient_boosting.pkl")
+
+# Compute SHAP values
+explainer = shap.Explainer(best_model, X_train)
+shap_values = explainer(X_train)
+
+# Generate SHAP Summary Plot
+plt.figure(figsize=(10, 6))
+shap.summary_plot(shap_values, X_train, show=False)
+plt.title("SHAP Summary Plot - Best Model")
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
