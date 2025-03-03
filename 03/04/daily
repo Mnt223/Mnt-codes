@@ -1,3 +1,100 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import roc_auc_score
+import joblib
+
+# Load the saved best model
+best_model = joblib.load("best_gradient_boosting.pkl")
+
+# Function to compute Gain Matrix (Decile Analysis)
+def compute_gain_matrix(model, X, y, dataset_name):
+    y_pred = model.predict_proba(X)[:, 1]  # Get probabilities
+    df = pd.DataFrame({"Actual": y, "Predicted": y_pred})
+
+    # Create Deciles
+    df["Decile"] = pd.qcut(df["Predicted"], 10, labels=np.arange(1, 11)[::-1])  # Highest scores in Decile 1
+
+    # Compute Gain Table
+    gain_table = df.groupby("Decile").agg(
+        Total_Obs=("Actual", "count"),
+        Events=("Actual", "sum")
+    ).reset_index()
+
+    gain_table["Cumulative Events"] = gain_table["Events"].cumsum()
+    gain_table["Cumulative % of Events"] = (gain_table["Cumulative Events"] / gain_table["Events"].sum()) * 100
+
+    print(f"\nGain Matrix - {dataset_name}")
+    print(gain_table)
+
+    return gain_table
+
+# Compute Gain Matrices
+train_gain_matrix = compute_gain_matrix(best_model, X_train, y_train, "Train")
+test_gain_matrix = compute_gain_matrix(best_model, X_test, y_test, "Test")
+oot_gain_matrix = compute_gain_matrix(best_model, X_oot_features, y_oot, "OOT")
+
+# Convert Decile to Numeric for Plotting
+train_gain_matrix["Dataset"] = "Train"
+test_gain_matrix["Dataset"] = "Test"
+oot_gain_matrix["Dataset"] = "OOT"
+
+# Combine for Visualization
+gain_comparison_df = pd.concat([train_gain_matrix, test_gain_matrix, oot_gain_matrix])
+
+# **Plot Gain Chart**
+plt.figure(figsize=(8, 5))
+sns.lineplot(data=gain_comparison_df, x="Decile", y="Cumulative % of Events", hue="Dataset", marker="o")
+plt.xlabel("Decile (Top 10% - Bottom 10%)")
+plt.ylabel("Cumulative % of Events Captured")
+plt.title("Gain Chart: Train vs Test vs OOT")
+plt.legend()
+plt.show()
+
+# **Plot Gain Matrix Values Comparison**
+plt.figure(figsize=(8, 5))
+sns.barplot(data=gain_comparison_df, x="Decile", y="Events", hue="Dataset")
+plt.xlabel("Decile (Top 10% - Bottom 10%)")
+plt.ylabel("Number of Events")
+plt.title("Events Distribution Across Deciles - Train, Test, OOT")
+plt.legend()
+plt.show()
+
+# **PSI Calculation Function**
+def calculate_psi(expected, actual, bins=10):
+    expected_percents, bin_edges = np.histogram(expected, bins=bins, density=True)
+    actual_percents, _ = np.histogram(actual, bins=bin_edges, density=True)
+
+    expected_percents += 1e-10  # Avoid division by zero
+    actual_percents += 1e-10
+
+    psi_values = (expected_percents - actual_percents) * np.log(expected_percents / actual_percents)
+    psi = np.sum(psi_values)
+
+    return psi
+
+# **Compute PSI**
+psi_train_test = calculate_psi(best_model.predict_proba(X_train)[:, 1], best_model.predict_proba(X_test)[:, 1])
+psi_train_oot = calculate_psi(best_model.predict_proba(X_train)[:, 1], best_model.predict_proba(X_oot_features)[:, 1])
+
+print(f"\nPSI Train vs Test: {psi_train_test:.4f}")
+print(f"PSI Train vs OOT: {psi_train_oot:.4f}")
+
+# **Display Gain Matrices as Pandas Tables**
+print("\nGain Matrix - Train Dataset")
+print(train_gain_matrix)
+
+print("\nGain Matrix - Test Dataset")
+print(test_gain_matrix)
+
+print("\nGain Matrix - OOT Dataset")
+print(oot_gain_matrix)
+
+
+
+
+
 
 # Load the saved best model
 best_model = joblib.load("best_gradient_boosting.pkl")
