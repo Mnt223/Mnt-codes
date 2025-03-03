@@ -1,3 +1,28 @@
+# Ensure OOT dataset matches train dataset
+X_oot_features = X_oot.drop(columns=[target_column], errors='ignore')  # Remove target if present
+
+# Ensure feature consistency between training and OOT datasets
+X_oot_features = X_oot_features[X_train.columns]  # Keep only the columns used in training
+
+# Calculate OOT Gini Score (Only if y_oot is available)
+if y_oot is not None:
+    oot_gini = calculate_gini(tuned_model, X_oot_features, y_oot)
+else:
+    oot_gini = None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Import necessary libraries
 from pycaret.classification import *
 import pandas as pd
