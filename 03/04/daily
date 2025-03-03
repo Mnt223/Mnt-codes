@@ -1,3 +1,108 @@
+# Import necessary libraries
+from pycaret.classification import *
+import pandas as pd
+import numpy as np
+from sklearn.metrics import roc_auc_score
+
+# Load dataset (Ensure Dev_data1 and X_oot are preloaded)
+target_column = "mevent"  # Target variable name
+
+# PyCaret Setup: Train (70%) / Test (30%) Split
+clf = setup(
+    data=Dev_data1, 
+    target=target_column,
+    ignore_features=["cust_num", "samplingweight", "selection_month"],  # Adjust if necessary
+    numeric_imputation="mean",
+    categorical_imputation="mode",
+    remove_outliers=True,
+    train_size=0.70,
+    session_id=1992  # Ensures reproducibility
+)
+
+# Step 1: Compare Models & Select the Best One Based on AUC
+best_model = compare_models(fold=10, round=2, sort='AUC', n_select=1)
+
+# Step 2: Tune the Best Model with 20 Hyperparameter Iterations
+tuned_models = tune_model(best_model, n_iter=20, optimize='AUC', return_tuner=False)
+
+# Step 3: Extract Train, Test, and OOT Data Splits
+X_train, X_test = get_config("X_train"), get_config("X_test")
+y_train, y_test = get_config("y_train"), get_config("y_test")
+
+# Extract target from OOT dataset
+y_oot = X_oot["mevent"]
+X_oot_features = X_oot.drop(columns=["mevent"])  # Remove target column
+X_oot_features = X_oot_features[X_train.columns]  # Ensure feature consistency
+
+# Function to compute Gini score
+def calculate_gini(model, X, y):
+    y_pred = model.predict_proba(X)[:, 1]  # Get probabilities
+    auc = roc_auc_score(y, y_pred)
+    gini = 2 * auc - 1  # Convert AUC to Gini
+    return gini
+
+# Step 4: Store Hyperparameter Values & Gini Scores for 20 Iterations
+results = []
+for i, model in enumerate(tuned_models):
+    # Get model hyperparameters
+    params = model.get_params()
+    
+    # Calculate Gini Scores
+    train_gini = calculate_gini(model, X_train, y_train)
+    test_gini = calculate_gini(model, X_test, y_test)
+    oot_gini = calculate_gini(model, X_oot_features, y_oot)
+
+    # Store iteration results
+    results.append({
+        "Iteration": i + 1,
+        "Learning Rate": params.get('learning_rate'),
+        "Depth": params.get('depth'),
+        "L2 Leaf Reg": params.get('l2_leaf_reg'),
+        "Iterations": params.get('iterations'),
+        "Border Count": params.get('border_count'),
+        "Subsample": params.get('subsample'),
+        "Train Gini": train_gini,
+        "Test Gini": test_gini,
+        "OOT Gini": oot_gini,
+        "Train-OOT Gini Diff": abs(train_gini - oot_gini)
+    })
+
+# Convert results into a DataFrame
+results_df = pd.DataFrame(results)
+
+# Step 5: Select Best Model (Highest Test Gini, Smallest Train-OOT Gini Difference)
+best_model_row = results_df[results_df["Train-OOT Gini Diff"] < 0.05].nlargest(1, "Test Gini")
+
+# Step 6: Finalize & Save the Best Model
+best_model_index = best_model_row["Iteration"].values[0] - 1  # Get correct index
+final_model = finalize_model(tuned_models[best_model_index])
+save_model(final_model, "best_catboost_pycaret")
+
+# Step 7: Display Results Table
+import ace_tools as tools
+tools.display_dataframe_to_user(name="CatBoost Hyperparameter Tuning Results", dataframe=results_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Ensure OOT dataset matches train dataset
 X_oot_features = X_oot.drop(columns=[target_column], errors='ignore')  # Remove target if present
 
