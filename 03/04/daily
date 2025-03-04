@@ -1,3 +1,105 @@
+gain matrix
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Function to compute Gain Matrix
+def compute_gain_matrix(model, X, y, dataset_name, bins=10):
+    y_pred = model.predict_proba(X)[:, 1]  # Get probabilities
+    df = pd.DataFrame({"Actual": y, "Predicted": y_pred})
+
+    # Create Score Bands
+    df["Score Band"] = pd.qcut(df["Predicted"], bins, labels=False, duplicates="drop")
+
+    # Compute Gain Table
+    gain_table = df.groupby("Score Band").agg(
+        Non_Events=("Actual", lambda x: (x == 0).sum()),
+        Events=("Actual", lambda x: (x == 1).sum())
+    ).reset_index()
+
+    # Cumulative Calculations
+    gain_table["Cum Non-Events"] = gain_table["Non_Events"].cumsum()
+    gain_table["Cum Events"] = gain_table["Events"].cumsum()
+    gain_table["% Cum Events"] = (gain_table["Cum Events"] / gain_table["Events"].sum()) * 100
+
+    # Event Rate
+    gain_table["Event Rate"] = gain_table["Events"] / (gain_table["Events"] + gain_table["Non_Events"])
+
+    # Cumulative Event Rate
+    gain_table["Cum Event Rate"] = gain_table["Cum Events"] / (gain_table["Cum Events"] + gain_table["Cum Non-Events"])
+
+    # Separation (Difference in Cum Event %)
+    gain_table["Separation"] = gain_table["Cum Event Rate"].diff().fillna(0)
+
+    # Lift Calculation
+    baseline_event_rate = gain_table["Events"].sum() / (gain_table["Events"].sum() + gain_table["Non_Events"].sum())
+    gain_table["Lift"] = gain_table["Event Rate"] / baseline_event_rate
+
+    # Rename Score Band
+    gain_table["Score"] = df.groupby("Score Band")["Predicted"].mean().values
+    gain_table = gain_table.sort_values(by="Score", ascending=False)
+
+    print(f"\nGain Matrix - {dataset_name}")
+    print(gain_table)
+
+    return gain_table
+
+# Compute Gain Matrices
+train_gain_matrix = compute_gain_matrix(best_model, X_train, y_train, "Train")
+test_gain_matrix = compute_gain_matrix(best_model, X_test, y_test, "Test")
+oot_gain_matrix = compute_gain_matrix(best_model, X_oot_features, y_oot, "OOT")
+
+# **Save Gain Matrices to Excel**
+with pd.ExcelWriter("Gain_Matrix.xlsx") as writer:
+    train_gain_matrix.to_excel(writer, sheet_name="Train_Gain_Matrix", index=False)
+    test_gain_matrix.to_excel(writer, sheet_name="Test_Gain_Matrix", index=False)
+    oot_gain_matrix.to_excel(writer, sheet_name="OOT_Gain_Matrix", index=False)
+
+# **Plot Comparison Charts**
+plt.figure(figsize=(8, 5))
+sns.lineplot(data=train_gain_matrix, x="Score", y="% Cum Events", label="Train", marker="o")
+sns.lineplot(data=test_gain_matrix, x="Score", y="% Cum Events", label="Test", marker="o")
+sns.lineplot(data=oot_gain_matrix, x="Score", y="% Cum Events", label="OOT", marker="o")
+plt.xlabel("Score")
+plt.ylabel("Cumulative % of Events Captured")
+plt.title("Cumulative Event % vs Score (Train, Test, OOT)")
+plt.legend()
+plt.show()
+
+plt.figure(figsize=(8, 5))
+sns.lineplot(data=train_gain_matrix, x="Score", y="Event Rate", label="Train", marker="o")
+sns.lineplot(data=test_gain_matrix, x="Score", y="Event Rate", label="Test", marker="o")
+sns.lineplot(data=oot_gain_matrix, x="Score", y="Event Rate", label="OOT", marker="o")
+plt.xlabel("Score")
+plt.ylabel("Event Rate %")
+plt.title("Event Rate % vs Score (Train, Test, OOT)")
+plt.legend()
+plt.show()
+
+plt.figure(figsize=(8, 5))
+sns.lineplot(data=train_gain_matrix, x="Score", y="Lift", label="Train", marker="o")
+sns.lineplot(data=test_gain_matrix, x="Score", y="Lift", label="Test", marker="o")
+sns.lineplot(data=oot_gain_matrix, x="Score", y="Lift", label="OOT", marker="o")
+plt.xlabel("Score")
+plt.ylabel("Lift")
+plt.title("Lift vs Score (Train, Test, OOT)")
+plt.legend()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 csi
 import numpy as np
 import pandas as pd
