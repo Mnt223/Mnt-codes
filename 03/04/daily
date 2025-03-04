@@ -18,6 +18,100 @@ def calculate_psi(expected, actual, bins):
 
     return psi, bin_edges, expected_percents, actual_percents
 
+# Get model predicted scores (probabilities from 0 to 1)
+train_scores = best_model.predict_proba(X_train)[:, 1]
+test_scores = best_model.predict_proba(X_test)[:, 1]
+oot_scores = best_model.predict_proba(X_oot_features)[:, 1]
+
+# Define Score Bands Using Fixed Ranges to Match Your Excel Format
+score_bins = np.percentile(train_scores, [0, 20, 40, 60, 80, 100])  # 5 bands
+score_band_labels = [
+    f"{int(score_bins[4])}-high",
+    f"{int(score_bins[3])}-{int(score_bins[4])}",
+    f"{int(score_bins[2])}-{int(score_bins[3])}",
+    f"{int(score_bins[1])}-{int(score_bins[2])}",
+    f"low-{int(score_bins[1])}"
+]
+
+# Compute PSI for Train vs Test
+psi_train_test, bins_tt, train_percents_tt, test_percents = calculate_psi(train_scores, test_scores, bins=score_bins)
+psi_train_oot, bins_to, train_percents_to, oot_percents = calculate_psi(train_scores, oot_scores, bins=score_bins)
+
+# Create PSI Table: Train vs Test
+psi_train_test_df = pd.DataFrame({
+    "Score Band": score_band_labels,
+    "Train (A) %": np.round(train_percents_tt * 100, 2),
+    "Test (B) %": np.round(test_percents * 100, 2),
+    "A - B": np.round((train_percents_tt - test_percents) * 100, 2),
+    "Ln(A/B)": np.round(np.log(train_percents_tt / test_percents), 4),
+    "PSI": np.round((train_percents_tt - test_percents) * np.log(train_percents_tt / test_percents), 4)
+})
+
+# Add PSI Summary Row
+psi_train_test_df.loc[len(psi_train_test_df)] = ["Total PSI", "", "", "", "", np.round(psi_train_test, 4)]
+
+# Create PSI Table: Train vs OOT
+psi_train_oot_df = pd.DataFrame({
+    "Score Band": score_band_labels,
+    "Train (A) %": np.round(train_percents_to * 100, 2),
+    "OOT (B) %": np.round(oot_percents * 100, 2),
+    "A - B": np.round((train_percents_to - oot_percents) * 100, 2),
+    "Ln(A/B)": np.round(np.log(train_percents_to / oot_percents), 4),
+    "PSI": np.round((train_percents_to - oot_percents) * np.log(train_percents_to / oot_percents), 4)
+})
+
+# Add PSI Summary Row
+psi_train_oot_df.loc[len(psi_train_oot_df)] = ["Total PSI", "", "", "", "", np.round(psi_train_oot, 4)]
+
+# **Save PSI Tables to Excel with Two Sheets**
+with pd.ExcelWriter("PSI_Tables.xlsx") as writer:
+    psi_train_test_df.to_excel(writer, sheet_name="PSI_Train_vs_Test", index=False)
+    psi_train_oot_df.to_excel(writer, sheet_name="PSI_Train_vs_OOT", index=False)
+
+# **Print PSI Tables in Console**
+print("\nPSI Table - Train vs Test")
+print(psi_train_test_df.to_string(index=False))
+
+print("\nPSI Table - Train vs OOT")
+print(psi_train_oot_df.to_string(index=False))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
+# Function to calculate PSI
+def calculate_psi(expected, actual, bins):
+    expected_counts, bin_edges = np.histogram(expected, bins=bins, density=True)
+    actual_counts, _ = np.histogram(actual, bins=bin_edges, density=True)
+
+    # Convert to percentages
+    expected_percents = expected_counts / expected_counts.sum()
+    actual_percents = actual_counts / actual_counts.sum()
+
+    expected_percents += 1e-10  # Avoid division by zero
+    actual_percents += 1e-10
+
+    psi_values = (expected_percents - actual_percents) * np.log(expected_percents / actual_percents)
+    psi = np.sum(psi_values)
+
+    return psi, bin_edges, expected_percents, actual_percents
+
 # Get model predicted scores
 train_scores = best_model.predict_proba(X_train)[:, 1]
 test_scores = best_model.predict_proba(X_test)[:, 1]
