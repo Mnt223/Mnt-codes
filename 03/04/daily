@@ -1,6 +1,74 @@
 import numpy as np
 import pandas as pd
 
+# **Define Score Bands with Alphabet Labels**
+score_bins = [-np.inf, 100, 200, 300, 400, np.inf]
+score_labels = ["A. >400", "B. 300-400", "C. 200-300", "D. 100-200", "E. <100"]
+
+# **Function to Assign Score Bands**
+def assign_score_band(score):
+    return pd.cut([score], bins=score_bins, labels=score_labels, include_lowest=True)[0]
+
+# **Function to Assign Feature Value Bands**
+def assign_feature_band(feature_values):
+    bins = np.percentile(feature_values.dropna(), [0, 20, 40, 60, 80, 100])  # Create 5 bins
+    labels = ["A. >Top 20%", "B. 60-80%", "C. 40-60%", "D. 20-40%", "E. <20%"]
+    return pd.cut(feature_values, bins=bins, labels=labels, include_lowest=True)
+
+# **Identify Top 6 Features Based on Model Importance**
+feature_importance = pd.DataFrame({
+    "Feature": train_final.drop(columns=["score", "mevent", "samplingweight", "cust_num", "selection_month"]).columns,
+    "Importance": final_model.feature_importances_
+}).sort_values(by="Importance", ascending=False).head(6)
+
+top_6_features = feature_importance["Feature"].tolist()
+print("\nTop 6 Features Selected:", top_6_features)
+
+# **Dictionary to Store Tables**
+tables = {}
+
+for feature in top_6_features:
+    print(f"\nProcessing Feature: {feature}")
+
+    # **Copy DataFrame & Assign Score Bands**
+    df_temp = train_final.copy()
+    df_temp["Score Band"] = df_temp["score"].apply(assign_score_band)
+
+    # **Assign Feature Value Bands**
+    df_temp[f"{feature} Band"] = assign_feature_band(df_temp[feature])
+
+    # **Group by Score Band & Feature Band, Count Customers**
+    grouped_df = df_temp.groupby(["Score Band", f"{feature} Band"])["cust_num"].count().reset_index()
+    grouped_df.rename(columns={"cust_num": "Freq Cust Cnt"}, inplace=True)
+
+    # **Calculate Percentage of Customers in Each Group**
+    total_customers = grouped_df["Freq Cust Cnt"].sum()
+    grouped_df["% Cust"] = (grouped_df["Freq Cust Cnt"] / total_customers) * 100
+
+    # **Sort Data for Proper Presentation**
+    grouped_df = grouped_df.sort_values(by=["Score Band", f"{feature} Band"], ascending=[True, True])
+
+    # **Save & Store Table**
+    tables[feature] = grouped_df
+    grouped_df.to_csv(f"table_{feature}.csv", index=False)
+
+    # **Print Table Preview**
+    print(grouped_df.head())
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
 # **Function to Compute Gain Matrix with Proper Decile Binning**
 def compute_gain_matrix(df, dataset_name, weight_column="samplingweight"):
     """
