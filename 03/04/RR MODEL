@@ -1,3 +1,115 @@
+psi check 
+
+import numpy as np
+import pandas as pd
+
+# Function to calculate PSI with zero handling
+def calculate_psi(expected, actual, bins=10):
+    expected_counts, expected_bins = np.histogram(expected, bins=bins)
+    actual_counts, _ = np.histogram(actual, bins=expected_bins)
+
+    # Convert to percentages
+    expected_percents = expected_counts / np.sum(expected_counts)
+    actual_percents = actual_counts / np.sum(actual_counts)
+
+    # Avoid division by zero (replace 0 values with a small number)
+    expected_percents = np.where(expected_percents == 0, 0.0001, expected_percents)
+    actual_percents = np.where(actual_percents == 0, 0.0001, actual_percents)
+
+    # Compute PSI
+    psi_values = (expected_percents - actual_percents) * np.log(expected_percents / actual_percents)
+    psi_values = np.nan_to_num(psi_values)  # Replace NaNs with zero
+
+    return np.sum(psi_values)
+
+# Identify features with high missing values or zero dominance
+def identify_problematic_features(X_train, X_oot, threshold=0.95):
+    missing_train = X_train.isna().mean()
+    missing_oot = X_oot.isna().mean()
+    zero_train = (X_train == 0).mean()
+    zero_oot = (X_oot == 0).mean()
+
+    # Find features with more than `threshold` % missing or zero values
+    high_missing = missing_train[missing_train > threshold].index.tolist()
+    high_missing_oot = missing_oot[missing_oot > threshold].index.tolist()
+    high_zeros = zero_train[zero_train > threshold].index.tolist()
+    high_zeros_oot = zero_oot[zero_oot > threshold].index.tolist()
+
+    # Combine all problematic features
+    problematic_features = set(high_missing + high_missing_oot + high_zeros + high_zeros_oot)
+
+    return list(problematic_features)
+
+# Compute PSI for Train vs Test and Train vs OOT
+def compute_psi_for_features(X_train, X_test, X_oot):
+    psi_train_test = {col: calculate_psi(X_train[col], X_test[col]) for col in X_train.columns}
+    psi_train_oot = {col: calculate_psi(X_train[col], X_oot[col]) for col in X_train.columns}
+
+    # Convert PSI results to DataFrame
+    psi_df = pd.DataFrame({
+        "Feature": list(psi_train_test.keys()),
+        "PSI_Train_vs_Test": list(psi_train_test.values()),
+        "PSI_Train_vs_OOT": list(psi_train_oot.values())
+    })
+
+    return psi_df
+
+# Main function to clean datasets and filter features
+def clean_and_filter_features(X_train, X_test, X_oot, psi_threshold=0.5):
+    print("\n🔹 Identifying problematic features (high missing/zero values)...")
+    problematic_features = identify_problematic_features(X_train, X_oot)
+
+    print(f"🔸 Features removed due to missing/zero dominance: {problematic_features}")
+
+    # Drop problematic features before PSI calculation
+    X_train_filtered = X_train.drop(columns=problematic_features, errors="ignore")
+    X_test_filtered = X_test.drop(columns=problematic_features, errors="ignore")
+    X_oot_filtered = X_oot.drop(columns=problematic_features, errors="ignore")
+
+    print("\n🔹 Calculating PSI for remaining features...")
+    psi_df = compute_psi_for_features(X_train_filtered, X_test_filtered, X_oot_filtered)
+
+    # Identify features with high PSI (indicating data drift)
+    high_psi_features = psi_df[psi_df["PSI_Train_vs_OOT"] > psi_threshold]["Feature"].tolist()
+    
+    print(f"🔸 Features removed due to high PSI (> {psi_threshold}): {high_psi_features}")
+
+    # Remove high-PSI features
+    X_train_final = X_train_filtered.drop(columns=high_psi_features, errors="ignore")
+    X_test_final = X_test_filtered.drop(columns=high_psi_features, errors="ignore")
+    X_oot_final = X_oot_filtered.drop(columns=high_psi_features, errors="ignore")
+
+    print("\n✅ Data Cleaning Completed. Features removed:")
+    print(f"• {len(problematic_features)} due to high missing/zero values")
+    print(f"• {len(high_psi_features)} due to high PSI (data drift)")
+
+    return X_train_final, X_test_final, X_oot_final, psi_df
+
+# Run cleaning & filtering on the datasets
+X_train_clean, X_test_clean, X_oot_clean, psi_results = clean_and_filter_features(X_train, X_test, X_oot_features)
+
+# Display final PSI results
+print("\n🔹 Final PSI Results After Cleaning:")
+print(psi_results.sort_values(by="PSI_Train_vs_OOT", ascending=False).to_string(index=False))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 psi 
 
 import numpy as np
