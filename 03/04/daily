@@ -1,6 +1,73 @@
 import numpy as np
 import pandas as pd
 
+# **Function to Compute Gain Matrix with Proper Decile Binning**
+def compute_gain_matrix(df, dataset_name, weight_column="samplingweight"):
+    """
+    Computes the Gain Matrix ensuring proper decile ordering to prevent negative separation.
+    """
+    if weight_column not in df.columns:
+        df[weight_column] = 1  # Default weight if missing
+
+    # **Sort by Score (Highest to Lowest)**
+    df = df.sort_values("score", ascending=False).reset_index(drop=True)
+
+    # **Create Deciles Using Equal-Sized Bins (Ensure Proper Binning)**
+    df["Decile"] = pd.cut(df.index, bins=10, labels=False) + 1  # Decile 1 = Highest Scores
+
+    # **Group by Deciles & Compute Metrics**
+    gain_matrix = df.groupby("Decile").agg(
+        Non_Events=("mevent", lambda x: ((x == 0) * df[weight_column]).sum()),
+        Events=("mevent", lambda x: ((x == 1) * df[weight_column]).sum()),
+        Score_Min=("score", "min"),
+        Score_Max=("score", "max")
+    ).reset_index()
+
+    # **Cumulative Sums**
+    gain_matrix["Cum Non-Events"] = gain_matrix["Non_Events"].cumsum()
+    gain_matrix["Cum Events"] = gain_matrix["Events"].cumsum()
+
+    # **Cumulative Percentage**
+    gain_matrix["% Cum Non-Events"] = (gain_matrix["Cum Non-Events"] / gain_matrix["Non-Events"].sum()) * 100
+    gain_matrix["% Cum Events"] = (gain_matrix["Cum Events"] / gain_matrix["Events"].sum()) * 100
+
+    # **Event Rate & Lift Calculation**
+    gain_matrix["Event Rate"] = gain_matrix["Events"] / (gain_matrix["Non-Events"] + gain_matrix["Events"])
+    gain_matrix["Cum Event Rate"] = gain_matrix["Cum Events"] / (gain_matrix["Cum Non-Events"] + gain_matrix["Cum Events"])
+    gain_matrix["Separation"] = gain_matrix["% Cum Events"] - gain_matrix["% Cum Non-Events"]
+    gain_matrix["Lift"] = gain_matrix["Event Rate"] / (df["mevent"].sum() / len(df))  # Lift compared to total event rate
+
+    # **Ensure Proper Sorting**
+    gain_matrix = gain_matrix.sort_values("Decile", ascending=True)
+
+    # **Print & Save**
+    print(f"\nGain Matrix for {dataset_name} (Fixed Separation Issue):")
+    print(gain_matrix)
+    gain_matrix.to_csv(f"gain_matrix_{dataset_name.lower()}.csv", index=False)
+
+    return gain_matrix
+
+# **Compute Gain Matrices for Train, Test, and OOT**
+gain_matrix_train = compute_gain_matrix(train_final, "Train")
+gain_matrix_test = compute_gain_matrix(test_final, "Test")
+gain_matrix_oot = compute_gain_matrix(oot_final, "OOT")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
 # **Fix Decile & Pentile Binning with Proper Score Ordering**
 def create_bins_fixed(df, bins, label_name):
     """
