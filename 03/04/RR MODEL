@@ -1,3 +1,135 @@
+Auc, charts
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_auc_score
+
+# Function to create Gain Matrix with full event distribution analysis
+def create_gain_matrix(model, X, y, dataset_name):
+    # Get predicted probabilities
+    y_pred_proba = model.predict_proba(X)[:, 1]  
+
+    # Create DataFrame with Actual vs Predicted Probabilities
+    df = pd.DataFrame({"Actual": y, "Predicted_Prob": y_pred_proba})
+    
+    # Create Deciles (10 bins based on predicted probability)
+    df["Decile"] = pd.qcut(df["Predicted_Prob"], 10, labels=False, duplicates="drop")
+    
+    # Sort deciles from highest probability to lowest (Decile 1 = Highest Risk)
+    df["Decile"] = 10 - df["Decile"]  
+
+    # Compute Gain Matrix Metrics
+    gain_matrix = df.groupby("Decile").agg(
+        Total_Customers=("Actual", "count"),
+        Events=("Actual", "sum")  # Count of positive class (event)
+    ).reset_index()
+
+    # Compute Non-Events
+    gain_matrix["Non-Events"] = gain_matrix["Total_Customers"] - gain_matrix["Events"]
+    
+    # Cumulative Sums
+    gain_matrix["Cumulative_Non_Events"] = gain_matrix["Non-Events"].cumsum()
+    gain_matrix["Cumulative_Events"] = gain_matrix["Events"].cumsum()
+
+    # Compute Percent Cumulative Events & Non-Events
+    total_events = gain_matrix["Events"].sum()
+    total_non_events = gain_matrix["Non-Events"].sum()
+
+    gain_matrix["% Cumulative Non-Events"] = (gain_matrix["Cumulative_Non_Events"] / total_non_events) * 100
+    gain_matrix["% Cumulative Events"] = (gain_matrix["Cumulative_Events"] / total_events) * 100
+
+    # Compute Event Rate per Decile
+    gain_matrix["Event Rate"] = gain_matrix["Events"] / gain_matrix["Total_Customers"]
+
+    # Compute Cumulative Event Rate
+    gain_matrix["Cumulative Event Rate"] = gain_matrix["Cumulative_Events"] / gain_matrix["Total_Customers"].sum()
+
+    # Compute Separation (Difference in % Cumulative Events and Non-Events)
+    gain_matrix["Separation"] = gain_matrix["% Cumulative Events"] - gain_matrix["% Cumulative Non-Events"]
+
+    # Compute Lift (Cumulative Event Rate vs. Overall Event Rate)
+    overall_event_rate = total_events / (total_events + total_non_events)
+    gain_matrix["Lift"] = gain_matrix["Cumulative Event Rate"] / overall_event_rate
+
+    # Add Dataset Name
+    gain_matrix["Dataset"] = dataset_name
+
+    return gain_matrix
+
+# Function to calculate AUC
+def calculate_auc(model, X, y):
+    y_pred_proba = model.predict_proba(X)[:, 1]
+    return roc_auc_score(y, y_pred_proba)
+
+# Compute Gain Matrices
+train_gain_matrix = create_gain_matrix(final_model, X_train, y_train, "Train")
+test_gain_matrix = create_gain_matrix(final_model, X_test, y_test, "Test")
+oot_gain_matrix = create_gain_matrix(final_model, X_oot_features, y_oot, "OOT")
+
+# Compute AUC Scores
+train_auc = calculate_auc(final_model, X_train, y_train)
+test_auc = calculate_auc(final_model, X_test, y_test)
+oot_auc = calculate_auc(final_model, X_oot_features, y_oot)
+
+# Combine Gain Matrices for Display
+gain_matrix_df = pd.concat([train_gain_matrix, test_gain_matrix, oot_gain_matrix])
+
+# Display Gain Matrix Table
+print("\n--- Gain Matrix (Decile Analysis) ---")
+print(gain_matrix_df.to_string(index=False))
+
+# Display AUC Scores
+auc_scores_df = pd.DataFrame({
+    "Dataset": ["Train", "Test", "OOT"],
+    "AUC Score": [train_auc, test_auc, oot_auc]
+})
+
+print("\n--- AUC Scores ---")
+print(auc_scores_df.to_string(index=False))
+
+# Plot Cumulative Gain Chart
+plt.figure(figsize=(8, 6))
+plt.plot(train_gain_matrix["Decile"], train_gain_matrix["% Cumulative Events"], marker='o', label="Train")
+plt.plot(test_gain_matrix["Decile"], test_gain_matrix["% Cumulative Events"], marker='s', label="Test")
+plt.plot(oot_gain_matrix["Decile"], oot_gain_matrix["% Cumulative Events"], marker='^', label="OOT")
+
+plt.xlabel("Decile (1 = Highest Risk)")
+plt.ylabel("Cumulative % of Events")
+plt.title("Cumulative Gain Chart Based on Deciles")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plot Lift Chart
+plt.figure(figsize=(8, 6))
+plt.plot(train_gain_matrix["Decile"], train_gain_matrix["Lift"], marker='o', label="Train")
+plt.plot(test_gain_matrix["Decile"], test_gain_matrix["Lift"], marker='s', label="Test")
+plt.plot(oot_gain_matrix["Decile"], oot_gain_matrix["Lift"], marker='^', label="OOT")
+
+plt.xlabel("Decile (1 = Highest Risk)")
+plt.ylabel("Lift")
+plt.title("Lift Chart Based on Deciles")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Main Model
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
