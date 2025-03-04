@@ -1,3 +1,51 @@
+csi
+import numpy as np
+import pandas as pd
+
+# **Function to calculate CSI**
+def calculate_csi(train, other, bins=10):
+    csi_values = {}
+
+    for col in train.columns:
+        # Create Bins
+        train_counts, bin_edges = np.histogram(train[col], bins=bins, density=True)
+        other_counts, _ = np.histogram(other[col], bins=bin_edges, density=True)
+
+        # Convert to Percentages
+        train_percents = train_counts / train_counts.sum()
+        other_percents = other_counts / other_counts.sum()
+
+        train_percents += 1e-10  # Avoid division by zero
+        other_percents += 1e-10
+
+        # Calculate CSI
+        csi_value = np.sum((train_percents - other_percents) * np.log(train_percents / other_percents))
+        csi_values[col] = round(csi_value, 4)
+
+    return pd.DataFrame(list(csi_values.items()), columns=["Feature", "CSI"])
+
+# **Prepare Data by Excluding Specific Features**
+excluded_features = ["samplingweight", "cust_num", "selection_month", "mevent"]
+train_filtered = X_train.drop(columns=excluded_features, errors="ignore")
+test_filtered = X_test.drop(columns=excluded_features, errors="ignore")
+oot_filtered = X_oot_features.drop(columns=excluded_features, errors="ignore")
+
+# **Calculate CSI for Train vs Test & Train vs OOT**
+csi_train_test_df = calculate_csi(train_filtered, test_filtered)
+csi_train_oot_df = calculate_csi(train_filtered, oot_filtered)
+
+# **Save CSI Tables to Excel**
+with pd.ExcelWriter("CSI_Tables.xlsx") as writer:
+    csi_train_test_df.to_excel(writer, sheet_name="CSI_Train_vs_Test", index=False)
+    csi_train_oot_df.to_excel(writer, sheet_name="CSI_Train_vs_OOT", index=False)
+
+# **Print CSI Tables in Console**
+print("\nCSI Table - Train vs Test")
+print(csi_train_test_df.to_string(index=False))
+
+print("\nCSI Table - Train vs OOT")
+print(csi_train_oot_df.to_string(index=False))
+
 
 
 import numpy as np
