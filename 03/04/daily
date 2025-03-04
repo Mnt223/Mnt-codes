@@ -1,3 +1,81 @@
+import numpy as np
+import pandas as pd
+
+# **Function to Compute Gain Matrix**
+def compute_gain_matrix(df, dataset_name, weight_column="samplingweight"):
+    """
+    Computes the Gain Matrix using weighted deciles & calculates key performance metrics.
+    """
+    if weight_column not in df.columns:
+        df[weight_column] = 1  # Default weight if missing
+
+    # **Create Score Bands Using Weighted Quantiles**
+    df["Decile"] = pd.qcut(df["score"], 10, labels=False) + 1  # Assign deciles from 1 to 10
+
+    # **Group by Deciles & Compute Metrics**
+    gain_matrix = df.groupby("Decile").agg(
+        Non_Events=("mevent", lambda x: ((x == 0) * df[weight_column]).sum()),
+        Events=("mevent", lambda x: ((x == 1) * df[weight_column]).sum()),
+        Score_Min=("score", "min")
+    ).reset_index()
+
+    # **Cumulative Sums**
+    gain_matrix["Cum Non-Events"] = gain_matrix["Non_Events"].cumsum()
+    gain_matrix["Cum Events"] = gain_matrix["Events"].cumsum()
+
+    # **Cumulative Percentage**
+    gain_matrix["% Cum Non-Events"] = (gain_matrix["Cum Non-Events"] / gain_matrix["Non_Events"].sum()) * 100
+    gain_matrix["% Cum Events"] = (gain_matrix["Cum Events"] / gain_matrix["Events"].sum()) * 100
+
+    # **Event Rate & Lift Calculation**
+    gain_matrix["Event Rate"] = gain_matrix["Events"] / (gain_matrix["Non_Events"] + gain_matrix["Events"])
+    gain_matrix["Cum Event Rate"] = gain_matrix["Cum Events"] / (gain_matrix["Cum Non-Events"] + gain_matrix["Cum Events"])
+    gain_matrix["Separation"] = gain_matrix["% Cum Events"] - gain_matrix["% Cum Non-Events"]
+    gain_matrix["Lift"] = gain_matrix["Event Rate"] / (df["mevent"].sum() / len(df))  # Lift compared to total event rate
+
+    # **Sort by Score**
+    gain_matrix = gain_matrix.sort_values("Score_Min", ascending=False)
+
+    # **Print & Save**
+    print(f"\nGain Matrix for {dataset_name}:")
+    print(gain_matrix)
+    gain_matrix.to_csv(f"gain_matrix_{dataset_name.lower()}.csv", index=False)
+
+    return gain_matrix
+
+# **Compute Gain Matrices for Train, Test, and OOT**
+gain_matrix_train = compute_gain_matrix(train_final, "Train")
+gain_matrix_test = compute_gain_matrix(test_final, "Test")
+gain_matrix_oot = compute_gain_matrix(oot_final, "OOT")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 decile
 # **Create Deciles & Pentiles Using Weighted Quantiles**
 def create_bins(df, weight_column, bins, label_name):
