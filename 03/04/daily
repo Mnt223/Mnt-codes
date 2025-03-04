@@ -1,5 +1,139 @@
 import numpy as np
 import pandas as pd
+
+# **PSI Calculation Function**
+def psi(X, Y, sampling_weight_X=None, sampling_weight_Y=None, num_bins=5):
+    """
+    Calculates PSI (Population Stability Index) between two datasets (X: Train, Y: Test/OOT).
+    Uses Pentiles (5 bins) to compare score distributions.
+    """
+
+    # **Create Pentile Bins Based on Train Data**
+    X["pentile"] = pd.qcut(X["score"], num_bins, labels=False) + 1  # Pentiles: 1 to 5
+    
+    # Define Boundary Conditions
+    X_tile = X.groupby("pentile")["score"].agg(["min", "max"]).reset_index()
+    X_tile.loc[0, "min"] = -np.inf  # Set first bin's min to -∞
+    X_tile.loc[num_bins - 1, "max"] = np.inf  # Set last bin's max to ∞
+
+    # Assign Score Bins to Train & Test/OOT Data
+    X["bins"] = pd.cut(X["score"], bins=X_tile["min"].tolist() + [X_tile["max"].iloc[-1]], labels=False, include_lowest=True)
+    Y["bins"] = pd.cut(Y["score"], bins=X_tile["min"].tolist() + [X_tile["max"].iloc[-1]], labels=False, include_lowest=True)
+
+    # Compute Normalized Counts with Sampling Weights
+    X_counts = X.groupby("bins")["samplingweight"].sum() / X["samplingweight"].sum() if sampling_weight_X is not None else X["bins"].value_counts(normalize=True)
+    Y_counts = Y.groupby("bins")["samplingweight"].sum() / Y["samplingweight"].sum() if sampling_weight_Y is not None else Y["bins"].value_counts(normalize=True)
+
+    # Ensure Bins are Consistent Across Both Datasets
+    X_counts = X_counts.reindex(range(num_bins), fill_value=1e-6)
+    Y_counts = Y_counts.reindex(range(num_bins), fill_value=1e-6)
+
+    # Compute PSI for Each Bin
+    psi_values = (X_counts - Y_counts) * np.log(X_counts / Y_counts)
+
+    # **Create PSI Breakdown Table**
+    psi_df = pd.DataFrame({
+        "Score Band": X_tile["min"].astype(str) + " - " + X_tile["max"].astype(str),
+        "Train (%)": X_counts.values * 100,
+        "Test/OOT (%)": Y_counts.values * 100,
+        "PSI": psi_values.values
+    })
+
+    # Compute Total PSI
+    total_psi = round(psi_values.sum(), 3)
+
+    return psi_df.round(3), total_psi
+
+# **PSI Table Calculation Function**
+def psi_table(dev_data, val_data):
+    """
+    Generates PSI Table using Weighted Pentiles.
+    """
+    dev_data.columns = dev_data.columns.str.lower()
+    val_data.columns = val_data.columns.str.lower()
+
+    if "samplingweight" not in dev_data.columns:
+        dev_data["samplingweight"] = 1
+    if "samplingweight" not in val_data.columns:
+        val_data["samplingweight"] = 1
+
+    # Drop NaN values in Score
+    dev_data = dev_data.dropna(subset=["score"])
+    val_data = val_data.dropna(subset=["score"])
+
+    # Define bin edges dynamically based on percentiles
+    min_score = dev_data["score"].min()
+    q1 = np.percentile(dev_data["score"], 25)
+    q2 = np.percentile(dev_data["score"], 50)  # Median
+    q3 = np.percentile(dev_data["score"], 75)
+    max_score = dev_data["score"].max()
+    bin_edges = [min_score, q1, q2, q3, max_score]  # 5 edges for 4 bins
+
+    # Assign bins and store the exact score ranges
+    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(bin_edges) - 1)]
+    dev_data["pentile"] = pd.cut(dev_data["score"], bins=bin_edges, labels=bin_labels, include_lowest=True)
+    val_data["pentile"] = pd.cut(val_data["score"], bins=bin_edges, labels=bin_labels, include_lowest=True)
+
+    # Compute percentage in each bin
+    dev_pentile_summary = (dev_data.groupby("pentile")["samplingweight"].sum() / dev_data["samplingweight"].sum()) * 100
+    val_pentile_summary = (val_data.groupby("pentile")["samplingweight"].sum() / val_data["samplingweight"].sum()) * 100
+
+    # Convert to DataFrame
+    pentile_summary = pd.DataFrame({
+        "Score Band": dev_pentile_summary.index,
+        "Train (%)": dev_pentile_summary.values,
+        "Test/OOT (%)": val_pentile_summary.reindex(dev_pentile_summary.index, fill_value=0).values
+    })
+
+    # Calculate PSI
+    pentile_summary["PSI"] = (pentile_summary["Train (%)"] - pentile_summary["Test/OOT (%)"]) * \
+        np.log((pentile_summary["Train (%)"] + 1e-6) / (pentile_summary["Test/OOT (%)"] + 1e-6))
+
+    return pentile_summary.round(3)
+
+# **Calculate PSI for Train vs Test and Train vs OOT**
+psi_train_test, total_psi_train_test = psi(X_train, X_test, X_train["samplingweight"], X_test["samplingweight"])
+psi_train_oot, total_psi_train_oot = psi(X_train, X_oot_features, X_train["samplingweight"], X_oot_features["samplingweight"])
+
+# **Generate PSI Tables**
+psi_train_test_table = psi_table(X_train, X_test)
+psi_train_oot_table = psi_table(X_train, X_oot_features)
+
+# **Save Outputs**
+psi_train_test_table.to_csv("psi_train_test.csv", encoding="utf-8", index=False)
+psi_train_oot_table.to_csv("psi_train_oot.csv", encoding="utf-8", index=False)
+
+# **Print Results**
+print(f"\nTotal PSI (Train vs Test): {total_psi_train_test}")
+print("PSI Table (Train vs Test):")
+print(psi_train_test_table)
+
+print(f"\nTotal PSI (Train vs OOT): {total_psi_train_oot}")
+print("PSI Table (Train vs OOT):")
+print(psi_train_oot_table)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
