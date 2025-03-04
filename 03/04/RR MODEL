@@ -1,3 +1,139 @@
+shap & psi
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, classification_report
+import shap
+
+# Function to calculate Precision, Recall, and F1-Score
+def evaluate_classification(model, X, y, dataset_name):
+    y_pred = model.predict(X)
+    y_proba = model.predict_proba(X)[:, 1]  # Probability of event
+
+    precision = precision_score(y, y_pred)
+    recall = recall_score(y, y_pred)
+    f1 = f1_score(y, y_pred)
+
+    print(f"\n🔹 Classification Report for {dataset_name}:")
+    print(classification_report(y, y_pred))
+
+    return {
+        "Dataset": dataset_name,
+        "Precision": precision,
+        "Recall": recall,
+        "F1-Score": f1
+    }
+
+# Evaluate Train, Test, and OOT
+train_metrics = evaluate_classification(final_model, X_train, y_train, "Train")
+test_metrics = evaluate_classification(final_model, X_test, y_test, "Test")
+oot_metrics = evaluate_classification(final_model, X_oot_features, y_oot, "OOT")
+
+# Create DataFrame for easy comparison
+metrics_df = pd.DataFrame([train_metrics, test_metrics, oot_metrics])
+print("\n🔹 Precision, Recall, and F1-Score Across Datasets:")
+print(metrics_df)
+
+# Function to plot confusion matrix
+def plot_confusion_matrix(y_true, y_pred, title="Confusion Matrix"):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(6, 4))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["Non-Event", "Event"], yticklabels=["Non-Event", "Event"])
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.title(title)
+    plt.show()
+
+# Plot Confusion Matrix for OOT
+y_oot_pred = final_model.predict(X_oot_features)
+plot_confusion_matrix(y_oot, y_oot_pred, title="Confusion Matrix - OOT")
+
+# Function to calculate PSI
+def calculate_psi(expected, actual, bins=10):
+    expected_counts, expected_bins = np.histogram(expected, bins=bins)
+    actual_counts, _ = np.histogram(actual, bins=expected_bins)
+
+    expected_percents = expected_counts / np.sum(expected_counts)
+    actual_percents = actual_counts / np.sum(actual_counts)
+
+    psi_values = (expected_percents - actual_percents) * np.log(expected_percents / actual_percents)
+    psi_values = np.nan_to_num(psi_values)
+
+    return np.sum(psi_values)
+
+# Calculate PSI between Train and OOT for key features
+psi_results = {}
+for col in X_train.columns:
+    psi_results[col] = calculate_psi(X_train[col], X_oot_features[col])
+
+# Convert PSI results to DataFrame
+psi_df = pd.DataFrame(list(psi_results.items()), columns=["Feature", "PSI"])
+psi_df = psi_df.sort_values(by="PSI", ascending=False)
+
+# Display PSI results
+print("\n🔹 Population Stability Index (PSI) Between Train & OOT:")
+print(psi_df.head(10))  # Display top 10 features with highest PSI
+
+# Function to plot SHAP feature importance
+def plot_shap_importance(model, X):
+    explainer = shap.Explainer(model, X)
+    shap_values = explainer(X)
+
+    # Summary Plot (Overall Feature Importance)
+    shap.summary_plot(shap_values, X)
+
+    # Bar Chart for Top 10 Features
+    shap_values_mean = np.abs(shap_values.values).mean(axis=0)
+    shap_importance = pd.DataFrame({"Feature": X.columns, "SHAP Importance": shap_values_mean})
+    shap_importance = shap_importance.sort_values(by="SHAP Importance", ascending=False)
+
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x="SHAP Importance", y="Feature", data=shap_importance[:10], palette="viridis")
+    plt.title("Top 10 Most Important Features (SHAP)")
+    plt.show()
+
+# Generate SHAP Feature Importance Plots
+plot_shap_importance(final_model, X_train)
+
+# Extract feature importance from model
+feature_importance = pd.DataFrame({
+    "Feature": X_train.columns,
+    "Importance": final_model.feature_importances_
+}).sort_values(by="Importance", ascending=False)
+
+# Display all feature importance values
+print("\n🔹 Feature Importance for All Variables:")
+print(feature_importance)
+
+# Display top 10 features
+print("\n🔹 Top 10 Most Important Features:")
+print(feature_importance.head(10))
+
+# Plot Top 10 Feature Importances
+plt.figure(figsize=(10, 6))
+sns.barplot(x="Importance", y="Feature", data=feature_importance[:10], palette="magma")
+plt.title("Top 10 Most Important Features")
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Auc, charts
 
 import numpy as np
