@@ -1,0 +1,121 @@
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.metrics import roc_auc_score
+import joblib
+
+# Load Data (Ensure `Dev_data1` and `X_oot` are preloaded as DataFrames)
+target_column = "mevent"  # Update with actual target variable name
+ignore_features = ["cust_num", "samplingweight", "selection_time"]  # Features to ignore
+
+# Remove ignored features from model input, but keep them in the dataset
+X = Dev_data1.drop(columns=[target_column] + ignore_features)
+y = Dev_data1[target_column]
+
+# Ensure consistent Train-Test Split using random_state=1992
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1992)
+
+# Prepare OOT dataset (Ensure features match Train/Test datasets)
+y_oot = X_oot[target_column]
+X_oot_features = X_oot.drop(columns=[target_column] + ignore_features)
+X_oot_features = X_oot_features[X_train.columns]  # Ensure feature consistency
+
+# Function to calculate Gini Score
+def calculate_gini(model, X, y):
+    y_pred = model.predict_proba(X)[:, 1]  # Get probabilities
+    auc = roc_auc_score(y, y_pred)
+    gini = 2 * auc - 1  # Convert AUC to Gini
+    return gini
+
+# Function to generate Scores and Odds
+def generate_scores_odds(model, X):
+    probs = model.predict_proba(X)[:, 1]  # Get probability of class 1
+    scores = np.log(probs / (1 - probs))  # Log odds transformation
+    return pd.DataFrame({"Score": scores, "Odds": probs / (1 - probs)})
+
+# Define Hyperparameter Search Space (20 Iterations)
+param_grid = {
+    "learning_rate": np.linspace(0.01, 0.3, 10),
+    "max_depth": np.arange(3, 10),
+    "min_samples_leaf": np.arange(1, 50, 5),
+    "n_estimators": np.arange(100, 1000, 100),
+    "subsample": np.linspace(0.5, 1.0, 5)
+}
+
+# Gradient Boosting Classifier with fixed random_state
+gb_model = GradientBoostingClassifier(random_state=1992)
+
+# Use RandomizedSearchCV for Hyperparameter Tuning (20 Iterations) with fixed random_state
+random_search = RandomizedSearchCV(
+    estimator=gb_model,
+    param_distributions=param_grid,
+    n_iter=20,  # 20 Iterations
+    scoring="roc_auc",
+    cv=5,
+    random_state=1992,  # Fixed random state for consistency
+    verbose=1,
+    n_jobs=-1
+)
+
+# Fit the Model
+random_search.fit(X_train, y_train)
+
+# Store Results for Each Iteration
+results = []
+for i, params in enumerate(random_search.cv_results_["params"]):
+    best_model = GradientBoostingClassifier(**params, random_state=1992)  # Ensure consistent model training
+    best_model.fit(X_train, y_train)
+
+    # Compute Gini Scores
+    train_gini = calculate_gini(best_model, X_train, y_train)
+    test_gini = calculate_gini(best_model, X_test, y_test)
+    oot_gini = calculate_gini(best_model, X_oot_features, y_oot)
+
+    # Store iteration results
+    results.append({
+        "Iteration": i + 1,
+        "Learning Rate": params.get("learning_rate"),
+        "Max Depth": params.get("max_depth"),
+        "Min Samples Leaf": params.get("min_samples_leaf"),
+        "Estimators": params.get("n_estimators"),
+        "Subsample": params.get("subsample"),
+        "Train Gini": train_gini,
+        "Test Gini": test_gini,
+        "OOT Gini": oot_gini,
+        "Train-OOT Gini Diff": abs(train_gini - oot_gini)
+    })
+
+# Convert results into DataFrame
+results_df = pd.DataFrame(results)
+
+# Step 5: Select Best Model (Highest Test Gini, Smallest Train-OOT Gini Difference)
+best_model_row = results_df[results_df["Train-OOT Gini Diff"] < 0.05].nlargest(1, "Test Gini")
+
+# Step 6: Train & Save the Best Model
+best_params = best_model_row.iloc[0][["Learning Rate", "Max Depth", "Min Samples Leaf", "Estimators", "Subsample"]].to_dict()
+final_model = GradientBoostingClassifier(
+    learning_rate=best_params["Learning Rate"],
+    max_depth=int(best_params["Max Depth"]),
+    min_samples_leaf=int(best_params["Min Samples Leaf"]),
+    n_estimators=int(best_params["Estimators"]),
+    subsample=best_params["Subsample"],
+    random_state=1992  # Keep the same random state
+)
+
+final_model.fit(X_train, y_train)
+joblib.dump(final_model, "best_gradient_boosting.pkl")  # Save Model
+
+# Generate Scores & Odds for all datasets
+dev_scores = generate_scores_odds(final_model, X)
+train_scores = generate_scores_odds(final_model, X_train)
+test_scores = generate_scores_odds(final_model, X_test)
+oot_scores = generate_scores_odds(final_model, X_oot_features)
+
+# Step 7: Display Results Table
+import ace_tools as tools
+tools.display_dataframe_to_user(name="Gradient Boosting Hyperparameter Tuning Results", dataframe=results_df)
+tools.display_dataframe_to_user(name="Dev Data Scores & Odds", dataframe=dev_scores)
+tools.display_dataframe_to_user(name="Train Data Scores & Odds", dataframe=train_scores)
+tools.display_dataframe_to_user(name="Test Data Scores & Odds", dataframe=test_scores)
+tools.display_dataframe_to_user(name="OOT Data Scores & Odds", dataframe=oot_scores)
