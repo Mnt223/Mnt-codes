@@ -1,3 +1,56 @@
+import numpy as np
+import pandas as pd
+
+# **Function to Merge Scores & Apply Log-Odds Scaling**
+def create_final_dataset(original_data, X_data, y_data, model, dataset_name):
+    """
+    Merges predicted scores into the full dataset while keeping ignored variables
+    and applying log-odds transformation for better interpretability.
+    """
+    # **Get Predicted Probabilities**
+    pred_proba = model.predict_proba(X_data)
+
+    # **Compute Log-Odds Score**
+    odds = pred_proba[:, 1] / pred_proba[:, 0]  # (P/1-P)
+    score = 200 + 28.8539 * np.log(odds)  # Apply credit score scaling
+
+    # **Convert to DataFrame**
+    scores_df = pd.DataFrame({"probability": pred_proba[:, 1], "score": score.round(0).astype(int)}, index=X_data.index)
+
+    # **Merge Scores Back to the Full Dataset**
+    final_data = original_data.copy()
+    final_data = final_data.loc[X_data.index]  # Ensure alignment
+    final_data = final_data.join(scores_df, how="left")
+
+    # **Ensure Target Variable Exists**
+    if "mevent" not in final_data.columns:
+        final_data["mevent"] = y_data
+
+    # **Print Sample for Validation**
+    print(f"\n{dataset_name} Final Dataset Sample (Log-Odds Scoring Applied):")
+    print(final_data.head())
+
+    return final_data
+
+# **Generate Final Datasets with Log-Odds Scores**
+train_final = create_final_dataset(Dev_data1, X_train, y_train, final_model, "Train")
+test_final = create_final_dataset(Dev_data1, X_test, y_test, final_model, "Test")
+oot_final = create_final_dataset(X_oot, X_oot_features, y_oot, final_model, "OOT")
+
+# **Save for Reference**
+train_final.to_csv("train_final_with_log_odds_scores.csv", index=False)
+test_final.to_csv("test_final_with_log_odds_scores.csv", index=False)
+oot_final.to_csv("oot_final_with_log_odds_scores.csv", index=False)
+
+
+
+
+
+
+
+
+
+
 # **Create Final Dataset with Scores While Keeping Ignored Variables**
 def create_final_dataset(original_data, X_data, y_data, model, ignored_features, dataset_name):
     """
