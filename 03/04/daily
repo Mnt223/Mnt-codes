@@ -1,6 +1,82 @@
 import numpy as np
 import pandas as pd
 
+# **Step 1: Define Score Bands**
+score_bins = [-np.inf, 100, 200, 300, 400, np.inf]
+score_labels = ["E. <100", "D. 100-200", "C. 200-300", "B. 300-400", "A. >400"]
+
+def assign_score_band(score):
+    """Assigns a score band label based on fixed score bins."""
+    return pd.cut([score], bins=score_bins, labels=score_labels, include_lowest=True)[0]
+
+# **Step 2: Define Feature Value Bands with Fixed Binning**
+def assign_feature_band(feature_values):
+    """
+    Creates feature bands based on quantiles while handling duplicate bin edges.
+    """
+    feature_values = feature_values.dropna()  # Remove NaN values
+
+    # Compute percentiles
+    bins = np.percentile(feature_values, [0, 20, 40, 60, 80, 100])
+
+    # Ensure bins are unique (remove duplicates)
+    bins = np.unique(bins)
+
+    # If all values are identical, create a fallback bin range
+    if len(bins) < 6:
+        bins = np.linspace(feature_values.min(), feature_values.max(), num=6)
+
+    labels = ["A. >Top 20%", "B. 60-80%", "C. 40-60%", "D. 20-40%", "E. <20%"]
+    return pd.cut(feature_values, bins=bins, labels=labels, include_lowest=True)
+
+# **Step 3: Identify Top 6 Features**
+feature_importance = pd.DataFrame({
+    "Feature": train_final.drop(columns=["score", "mevent", "samplingweight", "cust_num", "selection_month"], errors="ignore").columns,
+    "Importance": final_model.feature_importances_
+}).sort_values(by="Importance", ascending=False).head(6)
+
+top_6_features = feature_importance["Feature"].tolist()
+print("\nTop 6 Features Selected:", top_6_features)
+
+# **Step 4: Generate Tables for Each of the Top 6 Features**
+tables = {}
+
+for feature in top_6_features:
+    print(f"\nProcessing Feature: {feature}")
+
+    # Copy dataset & Assign Score Bands
+    df_temp = train_final.copy()
+    df_temp["Score Band"] = df_temp["score"].apply(assign_score_band)
+
+    # Assign Feature Value Bands
+    df_temp[f"{feature} Band"] = assign_feature_band(df_temp[feature])
+
+    # Group by Score Band & Feature Band, Count Customers
+    grouped_df = df_temp.groupby(["Score Band", f"{feature} Band"]).size().reset_index(name="Freq Cust Cnt")
+
+    # Calculate % of Total Customers in Each Group
+    total_customers = grouped_df["Freq Cust Cnt"].sum()
+    grouped_df["% Cust"] = (grouped_df["Freq Cust Cnt"] / total_customers) * 100
+
+    # Sort by Score Band & Feature Band
+    grouped_df = grouped_df.sort_values(by=["Score Band", f"{feature} Band"], ascending=[True, True])
+
+    # Save Table
+    tables[feature] = grouped_df
+    grouped_df.to_csv(f"table_{feature}.csv", index=False)
+
+    # Print Table Preview
+    print(grouped_df.head())
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
 # ----- Step 1: Define Functions to Assign Score and Feature Bands -----
 
 # Define fixed score bands using specified boundaries
