@@ -1,3 +1,78 @@
+# **Create Final Dataset with Scores While Keeping Ignored Variables**
+def create_final_dataset(original_data, X_data, y_data, model, ignored_features, dataset_name):
+    """
+    Merges predicted scores into the full dataset, ensuring ignored features remain.
+    """
+    # Predict Scores
+    scores = pd.DataFrame({"score": model.predict_proba(X_data)[:, 1]}, index=X_data.index)
+
+    # **Copy Original Data to Keep Ignored Variables**
+    final_data = original_data.copy()
+
+    # **Ensure Only Relevant Rows Are Used**
+    final_data = final_data.loc[final_data.index.intersection(X_data.index)]
+
+    # **Join Scores Back to the Full Dataset (Keeping Ignored Variables)**
+    final_data = final_data.join(scores, how="left")
+
+    # **Ensure Target Variable Exists**
+    if "mevent" not in final_data.columns:
+        final_data["mevent"] = y_data
+
+    # **Fix Any Remaining NaN Scores by Re-Predicting for Missing Rows**
+    missing_rows = final_data["score"].isna().sum()
+    if missing_rows > 0:
+        print(f"\n⚠️ Warning: {missing_rows} missing scores detected in {dataset_name}. Recomputing predictions...")
+        missing_data = final_data[final_data["score"].isna()].drop(columns=["score"], errors="ignore")
+        final_data.loc[final_data["score"].isna(), "score"] = model.predict_proba(missing_data.drop(columns=["mevent"] + ignored_features, errors="ignore"))[:, 1]
+
+    # **Final Check: Ensure No NaN Scores**
+    final_data["score"].fillna(0.5, inplace=True)  # Assign neutral probability only if absolutely necessary
+
+    # **Print Sample Check**
+    print(f"\n{dataset_name} Final Dataset Sample (Keeping Ignored Variables):")
+    print(final_data.head())
+
+    return final_data
+
+# **List of Features to Ignore During Training**
+ignored_features = ["samplingweight", "cust_num", "selection_month"]
+
+# **Generate Final Datasets (Ensuring Ignored Variables Remain)**
+train_final = create_final_dataset(Dev_data1, X_train, y_train, final_model, ignored_features, "Train")
+test_final = create_final_dataset(Dev_data1, X_test, y_test, final_model, ignored_features, "Test")
+oot_final = create_final_dataset(X_oot, X_oot_features, y_oot, final_model, ignored_features, "OOT")
+
+# **Save for Reference**
+train_final.to_csv("train_final_with_ignored_vars.csv", index=False)
+test_final.to_csv("test_final_with_ignored_vars.csv", index=False)
+oot_final.to_csv("oot_final_with_ignored_vars.csv", index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # **Create Final Dataset with All Variables & Scores**
 def create_final_dataset(original_data, X_data, y_data, model, dataset_name):
     """
