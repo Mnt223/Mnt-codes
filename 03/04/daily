@@ -1,3 +1,57 @@
+# **Create Final Dataset with All Variables & Scores**
+def create_final_dataset(original_data, X_data, y_data, model, dataset_name):
+    """
+    Merges the predicted scores back into the full dataset (including ignored features).
+    """
+    # Predict Scores
+    scores = model.predict_proba(X_data)[:, 1]  # Get probability of event (positive class)
+
+    # Convert to DataFrame
+    score_df = pd.DataFrame({"score": scores}, index=X_data.index)
+
+    # Merge Scores Back into the Full Dataset
+    final_data = original_data.copy()
+    final_data["score"] = score_df["score"]
+    
+    # Ensure Target Variable Exists
+    if "mevent" not in final_data.columns:
+        final_data["mevent"] = y_data
+
+    # Print Check
+    print(f"\n{dataset_name} Final Dataset Sample:")
+    print(final_data.head())
+
+    return final_data
+
+# **Generate Final Datasets**
+train_final = create_final_dataset(Dev_data1, X_train, y_train, final_model, "Train")
+test_final = create_final_dataset(Dev_data1, X_test, y_test, final_model, "Test")
+oot_final = create_final_dataset(X_oot, X_oot_features, y_oot, final_model, "OOT")
+
+# **Save for Reference**
+train_final.to_csv("train_final_with_scores.csv", index=False)
+test_final.to_csv("test_final_with_scores.csv", index=False)
+oot_final.to_csv("oot_final_with_scores.csv", index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
