@@ -5,6 +5,53 @@ import pandas as pd
 def create_bins_fixed(df, bins, label_name):
     """
     Creates decile or pentile bins based on score order (highest risk first).
+    Ensures duplicate columns are not created.
+    """
+    df = df.drop(columns=[label_name], errors="ignore")  # Drop existing column if it exists
+    df = df.sort_values("score", ascending=False).reset_index(drop=True)  # Sort scores descending
+    df[label_name] = pd.cut(df.index, bins, labels=False) + 1  # Assign bin labels from 1 to bins
+    return df
+
+# **Apply Corrected Decile & Pentile Binning (Avoiding Duplicates)**
+train_final = create_bins_fixed(train_final, bins=10, label_name="Decile")
+train_final = create_bins_fixed(train_final, bins=5, label_name="Pentile")
+
+test_final = create_bins_fixed(test_final, bins=10, label_name="Decile")
+test_final = create_bins_fixed(test_final, bins=5, label_name="Pentile")
+
+oot_final = create_bins_fixed(oot_final, bins=10, label_name="Decile")
+oot_final = create_bins_fixed(oot_final, bins=5, label_name="Pentile")
+
+# **Save Fixed Bins**
+train_final.to_csv("train_final_fixed_bins.csv", index=False)
+test_final.to_csv("test_final_fixed_bins.csv", index=False)
+oot_final.to_csv("oot_final_fixed_bins.csv", index=False)
+
+# **Check Sample Output**
+print("\nFixed Train Data with Corrected Deciles & Pentiles (No Duplicate Columns):")
+print(train_final.head())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
+# **Fix Decile & Pentile Binning with Proper Score Ordering**
+def create_bins_fixed(df, bins, label_name):
+    """
+    Creates decile or pentile bins based on score order (highest risk first).
     """
     df = df.sort_values("score", ascending=False).reset_index(drop=True)  # Sort scores descending
     df[label_name] = pd.cut(df.index, bins, labels=False) + 1  # Assign bin labels from 1 to bins
