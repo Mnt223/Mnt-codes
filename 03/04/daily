@@ -1,6 +1,87 @@
 import numpy as np
 import pandas as pd
 
+# ----- Step 1: Define Functions to Assign Score and Feature Bands -----
+
+# Define fixed score bands using specified boundaries
+score_bins = [-np.inf, 100, 200, 300, 400, np.inf]
+# Here, we want the highest scores to be in band "A. >400" and lowest in "E. <100".
+score_labels = ["E. <100", "D. 100-200", "C. 200-300", "B. 300-400", "A. >400"]
+
+def assign_score_band(score):
+    """Assign a score band label based on the score value."""
+    # pd.cut returns a categorical; since we are passing a single value wrapped in a list, get the first element.
+    return pd.cut([score], bins=score_bins, labels=score_labels, include_lowest=True)[0]
+
+def assign_feature_band(feature_values):
+    """
+    Create 5 quantile-based bins for a feature and assign alphabet labels.
+    The labels are designed so that the top 20% (largest values) get label "A. >Top 20%"
+    and the lowest get "E. <20%".
+    """
+    # Calculate the bin edges using percentiles
+    bins = np.percentile(feature_values.dropna(), [0, 20, 40, 60, 80, 100])
+    labels = ["A. >Top 20%", "B. 60-80%", "C. 40-60%", "D. 20-40%", "E. <20%"]
+    return pd.cut(feature_values, bins=bins, labels=labels, include_lowest=True)
+
+# ----- Step 2: Identify Top 6 Features from the Model (Assuming final_model and train_final exist) -----
+# Extract feature importance from the model (make sure train_final has all the features used)
+feature_importance = pd.DataFrame({
+    "Feature": train_final.drop(columns=["score", "mevent", "samplingweight", "cust_num", "selection_month"], errors="ignore").columns,
+    "Importance": final_model.feature_importances_
+}).sort_values(by="Importance", ascending=False).head(6)
+
+top_6_features = feature_importance["Feature"].tolist()
+print("\nTop 6 Features Selected:", top_6_features)
+
+# ----- Step 3: Generate the Tables for Each of the Top 6 Features -----
+tables = {}  # Dictionary to hold tables for each feature
+
+for feature in top_6_features:
+    print(f"\nProcessing Feature: {feature}")
+
+    # Create a temporary copy of the final training dataset
+    df_temp = train_final.copy()
+    
+    # Assign Score Band using the raw (decimal) scores
+    df_temp["Score Band"] = df_temp["score"].apply(assign_score_band)
+    
+    # Assign Feature Value Band for the current feature using quantile bins
+    df_temp[f"{feature} Band"] = assign_feature_band(df_temp[feature])
+    
+    # Group by Score Band and the feature's band; use .size() to count rows (customers)
+    grouped_df = df_temp.groupby(["Score Band", f"{feature} Band"]).size().reset_index(name="Freq Cust Cnt")
+    
+    # Calculate total count for percentage calculation
+    total_customers = grouped_df["Freq Cust Cnt"].sum()
+    grouped_df["% Cust"] = (grouped_df["Freq Cust Cnt"] / total_customers) * 100
+    
+    # Sort for proper presentation (by Score Band then by Feature Band)
+    grouped_df = grouped_df.sort_values(by=["Score Band", f"{feature} Band"], ascending=[True, True])
+    
+    # Store and save the table
+    tables[feature] = grouped_df
+    grouped_df.to_csv(f"table_{feature}.csv", index=False)
+    
+    # Print preview of the table
+    print(f"Table for {feature}:")
+    print(grouped_df.head())
+
+# Now you will have six CSV files (one for each top feature) with columns:
+# Score Band, [Feature] Band, Freq Cust Cnt, and % Cust.
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
 # **Define Score Bands with Alphabet Labels**
 score_bins = [-np.inf, 100, 200, 300, 400, np.inf]
 score_labels = ["A. >400", "B. 300-400", "C. 200-300", "D. 100-200", "E. <100"]
