@@ -1,3 +1,58 @@
+psi 
+
+import numpy as np
+import pandas as pd
+
+# Function to calculate PSI (Population Stability Index)
+def calculate_psi(expected, actual, bins=10):
+    expected_counts, expected_bins = np.histogram(expected, bins=bins)
+    actual_counts, _ = np.histogram(actual, bins=expected_bins)
+
+    expected_percents = expected_counts / np.sum(expected_counts)
+    actual_percents = actual_counts / np.sum(actual_counts)
+
+    psi_values = (expected_percents - actual_percents) * np.log(expected_percents / actual_percents)
+    psi_values = np.nan_to_num(psi_values)  # Handle zero values safely
+
+    return np.sum(psi_values)
+
+# Ensure `X_train`, `X_test`, `X_oot_features` are loaded before running
+# Compute PSI for Train vs Test and Train vs OOT
+psi_train_test = {col: calculate_psi(X_train[col], X_test[col]) for col in X_train.columns}
+psi_train_oot = {col: calculate_psi(X_train[col], X_oot_features[col]) for col in X_train.columns}
+
+# Convert PSI results to DataFrame
+psi_df = pd.DataFrame({
+    "Feature": list(psi_train_test.keys()),
+    "PSI_Train_vs_Test": list(psi_train_test.values()),
+    "PSI_Train_vs_OOT": list(psi_train_oot.values())
+})
+
+# Sort by highest PSI values
+psi_df = psi_df.sort_values(by="PSI_Train_vs_OOT", ascending=False)
+
+# Display PSI Table
+print("\n🔹 PSI Train vs Test & Train vs OOT")
+print(psi_df.to_string(index=False))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 shap & psi
 
 import numpy as np
