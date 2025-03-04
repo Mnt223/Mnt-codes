@@ -1,3 +1,5 @@
+
+
 import numpy as np
 import pandas as pd
 
@@ -23,8 +25,14 @@ train_scores = best_model.predict_proba(X_train)[:, 1]
 test_scores = best_model.predict_proba(X_test)[:, 1]
 oot_scores = best_model.predict_proba(X_oot_features)[:, 1]
 
-# Define Score Bands Using Fixed Ranges to Match Your Excel Format
-score_bins = np.percentile(train_scores, [0, 20, 40, 60, 80, 100])  # 5 bands
+# **Fix Score Bands: Scale Probabilities to Meaningful Numeric Ranges**
+score_scale = 300  # Adjust based on actual score distribution
+train_scores_scaled = train_scores * score_scale
+test_scores_scaled = test_scores * score_scale
+oot_scores_scaled = oot_scores * score_scale
+
+# Define Score Bands Using Percentiles (Avoids 0-0 issue)
+score_bins = np.percentile(train_scores_scaled, [0, 20, 40, 60, 80, 100])
 score_band_labels = [
     f"{int(score_bins[4])}-high",
     f"{int(score_bins[3])}-{int(score_bins[4])}",
@@ -33,9 +41,9 @@ score_band_labels = [
     f"low-{int(score_bins[1])}"
 ]
 
-# Compute PSI for Train vs Test
-psi_train_test, bins_tt, train_percents_tt, test_percents = calculate_psi(train_scores, test_scores, bins=score_bins)
-psi_train_oot, bins_to, train_percents_to, oot_percents = calculate_psi(train_scores, oot_scores, bins=score_bins)
+# Compute PSI for Train vs Test using fixed score bands
+psi_train_test, bins_tt, train_percents_tt, test_percents = calculate_psi(train_scores_scaled, test_scores_scaled, bins=score_bins)
+psi_train_oot, bins_to, train_percents_to, oot_percents = calculate_psi(train_scores_scaled, oot_scores_scaled, bins=score_bins)
 
 # Create PSI Table: Train vs Test
 psi_train_test_df = pd.DataFrame({
