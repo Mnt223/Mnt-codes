@@ -1,3 +1,112 @@
+decile
+# **Create Deciles & Pentiles Using Weighted Quantiles**
+def create_bins(df, weight_column, bins, label_name):
+    """
+    Creates weighted quantile-based bins (Deciles or Pentiles).
+    """
+    if weight_column not in df.columns:
+        df[weight_column] = 1  # Default weight if missing
+
+    df[label_name] = pd.qcut(df["score"], bins, labels=False) + 1  # Bin labels from 1 to bins
+    return df
+
+# **Apply Decile & Pentile Binning**
+train_final = create_bins(train_final, "samplingweight", bins=10, label_name="Decile")
+train_final = create_bins(train_final, "samplingweight", bins=5, label_name="Pentile")
+
+test_final = create_bins(test_final, "samplingweight", bins=10, label_name="Decile")
+test_final = create_bins(test_final, "samplingweight", bins=5, label_name="Pentile")
+
+oot_final = create_bins(oot_final, "samplingweight", bins=10, label_name="Decile")
+oot_final = create_bins(oot_final, "samplingweight", bins=5, label_name="Pentile")
+
+# **Save to CSV**
+train_final.to_csv("train_final_with_bins.csv", index=False)
+test_final.to_csv("test_final_with_bins.csv", index=False)
+oot_final.to_csv("oot_final_with_bins.csv", index=False)
+
+# **Print Sample Check**
+print("\nTrain Data with Decile & Pentile Bins:")
+print(train_final.head())
+
+
+
+
+
+
+
+
+
+psi
+import numpy as np
+import pandas as pd
+
+# **PSI Calculation Function**
+def calculate_psi(train, test, bins=5):
+    """
+    Calculate PSI (Population Stability Index) between Train and Test/OOT.
+    Uses Score Pentiles for binning.
+    """
+    # **Create Pentiles Based on Train Data**
+    train["pentile"] = pd.qcut(train["score"], bins, labels=False) + 1
+
+    # Define Boundary Conditions
+    train_bins = train.groupby("pentile")["score"].agg(["min", "max"]).reset_index()
+    train_bins.loc[0, "min"] = -np.inf  # Set first bin's min to -∞
+    train_bins.loc[bins - 1, "max"] = np.inf  # Set last bin's max to ∞
+
+    # **Assign Score Bins to Train & Test/OOT Data**
+    train["bins"] = pd.cut(train["score"], bins=train_bins["min"].tolist() + [train_bins["max"].iloc[-1]], labels=False, include_lowest=True)
+    test["bins"] = pd.cut(test["score"], bins=train_bins["min"].tolist() + [train_bins["max"].iloc[-1]], labels=False, include_lowest=True)
+
+    # **Compute Normalized Counts**
+    train_counts = train["bins"].value_counts(normalize=True).sort_index()
+    test_counts = test["bins"].value_counts(normalize=True).sort_index()
+
+    # **Ensure Bins are Consistent Across Both Datasets**
+    train_counts = train_counts.reindex(range(bins), fill_value=1e-6)
+    test_counts = test_counts.reindex(range(bins), fill_value=1e-6)
+
+    # **Compute PSI for Each Bin**
+    psi_values = (train_counts - test_counts) * np.log(train_counts / test_counts)
+
+    # **Create PSI Breakdown Table**
+    psi_df = pd.DataFrame({
+        "Score Band": train_bins["min"].astype(str) + " - " + train_bins["max"].astype(str),
+        "Train (%)": train_counts.values * 100,
+        "Test/OOT (%)": test_counts.values * 100,
+        "PSI": psi_values.values
+    })
+
+    # **Compute Total PSI**
+    total_psi = round(psi_values.sum(), 3)
+
+    return psi_df.round(3), total_psi
+
+# **Run PSI Calculations**
+psi_train_test, total_psi_train_test = calculate_psi(train_final, test_final, bins=5)
+psi_train_oot, total_psi_train_oot = calculate_psi(train_final, oot_final, bins=5)
+
+# **Save PSI Tables**
+psi_train_test.to_csv("psi_train_test.csv", index=False)
+psi_train_oot.to_csv("psi_train_oot.csv", index=False)
+
+# **Print PSI Summary**
+print(f"\nTotal PSI (Train vs Test): {total_psi_train_test}")
+print(psi_train_test)
+
+print(f"\nTotal PSI (Train vs OOT): {total_psi_train_oot}")
+print(psi_train_oot)
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
