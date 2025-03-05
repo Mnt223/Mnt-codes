@@ -1,3 +1,96 @@
+import numpy as np
+import pandas as pd
+
+# Function to calculate PSI with Sampling Weights
+def calculate_psi_weighted(expected, actual, expected_weights, actual_weights, smoothing=0.0001):
+    # Normalize the weighted distributions to sum to 1
+    expected_dist = expected * expected_weights / np.sum(expected * expected_weights)
+    actual_dist = actual * actual_weights / np.sum(actual * actual_weights)
+
+    # Replace zero values to avoid log(0)
+    expected_dist = np.where(expected_dist == 0, smoothing, expected_dist)
+    actual_dist = np.where(actual_dist == 0, smoothing, actual_dist)
+
+    # PSI Calculation
+    psi_values = (expected_dist - actual_dist) * np.log(expected_dist / actual_dist)
+    psi_values = np.nan_to_num(psi_values)  # Handle NaN values safely
+
+    return np.sum(psi_values)
+
+# Function to create PSI table with sampling weights
+def create_psi_table_weighted(train_scores, comparison_scores, train_weights, comparison_weights, bins=5, comparison_name="Test"):
+    # Define fixed bin edges (5 equal-width bins based on min/max of train data)
+    min_score, max_score = np.min(train_scores), np.max(train_scores)
+    bin_edges = np.linspace(min_score, max_score, bins + 1)  # Pentile-based bins
+
+    # Create bin labels
+    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(bin_edges) - 1)]
+
+    # Assign scores to fixed bins
+    train_bins = pd.cut(train_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+    comparison_bins = pd.cut(comparison_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+
+    # Calculate weighted distribution percentages
+    train_counts = train_bins.value_counts().sort_index()
+    comparison_counts = comparison_bins.value_counts().sort_index()
+
+    # Apply sampling weights
+    train_dist = (train_counts * train_weights.groupby(train_bins).mean()).fillna(0)
+    comparison_dist = (comparison_counts * comparison_weights.groupby(comparison_bins).mean()).fillna(0)
+
+    # Normalize to percentages
+    train_dist /= train_dist.sum()
+    comparison_dist /= comparison_dist.sum()
+
+    # Compute PSI using weighted distributions
+    psi_value = calculate_psi_weighted(train_dist.values, comparison_dist.values, train_weights.mean(), comparison_weights.mean())
+
+    # Create PSI table
+    psi_df = pd.DataFrame({
+        "Score Band": bin_labels,
+        "Train %": train_dist.values * 100,
+        f"{comparison_name} %": comparison_dist.values * 100,
+        f"PSI (Train vs {comparison_name})": (train_dist - comparison_dist) * np.log(train_dist / comparison_dist)
+    })
+
+    # Replace NaN with 0 (to handle cases where no data is present in a bin)
+    psi_df.fillna(0, inplace=True)
+
+    # Add Total PSI row
+    psi_df.loc["Total"] = ["Total", "-", "-", psi_value]
+
+    return psi_df
+
+# Extract Train, Test, and OOT scores + sampling weights from datasets
+train_scores = Dev_data1.loc[X_train.index, "score"]
+test_scores = Dev_data1.loc[X_test.index, "score"]
+oot_scores = X_oot["score"]
+
+train_weights = Dev_data1.loc[X_train.index, "sampling_weight"]
+test_weights = Dev_data1.loc[X_test.index, "sampling_weight"]
+oot_weights = X_oot["sampling_weight"]
+
+# Generate Weighted PSI tables
+psi_table_test_weighted = create_psi_table_weighted(train_scores, test_scores, train_weights, test_weights, bins=5, comparison_name="Test")
+psi_table_oot_weighted = create_psi_table_weighted(train_scores, oot_scores, train_weights, oot_weights, bins=5, comparison_name="OOT")
+
+# Display PSI tables
+print("\n🔹 PSI Table - Train vs Test (Weighted)")
+print(psi_table_test_weighted)
+
+print("\n🔹 PSI Table - Train vs OOT (Weighted)")
+print(psi_table_oot_weighted)
+
+
+
+
+
+
+
+
+
+
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 
