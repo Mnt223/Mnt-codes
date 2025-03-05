@@ -1,0 +1,206 @@
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.metrics import roc_auc_score
+import joblib
+
+# Load Data
+target_column = "mevent"
+ignore_features = ["cust_num", "samplingweight", "selection_time"]
+
+# Step 1: Prepare Training Data (Ignore Features for Model)
+X = Dev_data1.drop(columns=[target_column] + ignore_features)
+y = Dev_data1[target_column]
+
+# Step 2: Train-Test Split (Ensure Consistency)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1992)
+
+# Step 3: Prepare OOT Dataset (Ensure Features Match Train/Test)
+y_oot = X_oot[target_column]
+X_oot_features = X_oot.drop(columns=[target_column] + ignore_features)
+X_oot_features = X_oot_features[X_train.columns]  # Ensure feature consistency
+
+# Function to calculate Gini Score
+def calculate_gini(model, X, y):
+    y_pred = model.predict_proba(X)[:, 1]  # Get probabilities
+    auc = roc_auc_score(y, y_pred)
+    gini = 2 * auc - 1  # Convert AUC to Gini
+    return gini
+
+# Function to generate Scores & Odds
+def generate_scores_odds(model, X):
+    probs = model.predict_proba(X)[:, 1]  # Probability of class 1
+    scores = np.log(probs / (1 - probs))  # Log odds transformation
+    return pd.DataFrame({"score": scores, "odds": probs / (1 - probs)}, index=X.index)
+
+# Step 4: Define Hyperparameter Grid (20 Iterations)
+param_grid = {
+    "learning_rate": np.linspace(0.01, 0.3, 10),
+    "max_depth": np.arange(3, 10),
+    "min_samples_leaf": np.arange(1, 50, 5),
+    "n_estimators": np.arange(100, 1000, 100),
+    "subsample": np.linspace(0.5, 1.0, 5)
+}
+
+# Initialize Model
+gb_model = GradientBoostingClassifier(random_state=1992)
+
+# Hyperparameter Tuning (20 Iterations)
+random_search = RandomizedSearchCV(
+    estimator=gb_model,
+    param_distributions=param_grid,
+    n_iter=20,
+    scoring="roc_auc",
+    cv=5,
+    random_state=1992,
+    verbose=1,
+    n_jobs=-1
+)
+
+# Fit Model
+random_search.fit(X_train, y_train)
+
+# Step 5: Store Hyperparameter Results
+results = []
+for i, params in enumerate(random_search.cv_results_["params"]):
+    best_model = GradientBoostingClassifier(**params, random_state=1992)
+    best_model.fit(X_train, y_train)
+
+    train_gini = calculate_gini(best_model, X_train, y_train)
+    test_gini = calculate_gini(best_model, X_test, y_test)
+    oot_gini = calculate_gini(best_model, X_oot_features, y_oot)
+
+    results.append({
+        "Iteration": i + 1,
+        "Learning Rate": params.get("learning_rate"),
+        "Max Depth": params.get("max_depth"),
+        "Min Samples Leaf": params.get("min_samples_leaf"),
+        "Estimators": params.get("n_estimators"),
+        "Subsample": params.get("subsample"),
+        "Train Gini": train_gini,
+        "Test Gini": test_gini,
+        "OOT Gini": oot_gini,
+        "Train-OOT Gini Diff": abs(train_gini - oot_gini)
+    })
+
+# Convert to DataFrame
+results_df = pd.DataFrame(results)
+
+# Step 6: Select Best Model (Highest Test Gini, Smallest Train-OOT Gini Difference)
+best_model_row = results_df[results_df["Train-OOT Gini Diff"] < 0.05].nlargest(1, "Test Gini")
+
+# Step 7: Train & Save Best Model
+best_params = best_model_row.iloc[0][["Learning Rate", "Max Depth", "Min Samples Leaf", "Estimators", "Subsample"]].to_dict()
+final_model = GradientBoostingClassifier(
+    learning_rate=best_params["Learning Rate"],
+    max_depth=int(best_params["Max Depth"]),
+    min_samples_leaf=int(best_params["Min Samples Leaf"]),
+    n_estimators=int(best_params["Estimators"]),
+    subsample=best_params["Subsample"],
+    random_state=1992
+)
+final_model.fit(X_train, y_train)
+joblib.dump(final_model, "best_gradient_boosting.pkl")
+
+# Step 8: Generate Scores & Odds
+train_scores = generate_scores_odds(final_model, X_train)
+test_scores = generate_scores_odds(final_model, X_test)
+oot_scores = generate_scores_odds(final_model, X_oot_features)
+
+# Step 9: Restore All Variables (Including Ignored Features)
+X_train_final = Dev_data1.loc[X_train.index].copy()
+X_test_final = Dev_data1.loc[X_test.index].copy()
+X_oot_final = X_oot.copy()
+
+# Step 10: Add Scores & Odds to Full Datasets
+X_train_final = X_train_final.merge(train_scores, left_index=True, right_index=True)
+X_test_final = X_test_final.merge(test_scores, left_index=True, right_index=True)
+X_oot_final = X_oot_final.merge(oot_scores, left_index=True, right_index=True)
+
+# Step 11: Verify Final Data Structures
+print("\n✅ Train Data Final Structure:\n", X_train_final.head())
+print("\n✅ Test Data Final Structure:\n", X_test_final.head())
+print("\n✅ OOT Data Final Structure:\n", X_oot_final.head())
+
+# Step 12: Display Results (You don't have access to ace_tools, so just print the results)
+print("\n✅ Gradient Boosting Hyperparameter Tuning Results:")
+print(results_df)
+
+print("\n✅ Train Data Scores & Odds:")
+print(X_train_final[['score', 'odds']].head())
+
+print("\n✅ Test Data Scores & Odds:")
+print(X_test_final[['score', 'odds']].head())
+
+print("\n✅ OOT Data Scores & Odds:")
+print(X_oot_final[['score', 'odds']].head())
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
+# ✅ Step 1: Generate Scores & Odds for Any Dataset
+def generate_scores_odds(model, X):
+    probs = model.predict_proba(X)[:, 1]  # Get probability of class 1
+    scores = np.log(probs / (1 - probs))  # Log odds transformation
+    return pd.DataFrame({"score": scores, "odds": probs / (1 - probs)}, index=X.index)
+
+# ✅ Step 2: Generate Scores & Odds for Entire `Dev_data1`, Train, Test, and OOT
+dev_scores = generate_scores_odds(final_model, Dev_data1.drop(columns=["mevent"] + ignore_features))
+train_scores = generate_scores_odds(final_model, X_train)
+test_scores = generate_scores_odds(final_model, X_test)
+oot_scores = generate_scores_odds(final_model, X_oot_features)
+
+# ✅ Step 3: Merge Scores & Odds Back Into Original Datasets
+Dev_data1 = Dev_data1.merge(dev_scores, left_index=True, right_index=True)
+X_train_final = Dev_data1.loc[X_train.index].copy()
+X_test_final = Dev_data1.loc[X_test.index].copy()
+X_oot_final = X_oot.copy()
+X_train_final = X_train_final.merge(train_scores, left_index=True, right_index=True)
+X_test_final = X_test_final.merge(test_scores, left_index=True, right_index=True)
+X_oot_final = X_oot_final.merge(oot_scores, left_index=True, right_index=True)
+
+# ✅ Step 4: Define Deciles (10 Bins) & Pentiles (5 Bins) for `score`
+for dataset in [Dev_data1, X_train_final, X_test_final, X_oot_final]:
+    dataset["Decile"] = pd.qcut(dataset["score"], q=10, labels=[f"Decile_{i}" for i in range(1, 11)])
+    dataset["Pentile"] = pd.qcut(dataset["score"], q=5, labels=[f"Pentile_{i}" for i in range(1, 6)])
+
+# ✅ Step 5: Define 5-Band Score Buckets (`A`, `B`, `C`, `D`, `E`)
+score_bins = [-np.inf, -2, -1, 0, 1, np.inf]  # Adjust based on score distribution
+score_labels = ["A", "B", "C", "D", "E"]
+for dataset in [Dev_data1, X_train_final, X_test_final, X_oot_final]:
+    dataset["Score_Bucket"] = pd.cut(dataset["score"], bins=score_bins, labels=score_labels)
+
+# ✅ Step 6: Identify Top 6 Features Based on Feature Importance
+feature_importance = pd.Series(final_model.feature_importances_, index=X_train.columns)
+top_6_features = feature_importance.nlargest(6).index.tolist()
+
+# ✅ Step 7: Create 5-Band Feature Value Buckets for Top 6 Features in Each Dataset
+for feature in top_6_features:
+    feature_bins = np.linspace(Dev_data1[feature].min(), Dev_data1[feature].max(), 6)  # 5 bins
+    feature_labels = ["A", "B", "C", "D", "E"]
+
+    for dataset in [Dev_data1, X_train_final, X_test_final, X_oot_final]:
+        dataset[f"{feature}_Bucket"] = pd.cut(dataset[feature], bins=feature_bins, labels=feature_labels, include_lowest=True)
+
+# ✅ Step 8: Verify Output
+print("\n✅ Dev Data Final Structure with Scores & Buckets:\n", Dev_data1.head())
+print("\n✅ Train Data Structure:\n", X_train_final.head())
+print("\n✅ Test Data Structure:\n", X_test_final.head())
+print("\n✅ OOT Data Structure:\n", X_oot_final.head())
+
+# ✅ Step 9: Display Summary of Buckets
+print("\n✅ Score Bucket Distribution - Dev Data:\n", Dev_data1["Score_Bucket"].value_counts())
+print("\n✅ Score Bucket Distribution - Train:\n", X_train_final["Score_Bucket"].value_counts())
+print("\n✅ Score Bucket Distribution - Test:\n", X_test_final["Score_Bucket"].value_counts())
+print("\n✅ Score Bucket Distribution - OOT:\n", X_oot_final["Score_Bucket"].value_counts())
+
+for feature in top_6_features:
+    print(f"\n✅ {feature} Value Bucket Distribution - Dev Data:\n", Dev_data1[f"{feature}_Bucket"].value_counts())
+    print(f"\n✅ {feature} Value Bucket Distribution - Train:\n", X_train_final[f"{feature}_Bucket"].value_counts())
+    print(f"\n✅ {feature} Value Bucket Distribution - Test:\n", X_test_final[f"{feature}_Bucket"].value_counts())
+    print(f"\n✅ {feature} Value Bucket Distribution - OOT:\n", X_oot_final[f"{feature}_Bucket"].value_counts())
