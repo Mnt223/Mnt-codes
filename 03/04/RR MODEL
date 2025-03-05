@@ -1,3 +1,44 @@
+# Step 1: Define the ignored features
+ignored_features = ["cust_num", "sampling_weight", "selection_month"]  # Add any others
+
+# Step 2: Add back the ignored features after training
+X_train_final = Dev_data1.loc[X_train.index]  # Restore full Train data with all features
+X_test_final = Dev_data1.loc[X_test.index]  # Restore full Test data with all features
+X_oot_final = X_oot.copy()  # OOT should already have all features
+
+# Step 3: Add model scores to each dataset
+X_train_final['score'] = train_scores
+X_test_final['score'] = test_scores
+X_oot_final['score'] = oot_scores
+
+# Step 4: Calculate and add odds
+X_train_final['odds'] = X_train_final['score'] / (1 - X_train_final['score'])
+X_test_final['odds'] = X_test_final['score'] / (1 - X_test_final['score'])
+X_oot_final['odds'] = X_oot_final['score'] / (1 - X_oot_final['score'])
+
+# Step 5: Ensure sampling_weight is correctly restored
+X_train_final['sampling_weight'] = Dev_data1.loc[X_train.index, 'sampling_weight']
+X_test_final['sampling_weight'] = Dev_data1.loc[X_test.index, 'sampling_weight']
+X_oot_final['sampling_weight'] = X_oot['sampling_weight']  # Should already exist
+
+# Step 6: Verify everything is included
+print("\n✅ Train Data Final Structure:")
+print(X_train_final.head())
+
+print("\n✅ Test Data Final Structure:")
+print(X_test_final.head())
+
+print("\n✅ OOT Data Final Structure:")
+print(X_oot_final.head())
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
