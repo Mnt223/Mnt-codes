@@ -3,6 +3,84 @@ import pandas as pd
 
 # ✅ Step 1: Ensure Unique Score Buckets (Avoid Duplicate Bin Edges)
 score_bins = np.percentile(Dev_data1["score"], [0, 20, 40, 60, 80, 100], method="linear")
+score_bins = np.unique(score_bins)  # Remove duplicate bin edges
+
+# ✅ Ensure Labels Are One Less Than Bins
+score_labels = [
+    f"A. > {round(score_bins[-1], 2)}",
+    f"B. {round(score_bins[-2], 2)} - {round(score_bins[-1], 2)}",
+    f"C. {round(score_bins[-3], 2)} - {round(score_bins[-2], 2)}",
+    f"D. {round(score_bins[-4], 2)} - {round(score_bins[-3], 2)}",
+    f"E. {round(score_bins[0], 2)} - {round(score_bins[-4], 2)}"
+]
+
+# ✅ Ensure the number of labels is one less than the number of bins
+score_labels = score_labels[: len(score_bins) - 1]
+
+# ✅ Step 2: Assign Score Buckets Correctly
+Dev_data1["Score_Bucket"] = pd.cut(Dev_data1["score"], bins=score_bins, labels=score_labels, include_lowest=True)
+
+# ✅ Step 3: Identify Top 6 Features
+top_6_features = feature_importance.nlargest(6).index.tolist()
+
+# ✅ Step 4: Create Feature Value Buckets Dynamically with Unique Bin Edges
+feature_ranges = {}  # Dictionary to store feature-wise range mappings
+
+for feature in top_6_features:
+    feature_bins = np.percentile(Dev_data1[feature], [0, 20, 40, 60, 80, 100], method="linear")
+    feature_bins = np.unique(feature_bins)  # Remove duplicate bin edges
+
+    # ✅ Ensure Labels Are One Less Than Bins
+    feature_labels = [
+        f"A. > {round(feature_bins[-1], 2)}",
+        f"B. {round(feature_bins[-2], 2)} - {round(feature_bins[-1], 2)}",
+        f"C. {round(feature_bins[-3], 2)} - {round(feature_bins[-2], 2)}",
+        f"D. {round(feature_bins[-4], 2)} - {round(feature_bins[-3], 2)}",
+        f"E. {round(feature_bins[0], 2)} - {round(feature_bins[-4], 2)}"
+    ]
+
+    # ✅ Ensure the number of labels is one less than the number of bins
+    feature_labels = feature_labels[: len(feature_bins) - 1]
+
+    feature_ranges[feature] = dict(zip(feature_labels, feature_bins[:-1]))  # Assign only valid bins
+
+    # ✅ Assign Feature Value Buckets Correctly
+    Dev_data1[f"{feature}_Bucket"] = pd.cut(Dev_data1[feature], bins=feature_bins, labels=feature_labels, include_lowest=True)
+
+# ✅ Step 5: Function to Create Tables for Each Feature
+def create_feature_table(df, feature):
+    table = df.groupby(["Score_Bucket", f"{feature}_Bucket"]).size().reset_index(name="Customer_Count")
+
+    # Calculate percentage
+    total_customers = table["Customer_Count"].sum()
+    table["Customer_Percentage"] = (table["Customer_Count"] / total_customers) * 100
+
+    # Sort for better readability
+    table = table.sort_values(by=["Score_Bucket", f"{feature}_Bucket"])
+    
+    return table
+
+# ✅ Step 6: Generate 6 Tables from `Dev_data1`
+feature_tables = {}
+for feature in top_6_features:
+    feature_tables[feature] = create_feature_table(Dev_data1, feature)
+
+# ✅ Step 7: Display the Tables with Proper Ranges
+print("\n✅ Score Bucket Ranges Based on Actual Distribution:", score_labels)
+for feature, table in feature_tables.items():
+    print(f"\n🔹 Table for Feature: {feature} (Feature Bucket Ranges)")
+    print(f"Feature Ranges: {feature_ranges[feature]}")
+    print(table)
+
+
+yy
+
+
+import numpy as np
+import pandas as pd
+
+# ✅ Step 1: Ensure Unique Score Buckets (Avoid Duplicate Bin Edges)
+score_bins = np.percentile(Dev_data1["score"], [0, 20, 40, 60, 80, 100], method="linear")
 score_bins = np.unique(score_bins)  # Ensure unique bin edges
 
 # ✅ Ensure Labels Are One Less Than Bins
