@@ -13,11 +13,11 @@ def calculate_psi(expected, actual):
 
     return np.sum(psi_values)
 
-# Function to create PSI table using fixed bins
-def create_psi_table_fixed_bins(train_scores, comparison_scores, bins=10, comparison_name="Test"):
-    # Define fixed bin edges (evenly spaced based on min/max of train data)
+# Function to create PSI table using fixed pentiles (5 bins)
+def create_psi_table_pentile(train_scores, comparison_scores, bins=5, comparison_name="Test"):
+    # Define fixed bin edges (5 equal-width bins based on min/max of train data)
     min_score, max_score = np.min(train_scores), np.max(train_scores)
-    bin_edges = np.linspace(min_score, max_score, bins + 1)  # Fixed-width bins
+    bin_edges = np.linspace(min_score, max_score, bins + 1)  # Pentile-based bins
 
     # Create bin labels
     bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(bin_edges) - 1)]
@@ -57,16 +57,16 @@ train_scores = np.random.normal(600, 50, 1000)  # Example normal distribution
 test_scores = np.random.normal(590, 55, 1000)
 oot_scores = np.random.normal(580, 60, 1000)
 
-# Generate PSI tables using fixed bins
-psi_table_test_fixed = create_psi_table_fixed_bins(train_scores, test_scores, bins=10, comparison_name="Test")
-psi_table_oot_fixed = create_psi_table_fixed_bins(train_scores, oot_scores, bins=10, comparison_name="OOT")
+# Generate PSI tables using pentiles (5 bins)
+psi_table_test_pentile = create_psi_table_pentile(train_scores, test_scores, bins=5, comparison_name="Test")
+psi_table_oot_pentile = create_psi_table_pentile(train_scores, oot_scores, bins=5, comparison_name="OOT")
 
 # Display PSI tables
-print("\n🔹 PSI Table - Train vs Test")
-print(psi_table_test_fixed)
+print("\n🔹 PSI Table - Train vs Test (Pentile)")
+print(psi_table_test_pentile)
 
-print("\n🔹 PSI Table - Train vs OOT")
-print(psi_table_oot_fixed)
+print("\n🔹 PSI Table - Train vs OOT (Pentile)")
+print(psi_table_oot_pentile)
 
 
 
