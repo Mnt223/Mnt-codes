@@ -1,3 +1,47 @@
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+plt.figure(figsize=(10,5))
+sns.histplot(train_scores, bins=20, label="Train", kde=True, color="blue", alpha=0.5)
+sns.histplot(test_scores, bins=20, label="Test", kde=True, color="green", alpha=0.5)
+sns.histplot(oot_scores, bins=20, label="OOT", kde=True, color="red", alpha=0.5)
+plt.legend()
+plt.title("Score Distributions")
+plt.show()
+
+train_mean = X_train.mean()
+oot_mean = X_oot.mean()
+feature_drift = ((oot_mean - train_mean) / train_mean).abs().sort_values(ascending=False)
+print("🔹 Features with Highest Drift:")
+print(feature_drift.head(10))
+
+
+def calculate_psi(expected, actual, smoothing=0.01):
+    expected = np.where(expected == 0, smoothing, expected)
+    actual = np.where(actual == 0, smoothing, actual)
+
+    psi_values = (expected - actual) * np.log(expected / actual)
+    psi_values = np.nan_to_num(psi_values)  # Handle NaN values safely
+
+    return np.sum(psi_values)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 psi table 3 
 
 import numpy as np
