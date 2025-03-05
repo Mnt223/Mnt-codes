@@ -1,3 +1,92 @@
+psi table 3 
+
+import numpy as np
+import pandas as pd
+
+# Function to calculate PSI
+def calculate_psi(expected, actual):
+    expected = np.where(expected == 0, 0.0001, expected)  # Avoid zero division
+    actual = np.where(actual == 0, 0.0001, actual)
+
+    psi_values = (expected - actual) * np.log(expected / actual)
+    psi_values = np.nan_to_num(psi_values)  # Handle NaN values safely
+
+    return np.sum(psi_values)
+
+# Function to create PSI table using fixed bins
+def create_psi_table_fixed_bins(train_scores, comparison_scores, bins=10, comparison_name="Test"):
+    # Define fixed bin edges (evenly spaced based on min/max of train data)
+    min_score, max_score = np.min(train_scores), np.max(train_scores)
+    bin_edges = np.linspace(min_score, max_score, bins + 1)  # Fixed-width bins
+
+    # Create bin labels
+    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(bin_edges) - 1)]
+
+    # Assign scores to fixed bins
+    train_bins = pd.cut(train_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+    comparison_bins = pd.cut(comparison_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+
+    # Calculate distribution percentages
+    train_dist = train_bins.value_counts(normalize=True).sort_index() * 100
+    comparison_dist = comparison_bins.value_counts(normalize=True).sort_index() * 100
+
+    # Compute PSI values
+    psi_values = (train_dist - comparison_dist) * np.log(train_dist / comparison_dist)
+    psi_values = np.nan_to_num(psi_values)  # Replace NaN with 0
+    psi_value = np.sum(psi_values)  # Total PSI
+
+    # Create PSI table
+    psi_df = pd.DataFrame({
+        "Score Band": bin_labels,
+        "Train %": train_dist.values,
+        f"{comparison_name} %": comparison_dist.values,
+        f"PSI (Train vs {comparison_name})": psi_values
+    })
+
+    # Replace NaN with 0 (to handle cases where no data is present in a bin)
+    psi_df.fillna(0, inplace=True)
+
+    # Add Total PSI row
+    psi_df.loc["Total"] = ["Total", "-", "-", psi_value]
+
+    return psi_df
+
+# Example Usage:
+# Replace these with actual model scores
+train_scores = np.random.normal(600, 50, 1000)  # Example normal distribution
+test_scores = np.random.normal(590, 55, 1000)
+oot_scores = np.random.normal(580, 60, 1000)
+
+# Generate PSI tables using fixed bins
+psi_table_test_fixed = create_psi_table_fixed_bins(train_scores, test_scores, bins=10, comparison_name="Test")
+psi_table_oot_fixed = create_psi_table_fixed_bins(train_scores, oot_scores, bins=10, comparison_name="OOT")
+
+# Display PSI tables
+print("\n🔹 PSI Table - Train vs Test")
+print(psi_table_test_fixed)
+
+print("\n🔹 PSI Table - Train vs OOT")
+print(psi_table_oot_fixed)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 PSI TABLE 2
 
 import numpy as np
