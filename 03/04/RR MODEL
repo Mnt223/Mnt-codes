@@ -1,3 +1,79 @@
+Psi Table
+
+import numpy as np
+import pandas as pd
+
+# Function to calculate PSI for each score band
+def calculate_psi(expected, actual):
+    expected = np.where(expected == 0, 0.0001, expected)  # Avoid zero division
+    actual = np.where(actual == 0, 0.0001, actual)
+    
+    psi_values = (expected - actual) * np.log(expected / actual)
+    psi_values = np.nan_to_num(psi_values)  # Handle NaN values safely
+    
+    return np.sum(psi_values)
+
+# Function to create PSI table
+def create_psi_table(train_scores, test_scores, oot_scores, bins=10):
+    # Create score bands based on Train dataset
+    bin_edges = np.percentile(train_scores, np.linspace(0, 100, bins + 1))
+    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(bin_edges)-1)]
+    
+    # Assign each score to a band
+    train_bins = pd.cut(train_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+    test_bins = pd.cut(test_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+    oot_bins = pd.cut(oot_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+    
+    # Calculate distribution percentages
+    train_dist = train_bins.value_counts(normalize=True).sort_index()
+    test_dist = test_bins.value_counts(normalize=True).sort_index()
+    oot_dist = oot_bins.value_counts(normalize=True).sort_index()
+    
+    # Compute PSI values
+    psi_train_test = calculate_psi(train_dist.values, test_dist.values)
+    psi_train_oot = calculate_psi(train_dist.values, oot_dist.values)
+    
+    # Create PSI table
+    psi_df = pd.DataFrame({
+        "Score Band": bin_labels,
+        "Train %": train_dist.values * 100,
+        "Test %": test_dist.values * 100,
+        "OOT %": oot_dist.values * 100,
+        "PSI (Train vs Test)": (train_dist - test_dist) * np.log(train_dist / test_dist),
+        "PSI (Train vs OOT)": (train_dist - oot_dist) * np.log(train_dist / oot_dist)
+    })
+    
+    # Replace NaN with 0 (to handle cases where no data is present in a bin)
+    psi_df.fillna(0, inplace=True)
+    
+    # Add Total PSI row
+    psi_df.loc["Total"] = ["Total", "-", "-", "-", psi_train_test, psi_train_oot]
+    
+    return psi_df
+
+# Example Usage:
+# Assuming `train_scores`, `test_scores`, and `oot_scores` are NumPy arrays or Pandas Series
+train_scores = np.random.normal(600, 50, 1000)  # Example normal distribution
+test_scores = np.random.normal(590, 55, 1000)
+oot_scores = np.random.normal(580, 60, 1000)
+
+# Generate PSI table
+psi_table = create_psi_table(train_scores, test_scores, oot_scores, bins=10)
+
+# Display PSI table
+import ace_tools as tools
+tools.display_dataframe_to_user(name="PSI Table - Train vs Test & Train vs OOT", dataframe=psi_table)
+
+
+
+
+
+
+
+
+
+
+
 psi check 
 
 import numpy as np
