@@ -1,3 +1,84 @@
+PSI TABLE 2
+
+import numpy as np
+import pandas as pd
+
+# Function to calculate PSI
+def calculate_psi(expected, actual):
+    expected = np.where(expected == 0, 0.0001, expected)  # Avoid zero division
+    actual = np.where(actual == 0, 0.0001, actual)
+
+    psi_values = (expected - actual) * np.log(expected / actual)
+    psi_values = np.nan_to_num(psi_values)  # Handle NaN values safely
+
+    return np.sum(psi_values)
+
+# Function to create PSI table using quantile-based binning
+def create_psi_table_qcut(train_scores, comparison_scores, bins=10, comparison_name="Test"):
+    # Create quantile-based bins using pd.qcut
+    train_bins, bin_edges = pd.qcut(train_scores, q=bins, duplicates='drop', retbins=True)
+    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])}" for i in range(len(bin_edges) - 1)]
+
+    # Assign each score to a band
+    train_bins = pd.cut(train_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+    comparison_bins = pd.cut(comparison_scores, bins=bin_edges, labels=bin_labels, include_lowest=True)
+
+    # Calculate distribution percentages
+    train_dist = train_bins.value_counts().sort_index() / len(train_bins)
+    comparison_dist = comparison_bins.value_counts().sort_index() / len(comparison_bins)
+
+    # Compute PSI values
+    psi_values = (train_dist - comparison_dist) * np.log(train_dist / comparison_dist)
+    psi_values = np.nan_to_num(psi_values)  # Replace NaN with 0
+    psi_value = np.sum(psi_values)  # Total PSI
+
+    # Create PSI table
+    psi_df = pd.DataFrame({
+        "Score Band": bin_labels,
+        "Train %": train_dist.values * 100,
+        f"{comparison_name} %": comparison_dist.values * 100,
+        f"PSI (Train vs {comparison_name})": psi_values
+    })
+
+    # Replace NaN with 0 (to handle cases where no data is present in a bin)
+    psi_df.fillna(0, inplace=True)
+
+    # Add Total PSI row
+    psi_df.loc["Total"] = ["Total", "-", "-", psi_value]
+
+    return psi_df
+
+# Example Usage:
+# Assuming `train_scores`, `test_scores`, and `oot_scores` are NumPy arrays or Pandas Series
+
+# Generate PSI tables separately using qcut-based binning
+psi_table_test_qcut = create_psi_table_qcut(train_scores, test_scores, bins=10, comparison_name="Test")
+psi_table_oot_qcut = create_psi_table_qcut(train_scores, oot_scores, bins=10, comparison_name="OOT")
+
+# Display PSI tables
+print("\n🔹 PSI Table - Train vs Test")
+print(psi_table_test_qcut)
+
+print("\n🔹 PSI Table - Train vs OOT")
+print(psi_table_oot_qcut)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Psi Table
 
 import numpy as np
