@@ -1,3 +1,18 @@
+1.	Balance 1 Month → As balance decreases, the probability of becoming a transactor increases.
+	2.	Retail Revenue Customer 12M → As retail revenue decreases, the probability of becoming a transactor increases.
+	3.	Pay Ratio 1M → As pay ratio increases, the probability of becoming a transactor increases.
+	4.	OTB 1M (Open to Buy) → As OTB increases, the probability of becoming a transactor increases.
+	5.	Utilization 3M Min Bucket → As utilization decreases, the probability of becoming a transactor increases.
+	6.	On Us Unsecured Balance 1-6 Months → As unsecured balance decreases, the probability of becoming a transactor increases.
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
