@@ -1,3 +1,50 @@
+import os
+from google.cloud import storage
+from git import Repo
+
+# Define variables
+BUCKET_NAME = "your-gcs-bucket-name"
+FILE_PATH = "path/to/your/file"
+DEST_DIR = "local-git-repo-directory"
+LOCAL_FILE = os.path.join(DEST_DIR, os.path.basename(FILE_PATH))
+
+# Authenticate with GCS
+client = storage.Client()
+
+# Download file from GCS
+bucket = client.bucket(BUCKET_NAME)
+blob = bucket.blob(FILE_PATH)
+blob.download_to_filename(LOCAL_FILE)
+print(f"Downloaded {FILE_PATH} from GCS to {LOCAL_FILE}")
+
+# Commit and push to Git
+repo = Repo(DEST_DIR)
+repo.git.add(LOCAL_FILE)
+repo.index.commit("Automated update from GCS")
+repo.remotes.origin.push()
+print("File pushed to Git")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 1.	Balance 1 Month → As balance decreases, the probability of becoming a transactor increases.
 	2.	Retail Revenue Customer 12M → As retail revenue decreases, the probability of becoming a transactor increases.
 	3.	Pay Ratio 1M → As pay ratio increases, the probability of becoming a transactor increases.
