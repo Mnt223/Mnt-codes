@@ -1,3 +1,69 @@
+import pandas as pd
+import numpy as np
+
+# Function to Create Gain Matrix Using Existing Deciles
+def create_gain_matrix(df, decile_col="Decile", target_col="mevent"):
+    df = df.copy()
+
+    # Compute Gain Matrix Metrics
+    gain_matrix = df.groupby(decile_col).agg(
+        Non_Events=(target_col, lambda x: (x == 0).sum()),  # Good Cases
+        Events=(target_col, lambda x: (x == 1).sum())  # Bad Cases
+    ).reset_index()
+
+    # Calculate Cumulative Values
+    gain_matrix["Cum_Non_Events"] = gain_matrix["Non_Events"].cumsum()
+    gain_matrix["Cum_Events"] = gain_matrix["Events"].cumsum()
+
+    # Compute Percentages
+    total_non_events = gain_matrix["Non_Events"].sum()
+    total_events = gain_matrix["Events"].sum()
+
+    gain_matrix["% Cum_Non_Events"] = (gain_matrix["Cum_Non_Events"] / total_non_events) * 100
+    gain_matrix["% Cum_Events"] = (gain_matrix["Cum_Events"] / total_events) * 100
+
+    # Event Rate & Cumulative Event Rate
+    gain_matrix["Event_Rate"] = gain_matrix["Events"] / (gain_matrix["Non_Events"] + gain_matrix["Events"])
+    gain_matrix["Cum_Event_Rate"] = gain_matrix["Cum_Events"] / (gain_matrix["Cum_Non_Events"] + gain_matrix["Cum_Events"])
+
+    # Separation & Lift
+    gain_matrix["Separation"] = gain_matrix["% Cum_Events"] - gain_matrix["% Cum_Non_Events"]
+    gain_matrix["Lift"] = gain_matrix["Cum_Event_Rate"] / (total_events / (total_events + total_non_events))
+
+    return gain_matrix
+
+# Compute Gain Matrix for Train, Test, and OOT Using Existing Deciles
+gain_train = create_gain_matrix(X_train_final, decile_col="Decile", target_col="mevent")
+gain_test = create_gain_matrix(X_test_final, decile_col="Decile", target_col="mevent")
+gain_oot = create_gain_matrix(X_oot_final, decile_col="Decile", target_col="mevent")
+
+# Print Gain Matrices
+print("\n✅ Gain Matrix - Train:\n", gain_train)
+print("\n✅ Gain Matrix - Test:\n", gain_test)
+print("\n✅ Gain Matrix - OOT:\n", gain_oot)
+
+# Save Gain Matrices to CSV for Excel Analysis
+gain_train.to_csv("gain_matrix_train.csv", index=False)
+gain_test.to_csv("gain_matrix_test.csv", index=False)
+gain_oot.to_csv("gain_matrix_oot.csv", index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
