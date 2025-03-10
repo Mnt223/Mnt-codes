@@ -1,6 +1,84 @@
 import pandas as pd
 import numpy as np
 
+# Function to calculate Gain Matrix using Sampling Weight
+def gains_matrix(input_gm):
+    # Assign weighted deciles based on score using sampling weight
+    input_gm["deciles"] = pd.qcut(input_gm["final_score"], 10, labels=False)
+
+    # Aggregate by decile and mevent using sampling weight
+    gainsfreq = input_gm.groupby(["deciles", "mevent"])["samplingweight"].sum().to_frame()
+    gainsfreq = gainsfreq.rename(columns={"samplingweight": "count"})
+
+    # Pivot to get separate columns for events and non-events
+    transpose = pd.DataFrame(
+        gainsfreq.pivot_table(index=["deciles"], columns="mevent", aggfunc="sum", fill_value=0).reset_index()
+    )
+    transpose.columns = ["Decile", "Non-Events", "Events"]
+
+    # Ensure deciles are sorted in descending order (D1 = Highest Score, D10 = Lowest Score)
+    transpose.sort_values(by=["Decile"], ascending=False, inplace=True)
+
+    # Cumulative Counts
+    transpose["Cum Non-Events"] = transpose["Non-Events"].cumsum()
+    transpose["Cum Events"] = transpose["Events"].cumsum()
+
+    # Cumulative Percentages
+    total_non_events = transpose["Non-Events"].sum()
+    total_events = transpose["Events"].sum()
+
+    transpose["% Cum Non-Events"] = (transpose["Cum Non-Events"] / total_non_events) * 100
+    transpose["% Cum Events"] = (transpose["Cum Events"] / total_events) * 100
+
+    # Event Rates
+    transpose["Event Rate"] = (transpose["Events"] / (transpose["Non-Events"] + transpose["Events"])) * 100
+    transpose["Cum Event Rate"] = (transpose["Cum Events"] / (transpose["Cum Non-Events"] + transpose["Cum Events"])) * 100
+
+    # Separation
+    transpose["Separation"] = transpose["% Cum Events"] - transpose["% Cum Non-Events"]
+
+    return transpose
+
+# Compute Gain Matrices for Train, Test, and OOT Using Sampling Weight
+train_gain = gains_matrix(X_train_final)
+test_gain = gains_matrix(X_test_final)
+oot_gain = gains_matrix(X_oot_final)
+
+# Ensure Decile Order is Correct
+train_gain["Decile"] = pd.Categorical(train_gain["Decile"], categories=[f"D{i}" for i in range(1, 11)], ordered=True)
+train_gain = train_gain.sort_values("Decile").reset_index(drop=True)
+
+test_gain["Decile"] = pd.Categorical(test_gain["Decile"], categories=[f"D{i}" for i in range(1, 11)], ordered=True)
+test_gain = test_gain.sort_values("Decile").reset_index(drop=True)
+
+oot_gain["Decile"] = pd.Categorical(oot_gain["Decile"], categories=[f"D{i}" for i in range(1, 11)], ordered=True)
+oot_gain = oot_gain.sort_values("Decile").reset_index(drop=True)
+
+# Save to CSV for further analysis
+train_gain.to_csv("gain_matrix_train.csv", index=False)
+test_gain.to_csv("gain_matrix_test.csv", index=False)
+oot_gain.to_csv("gain_matrix_oot.csv", index=False)
+
+# Display results
+print("\n✅ Gain Matrix - Train:\n", train_gain)
+print("\n✅ Gain Matrix - Test:\n", test_gain)
+print("\n✅ Gain Matrix - OOT:\n", oot_gain)
+
+
+
+
+
+
+
+
+
+
+cfhbb
+
+
+import pandas as pd
+import numpy as np
+
 # Function to Create Gain Matrix with Normal Distribution of Events and Non-Events
 def create_gain_matrix_normal_distribution(df, decile_col="Decile", target_col="mevent"):
     df = df.copy()
