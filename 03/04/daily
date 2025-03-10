@@ -88,6 +88,159 @@ X_oot_embedded = X_oot_selected[top_80_features]
 
 print(f"✅ Features after CatBoost importance: {X_train_embedded.shape[1]}")
 
+### 4. SHAP FEATURE SELECTION (Fix for Feature Order Mismatch) ###
+print("🔹 Step 4: Ensuring feature order before SHAP calculation...")
+# Get feature names from trained CatBoost model
+expected_features = cat_model.feature_names_
+
+# Align feature order before SHAP calculation
+X_train_shap = X_train_embedded[expected_features]
+X_test_shap = X_test_embedded[expected_features]
+X_oot_shap = X_oot_embedded[expected_features]
+
+# Run SHAP after alignment
+print("🔹 Running SHAP analysis...")
+explainer = shap.TreeExplainer(cat_model)
+shap_values = explainer.shap_values(X_train_shap)
+
+shap_importance = pd.DataFrame({'Feature': X_train_shap.columns, 'SHAP_Value': np.abs(shap_values).mean(axis=0)})
+shap_importance = shap_importance.sort_values(by="SHAP_Value", ascending=False)
+
+# Select top features based on SHAP values
+top_60_shap_features = shap_importance["Feature"].iloc[:60].tolist()
+
+# Keep only selected features
+X_train_shap = X_train_shap[top_60_shap_features]
+X_test_shap = X_test_shap[top_60_shap_features]
+X_oot_shap = X_oot_shap[top_60_shap_features]
+
+print(f"✅ Features after SHAP selection: {X_train_shap.shape[1]}")
+
+### 5. WRAPPER-BASED SELECTION (RFE & BORUTA) ###
+print("🔹 Step 5: Applying RFE and Boruta...")
+# Recursive Feature Elimination (RFE)
+rfe_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rfe = RFE(rfe_model, n_features_to_select=50)
+rfe.fit(X_train_shap, y_train)
+
+rfe_features = X_train_shap.columns[rfe.support_]
+X_train_rfe = X_train_shap[rfe_features]
+X_test_rfe = X_test_shap[rfe_features]
+X_oot_rfe = X_oot_shap[rfe_features]
+
+# Boruta Feature Selection
+boruta_selector = BorutaPy(rfe_model, n_estimators='auto', verbose=0, random_state=42)
+boruta_selector.fit(X_train_rfe.values, y_train.values)
+
+boruta_features = X_train_rfe.columns[boruta_selector.support_]
+X_train_final = X_train_rfe[boruta_features]
+X_test_final = X_test_rfe[boruta_features]
+X_oot_final = X_oot_rfe[boruta_features]
+
+print(f"✅ Final Selected Features: {X_train_final.shape[1]}")
+
+### 6. SAVE FINAL FEATURES ###
+print("🔹 Saving selected feature datasets...")
+X_train_final.to_csv("selected_train_features.csv", index=False)
+X_test_final.to_csv("selected_test_features.csv", index=False)
+X_oot_final.to_csv("selected_oot_features.csv", index=False)
+
+print("🚀 Feature selection completed successfully!")
+
+
+
+
+hhhhhhhhhhhhhhhhhhhhh
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import VarianceThreshold, mutual_info_classif
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.ensemble import RandomForestClassifier
+from catboost import CatBoostClassifier
+from boruta import BorutaPy
+from sklearn.feature_selection import RFE
+import shap
+
+# Load Data
+dev_data = pd.read_csv("dev_data.csv")  # Train dataset
+X_oot = pd.read_csv("X_oot.csv")  # Out-of-Time dataset
+
+# Define Target Variable
+TARGET = "mevent"
+
+# Drop categorical columns (object or string types)
+num_cols = dev_data.select_dtypes(include=[np.number]).columns.tolist()
+num_cols.remove(TARGET)  # Keep only numeric features
+X = dev_data[num_cols]
+y = dev_data[TARGET]
+
+# Train-Test Split (70:30)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+
+# Ensure consistency in Train, Test & OOT datasets
+X_oot = X_oot[num_cols]
+
+### 1. FILTER-BASED SELECTION ###
+print("🔹 Step 1: Removing low variance & high missing value features...")
+# Remove low variance features
+var_thresh = VarianceThreshold(threshold=0.01)
+X_train_filtered = X_train.loc[:, var_thresh.fit(X_train).get_support()]
+X_test_filtered = X_test[X_train_filtered.columns]
+X_oot_filtered = X_oot[X_train_filtered.columns]
+
+# Remove features with more than 90% missing values
+missing_threshold = 0.9
+valid_features = X_train_filtered.columns[X_train_filtered.isnull().mean() < missing_threshold]
+X_train_filtered = X_train_filtered[valid_features]
+X_test_filtered = X_test_filtered[valid_features]
+X_oot_filtered = X_oot_filtered[valid_features]
+
+# Fill missing values for correlation check
+X_train_filled = X_train_filtered.fillna(X_train_filtered.median())
+
+# Remove highly correlated features (Threshold = 0.9)
+corr_matrix = X_train_filled.corr().abs()
+upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+highly_corr_features = [column for column in upper_triangle.columns if any(upper_triangle[column] > 0.9)]
+
+X_train_filtered = X_train_filtered.drop(columns=highly_corr_features)
+X_test_filtered = X_test_filtered.drop(columns=highly_corr_features)
+X_oot_filtered = X_oot_filtered.drop(columns=highly_corr_features)
+
+print(f"✅ Features after filtering: {X_train_filtered.shape[1]}")
+
+### 2. STATISTICAL SELECTION (Mutual Information) ###
+print("🔹 Step 2: Applying Mutual Information...")
+# Normalize data for Mutual Information
+scaler = MinMaxScaler()
+X_train_scaled = pd.DataFrame(scaler.fit_transform(X_train_filtered), columns=X_train_filtered.columns)
+
+# Compute Mutual Information Scores
+mi_scores = mutual_info_classif(X_train_scaled, y_train)
+mi_features = X_train_filtered.columns[np.argsort(mi_scores)[-100:]]  # Top 100 features
+
+# Keep only selected features
+X_train_selected = X_train_filtered[mi_features]
+X_test_selected = X_test_filtered[mi_features]
+X_oot_selected = X_oot_filtered[mi_features]
+
+print(f"✅ Features after mutual information selection: {X_train_selected.shape[1]}")
+
+### 3. EMBEDDED SELECTION (CATBOOST FEATURE IMPORTANCE) ###
+print("🔹 Step 3: Running CatBoost for feature importance...")
+cat_model = CatBoostClassifier(iterations=200, depth=6, learning_rate=0.1, verbose=0)
+cat_model.fit(X_train_selected, y_train)
+feature_importance = pd.DataFrame({'Feature': X_train_selected.columns, 'Importance': cat_model.get_feature_importance()})
+feature_importance = feature_importance.sort_values(by="Importance", ascending=False)
+
+top_80_features = feature_importance["Feature"].iloc[:80].tolist()  # Keep top 80 features
+X_train_embedded = X_train_selected[top_80_features]
+X_test_embedded = X_test_selected[top_80_features]
+X_oot_embedded = X_oot_selected[top_80_features]
+
+print(f"✅ Features after CatBoost importance: {X_train_embedded.shape[1]}")
+
 ### 4. SHAP FEATURE SELECTION ###
 print("🔹 Step 4: Selecting features using SHAP...")
 explainer = shap.TreeExplainer(cat_model)
