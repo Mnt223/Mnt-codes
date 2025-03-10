@@ -1,6 +1,72 @@
 import numpy as np
 import pandas as pd
 
+# Function to Calculate PSI for Each Pentile
+def calculate_psi_pentile(expected_df, actual_df, pentile_col="Pentile", score_col="final_score"):
+    psi_results = []
+    
+    # Loop through each Pentile
+    for pentile in expected_df[pentile_col].unique():
+        expected = expected_df[expected_df[pentile_col] == pentile][score_col]
+        actual = actual_df[actual_df[pentile_col] == pentile][score_col]
+        
+        # Compute PSI for this pentile
+        psi_score = calculate_psi(expected, actual)
+        psi_results.append({"Pentile": pentile, "PSI": psi_score})
+    
+    return pd.DataFrame(psi_results)
+
+# Compute Pentile-Based PSI
+psi_pentile_train_test = calculate_psi_pentile(X_train_final, X_test_final)
+psi_pentile_train_oot = calculate_psi_pentile(X_train_final, X_oot_final)
+
+# Print PSI by Pentile
+print("\n✅ PSI (Train vs Test) by Pentile:\n", psi_pentile_train_test)
+print("\n✅ PSI (Train vs OOT) by Pentile:\n", psi_pentile_train_oot)
+
+
+# Define Custom Score Bins
+score_bins = [0, 272, 500, 600, 700, 783, np.inf]  # Adjust as needed
+score_labels = ["Low", "Mid1", "Mid2", "Mid3", "High"]
+
+# Assign Score Bands
+X_train_final["Score_Band"] = pd.cut(X_train_final["final_score"], bins=score_bins, labels=score_labels)
+X_test_final["Score_Band"] = pd.cut(X_test_final["final_score"], bins=score_bins, labels=score_labels)
+X_oot_final["Score_Band"] = pd.cut(X_oot_final["final_score"], bins=score_bins, labels=score_labels)
+
+# Function to Compute PSI for Score Bands
+def calculate_psi_score_band(expected_df, actual_df, band_col="Score_Band", score_col="final_score"):
+    psi_results = []
+    
+    # Loop through each score band
+    for band in expected_df[band_col].unique():
+        expected = expected_df[expected_df[band_col] == band][score_col]
+        actual = actual_df[actual_df[band_col] == band][score_col]
+        
+        # Compute PSI for this band
+        psi_score = calculate_psi(expected, actual)
+        psi_results.append({"Score Band": band, "PSI": psi_score})
+    
+    return pd.DataFrame(psi_results)
+
+# Compute Score Band-Based PSI
+psi_scoreband_train_test = calculate_psi_score_band(X_train_final, X_test_final)
+psi_scoreband_train_oot = calculate_psi_score_band(X_train_final, X_oot_final)
+
+# Print PSI by Score Band
+print("\n✅ PSI (Train vs Test) by Score Band:\n", psi_scoreband_train_test)
+print("\n✅ PSI (Train vs OOT) by Score Band:\n", psi_scoreband_train_oot)
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
 # Function to Calculate PSI
 def calculate_psi(expected, actual, bins=10):
     """Calculate Population Stability Index (PSI)
