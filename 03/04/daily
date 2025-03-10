@@ -1,6 +1,73 @@
 import pandas as pd
 import numpy as np
 
+# Function to Create Gain Matrix with Equal Non-Events Distribution
+def create_gain_matrix_equal_non_events(df, score_col="final_score", target_col="mevent", bins=10):
+    df = df.copy()
+
+    # Create Deciles Normally for Events
+    df["Decile"] = pd.qcut(df[score_col], q=bins, labels=[f"D{b}" for b in range(1, bins + 1)], duplicates="drop")
+
+    # Distribute Non-Events Equally Across Deciles
+    non_events = df[df[target_col] == 0].copy()
+    non_events["Decile"] = pd.qcut(non_events[score_col], q=bins, labels=[f"D{b}" for b in range(1, bins + 1)], duplicates="drop")
+
+    # Combine Adjusted Non-Events Back
+    df.update(non_events)
+
+    # Compute Gain Matrix Metrics
+    gain_matrix = df.groupby("Decile").agg(
+        Non_Events=(target_col, lambda x: (x == 0).sum()),  # Good Cases (Forced Equal Distribution)
+        Events=(target_col, lambda x: (x == 1).sum())  # Bad Cases (Naturally Distributed)
+    ).reset_index()
+
+    # Calculate Cumulative Values
+    gain_matrix["Cum_Non_Events"] = gain_matrix["Non_Events"].cumsum()
+    gain_matrix["Cum_Events"] = gain_matrix["Events"].cumsum()
+
+    # Compute Percentages
+    total_non_events = gain_matrix["Non_Events"].sum()
+    total_events = gain_matrix["Events"].sum()
+
+    gain_matrix["% Cum_Non_Events"] = (gain_matrix["Cum_Non_Events"] / total_non_events) * 100
+    gain_matrix["% Cum_Events"] = (gain_matrix["Cum_Events"] / total_events) * 100
+
+    # Event Rate & Cumulative Event Rate
+    gain_matrix["Event_Rate"] = gain_matrix["Events"] / (gain_matrix["Non_Events"] + gain_matrix["Events"])
+    gain_matrix["Cum_Event_Rate"] = gain_matrix["Cum_Events"] / (gain_matrix["Cum_Non_Events"] + gain_matrix["Cum_Events"])
+
+    # Separation & Lift
+    gain_matrix["Separation"] = gain_matrix["% Cum_Events"] - gain_matrix["% Cum_Non_Events"]
+    gain_matrix["Lift"] = gain_matrix["Cum_Event_Rate"] / (total_events / (total_events + total_non_events))
+
+    return gain_matrix
+
+# Compute Gain Matrix for Train, Test, and OOT Using Equal Non-Event Distribution
+gain_train = create_gain_matrix_equal_non_events(X_train_final, score_col="final_score", target_col="mevent")
+gain_test = create_gain_matrix_equal_non_events(X_test_final, score_col="final_score", target_col="mevent")
+gain_oot = create_gain_matrix_equal_non_events(X_oot_final, score_col="final_score", target_col="mevent")
+
+# Save Gain Matrices to CSV for further analysis
+gain_train.to_csv("gain_matrix_train_equal_non_events.csv", index=False)
+gain_test.to_csv("gain_matrix_test_equal_non_events.csv", index=False)
+gain_oot.to_csv("gain_matrix_oot_equal_non_events.csv", index=False)
+
+# Print Gain Matrices
+print("\n✅ Gain Matrix - Train:\n", gain_train)
+print("\n✅ Gain Matrix - Test:\n", gain_test)
+print("\n✅ Gain Matrix - OOT:\n", gain_oot)
+
+
+
+
+
+
+
+=fycyvuvuv
+
+import pandas as pd
+import numpy as np
+
 # Function to Create Gain Matrix Using Existing Deciles
 def create_gain_matrix(df, decile_col="Decile", target_col="mevent"):
     df = df.copy()
