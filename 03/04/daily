@@ -1,6 +1,71 @@
 import numpy as np
 import pandas as pd
 
+# Define Custom Score Bands
+score_bins = [0, 143, 159, 177, 208, np.inf]  # Modify if needed
+score_labels = ["low-143", "143-159", "159-177", "177-208", "208-high"]
+
+# Assign Score Bands
+X_train_final["Score_Band"] = pd.cut(X_train_final["final_score"], bins=score_bins, labels=score_labels)
+X_test_final["Score_Band"] = pd.cut(X_test_final["final_score"], bins=score_bins, labels=score_labels)
+X_oot_final["Score_Band"] = pd.cut(X_oot_final["final_score"], bins=score_bins, labels=score_labels)
+
+# Function to Compute PSI Table
+def psi_table(expected_df, actual_df, band_col="Score_Band"):
+    psi_results = []
+    
+    # Calculate Distributions
+    expected_dist = expected_df[band_col].value_counts(normalize=True).sort_index()
+    actual_dist = actual_df[band_col].value_counts(normalize=True).sort_index()
+    
+    # Ensure all bands are present
+    all_bands = sorted(set(expected_dist.index) | set(actual_dist.index))
+    expected_dist = expected_dist.reindex(all_bands, fill_value=1e-6)
+    actual_dist = actual_dist.reindex(all_bands, fill_value=1e-6)
+    
+    # Compute PSI for Each Band
+    psi_values = (expected_dist - actual_dist) * np.log(expected_dist / actual_dist)
+    
+    for band in all_bands:
+        psi_results.append({
+            "Score_Band": band,
+            "Development_%": expected_dist[band] * 100,
+            "Review_%": actual_dist[band] * 100,
+            "PSI": psi_values[band]
+        })
+    
+    return pd.DataFrame(psi_results)
+
+# Compute PSI Tables
+psi_train_test = psi_table(X_train_final, X_test_final)
+psi_train_oot = psi_table(X_train_final, X_oot_final)
+
+# Print PSI Tables
+print("\n✅ PSI (Train vs Test):\n", psi_train_test)
+print("\n✅ PSI (Train vs OOT):\n", psi_train_oot)
+
+# Save to CSV
+psi_train_test.to_csv("psi_train_vs_test.csv", index=False)
+psi_train_oot.to_csv("psi_train_vs_oot.csv", index=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
 # Function to Calculate PSI for Each Pentile
 def calculate_psi_pentile(expected_df, actual_df, pentile_col="Pentile", score_col="final_score"):
     psi_results = []
