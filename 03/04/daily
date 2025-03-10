@@ -1,3 +1,78 @@
+import numpy as np
+
+# Define Base Score and Scaling Factor (Adjustable)
+BASE_SCORE = 200  # Starting score
+FACTOR = 28.8539  # Scaling factor
+
+# Function to Convert Log Odds to Score
+def convert_to_score(odds):
+    return BASE_SCORE + (FACTOR * np.log(odds))
+
+# Apply Score Conversion
+X_train_final["final_score"] = convert_to_score(X_train_final["odds"])
+X_test_final["final_score"] = convert_to_score(X_test_final["odds"])
+X_oot_final["final_score"] = convert_to_score(X_oot_final["odds"])
+
+# Step 3: Verify Score Distribution
+print("\n✅ Train Data Score Distribution:\n", X_train_final["final_score"].describe())
+print("\n✅ Test Data Score Distribution:\n", X_test_final["final_score"].describe())
+print("\n✅ OOT Data Score Distribution:\n", X_oot_final["final_score"].describe())
+
+
+import pandas as pd
+
+# Function to Create Pentiles & Deciles
+def create_pentile_decile(df, score_column="final_score"):
+    df["Pentile"] = pd.qcut(df[score_column], q=5, labels=["P1", "P2", "P3", "P4", "P5"])
+    df["Decile"] = pd.qcut(df[score_column], q=10, labels=["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"])
+    return df
+
+# Apply Pentile & Decile Creation to Train, Test, and OOT
+X_train_final = create_pentile_decile(X_train_final)
+X_test_final = create_pentile_decile(X_test_final)
+X_oot_final = create_pentile_decile(X_oot_final)
+
+# Verify Distribution
+print("\n✅ Train Data Pentile & Decile Distribution:\n", X_train_final[["final_score", "Pentile", "Decile"]].head())
+print("\n✅ Test Data Pentile & Decile Distribution:\n", X_test_final[["final_score", "Pentile", "Decile"]].head())
+print("\n✅ OOT Data Pentile & Decile Distribution:\n", X_oot_final[["final_score", "Pentile", "Decile"]].head())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
