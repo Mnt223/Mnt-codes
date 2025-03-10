@@ -1,4 +1,64 @@
 import numpy as np
+import pandas as pd
+
+# Function to Convert Log Odds to Score
+def convert_to_score(odds, base_score=200, factor=28.8539):
+    return np.round(base_score + (factor * np.log(odds)))
+
+# Apply Score Conversion (Round to Integer)
+X_train_final["final_score"] = convert_to_score(X_train_final["odds"])
+X_test_final["final_score"] = convert_to_score(X_test_final["odds"])
+X_oot_final["final_score"] = convert_to_score(X_oot_final["odds"])
+
+# Function to Create Pentiles & Deciles and Keep All Features
+def create_pentile_decile(df, score_column="final_score"):
+    df["Pentile"] = pd.qcut(df[score_column], q=5, labels=["P1", "P2", "P3", "P4", "P5"])
+    df["Decile"] = pd.qcut(df[score_column], q=10, labels=["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"])
+    return df
+
+# Apply Pentile & Decile Creation to Train, Test, and OOT
+X_train_final = create_pentile_decile(X_train_final)
+X_test_final = create_pentile_decile(X_test_final)
+X_oot_final = create_pentile_decile(X_oot_final)
+
+# Save Final Datasets with All Features, Scores, and Segmentation
+X_train_final.to_csv("final_train_data.csv", index=False)
+X_test_final.to_csv("final_test_data.csv", index=False)
+X_oot_final.to_csv("final_oot_data.csv", index=False)
+
+# Verify Structure
+print("\n✅ Train Data Final Structure:\n", X_train_final.head())
+print("\n✅ Test Data Final Structure:\n", X_test_final.head())
+print("\n✅ OOT Data Final Structure:\n", X_oot_final.head())
+
+# Verify Score Ranges
+print("\n✅ Train Score Distribution:\n", X_train_final["final_score"].describe())
+print("\n✅ Test Score Distribution:\n", X_test_final["final_score"].describe())
+print("\n✅ OOT Score Distribution:\n", X_oot_final["final_score"].describe())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
 
 # Define Base Score and Scaling Factor (Adjustable)
 BASE_SCORE = 200  # Starting score
