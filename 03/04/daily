@@ -1,6 +1,62 @@
 import numpy as np
 import pandas as pd
 
+# Function to Calculate PSI
+def calculate_psi(expected, actual, bins=10):
+    """Calculate Population Stability Index (PSI)
+       expected: Baseline dataset (Train)
+       actual: Comparison dataset (Test/OOT)
+       bins: Number of bins for segmentation
+    """
+    # Create bins based on Train (expected) distribution
+    bin_edges = np.histogram_bin_edges(expected, bins=bins)
+
+    # Calculate distributions
+    expected_dist, _ = np.histogram(expected, bins=bin_edges, density=True)
+    actual_dist, _ = np.histogram(actual, bins=bin_edges, density=True)
+
+    # Convert to percentages
+    expected_dist = np.clip(expected_dist, 1e-6, None)  # Avoid division by zero
+    actual_dist = np.clip(actual_dist, 1e-6, None)
+
+    # Compute PSI
+    psi_values = (expected_dist - actual_dist) * np.log(expected_dist / actual_dist)
+    psi_score = np.sum(psi_values)
+
+    return psi_score
+
+# Calculate PSI for Train vs Test and Train vs OOT
+psi_train_test = calculate_psi(X_train_final["final_score"], X_test_final["final_score"])
+psi_train_oot = calculate_psi(X_train_final["final_score"], X_oot_final["final_score"])
+
+# Print PSI Results
+print(f"\n✅ PSI (Train vs Test): {psi_train_test:.4f}")
+print(f"✅ PSI (Train vs OOT): {psi_train_oot:.4f}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+import pandas as pd
+
 # Function to Convert Log Odds to Score
 def convert_to_score(odds, base_score=200, factor=28.8539):
     return np.round(base_score + (factor * np.log(odds)))
