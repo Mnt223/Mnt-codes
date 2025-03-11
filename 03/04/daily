@@ -1,4 +1,74 @@
 import pandas as pd
+
+# Manually re-entering Gain Matrix data for Train, Test, and OOT with correct decile labels
+
+# Train Data
+train_data = {
+    "Decile": [f"D{i}" for i in range(1, 11)],  # Correcting Decile labels
+    "Events": [2762, 2677, 2486, 2109, 1478, 1062, 658, 443, 317, 140],
+    "Non_Events": [60, 145, 336, 713, 1343, 1760, 2164, 2379, 2505, 2682],
+}
+
+# Test Data
+test_data = {
+    "Decile": [f"D{i}" for i in range(1, 10+1)],  # Correcting Decile labels
+    "Events": [1160, 1106, 994, 867, 668, 443, 307, 226, 153, 101],
+    "Non_Events": [50, 103, 215, 343, 541, 766, 903, 983, 1056, 1109],
+}
+
+# Out-of-Time (OOT) Data
+oot_data = {
+    "Decile": [f"D{i}" for i in range(1, 10+1)],  # Correcting Decile labels
+    "Events": [3165, 1702, 931, 542, 338, 209, 167, 124, 105, 62],
+    "Non_Events": [1130, 2593, 3364, 3753, 3957, 4086, 4128, 4171, 4190, 4233],
+}
+
+# Convert to DataFrame
+train_gain = pd.DataFrame(train_data)
+test_gain = pd.DataFrame(test_data)
+oot_gain = pd.DataFrame(oot_data)
+
+# Function to Compute Cumulative Metrics and KS Statistic
+def calculate_ks(df):
+    df = df.copy()
+    
+    # Compute cumulative values
+    df["Cum_Events"] = df["Events"].cumsum()
+    df["Cum_Non_Events"] = df["Non_Events"].cumsum()
+
+    # Compute total events and non-events
+    total_events = df["Events"].sum()
+    total_non_events = df["Non_Events"].sum()
+
+    # Compute cumulative percentages
+    df["% Cum Events"] = df["Cum_Events"] / total_events
+    df["% Cum Non-Events"] = df["Cum_Non_Events"] / total_non_events
+
+    # Compute KS Value
+    df["KS Value"] = abs(df["% Cum Events"] - df["% Cum Non-Events"])
+
+    return df["KS Value"].max()
+
+# Compute KS for Train, Test, and OOT
+ks_train = calculate_ks(train_gain)
+ks_test = calculate_ks(test_gain)
+ks_oot = calculate_ks(oot_gain)
+
+# Print KS Values
+print(f"\n✅ KS Value - Train: {ks_train:.4f}")
+print(f"✅ KS Value - Test: {ks_test:.4f}")
+print(f"✅ KS Value - OOT: {ks_oot:.4f}")
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
 import numpy as np
 
 # Function to calculate Gain Matrix using Sampling Weight
