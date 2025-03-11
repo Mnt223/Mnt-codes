@@ -1,3 +1,45 @@
+Feature Name,English Description,Feature Bucket
+utilization_3m_min,Minimum Utilization (Last 3 Months),Credit Balance & Utilization
+otb_1m,Available Credit (Open-to-Buy, Last 1 Month),Credit Balance & Utilization
+pay_ratio_1m,Payment Ratio (Last 1 Month),Payment Behavior
+retail_rev_cust_12m_sum,Total Retail Revenue (Last 12 Months),Spending Pattern
+balance_1m,Account Balance (Last 1 Month),Credit Balance & Utilization
+onus_unsec_bal_1_6,On-us Unsecured Balance (1-6 Months),Credit Balance & Utilization
+fc_net_1m,Finance Charge Net Amount (Last 1 Month),Payment Behavior
+onus_baltospendamt_1m,On-us Balance to Spend Amount (Last 1 Month),Spending Pattern
+mpd_6m_min,Minimum Payment Due (Last 6 Months),Payment Behavior
+max_acct_mob_1m,Maximum Account Mobility (Last 1 Month),Account Activity
+onus_lending_bal_1m,On-us Lending Balance (Last 1 Month),Loan & Lending Behavior
+cc_amt_1m,Credit Card Amount (Last 1 Month),Spending Pattern
+payment_1m,Payment Amount (Last 1 Month),Payment Behavior
+cc_nodecr_amt_1_6,Non-Decreasing Credit Card Amount (1-6 Months),Credit Limit & Exposure
+val_cc_maxlmt_offus,Credit Card Max Limit (Off-us Transactions),Credit Limit & Exposure
+retail_rev_cust_7_9m_sun,Retail Revenue per Customer (7-9 Months),Spending Pattern
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 
 # Manually re-entering Gain Matrix data for Train, Test, and OOT with correct decile labels
