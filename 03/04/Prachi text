@@ -1,3 +1,18 @@
+
+Selected_Metric = 
+VAR SelectedValue = SELECTEDVALUE(MetricSelector[Metric Selection])
+RETURN 
+SWITCH(
+    TRUE(),
+    SelectedValue = "CASA Growth", SUM(YourTable[CASA_Growth]),
+    SelectedValue = "TMD Growth", SUM(YourTable[TMD_Growth]),
+    SelectedValue = "FACS Volume", SUM(YourTable[FACS_Volume]),
+    SelectedValue = "GBGT Count", SUM(YourTable[GBGT_Count]),
+    SelectedValue = "GBGT Volume", SUM(YourTable[GBGT_Volume])
+)
+
+
+
 Subject: Follow-up on Activity MIS and Dashboard Discussion
 
 Dear Anil,
