@@ -1,3 +1,8 @@
+Status_Icon = 
+IF([MTD_Acct_Login_Change_Percent] > 100, "🏆", "⚠️")
+
+
+
 
 Selected_Metric = 
 VAR SelectedValue = SELECTEDVALUE(MetricSelector[Metric Selection])
