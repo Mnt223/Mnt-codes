@@ -1,3 +1,30 @@
+from sklearn.preprocessing import MinMaxScaler  # Use StandardScaler for Z-score normalization
+
+# Initialize the scaler (choose one)
+scaler = MinMaxScaler()  # For Min-Max scaling (0 to 1)
+# scaler = StandardScaler()  # Uncomment for Z-score normalization
+
+# Fit and transform numerical columns (excluding 'cusid' if present)
+scaled_data = scaler.fit_transform(df[numerical_cols])
+
+# Convert back to DataFrame with the same column names
+scaled_df = pd.DataFrame(scaled_data, columns=numerical_cols)
+
+# ✅ Retain `cusid` for merging
+scaled_df.insert(0, 'cusid', df['cusid'].values)  # Ensure alignment if merging later
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 
