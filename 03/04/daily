@@ -1,3 +1,50 @@
+import pandas as pd
+from sklearn.preprocessing import OneHotEncoder
+
+# Sample DataFrame (with `cusid` as a unique identifier)
+df = pd.DataFrame({
+    'cusid': [101, 102, 103, 104, 105],  # Unique Customer ID
+    'Age': [25, 30, 35, 40, 28],  # Numerical
+    'Gender': ['Male', 'Female', 'Female', 'Male', 'Male'],  # Categorical
+    'City': ['New York', 'London', 'Paris', 'London', 'New York'],  # Categorical
+    'Salary': [50000, 60000, 55000, 65000, 52000]  # Numerical
+})
+
+# Identify categorical and numerical columns automatically
+categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+
+# Remove `cusid` from numerical columns (since it's an ID)
+numerical_cols.remove('cusid')
+
+# Initialize OneHotEncoder
+encoder = OneHotEncoder(drop='first', sparse=False)
+
+# Fit and transform categorical variables
+encoded_data = encoder.fit_transform(df[categorical_cols])
+
+# Convert encoded array to DataFrame with correct column names
+encoded_df = pd.DataFrame(encoded_data, columns=encoder.get_feature_names_out(categorical_cols))
+
+# ✅ Retain `cusid` for correct alignment
+encoded_df.insert(0, 'cusid', df['cusid'].values)
+
+# Merge based on `cusid` (ensuring correct alignment)
+final_df = df[['cusid'] + numerical_cols].merge(encoded_df, on='cusid', how='inner')
+
+# Display the transformed dataset
+print(final_df)
+
+
+
+
+
+
+
+
+
+
+
 encoder = OneHotEncoder(drop='first', sparse_output=False)  # Drop first category to avoid multicollinearity
 encoded_data = encoder.fit_transform(df[categorical_cols])
 
