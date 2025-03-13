@@ -1,3 +1,16 @@
+final_df = scaled_df.merge(final_df.drop(columns=numerical_cols), on='cusid', how='inner')
+
+
+
+
+
+
+
+
+
+
+
+
 from sklearn.preprocessing import MinMaxScaler  # Use StandardScaler for Z-score normalization
 
 # Initialize the scaler (choose one)
