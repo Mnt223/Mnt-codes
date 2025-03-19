@@ -1,3 +1,39 @@
+import pandas as pd
+from sklearn.preprocessing import OneHotEncoder
+
+# Sample DataFrame (Assuming final_df is already loaded)
+# final_df contains numerical + categorical columns
+
+# List of categorical columns (Assuming you already have this)
+categorical_cols = ['col1', 'col2', 'col3']  # Replace with your actual categorical columns
+
+# Initialize the OneHotEncoder
+encoder = OneHotEncoder(drop='first', sparse=False)  # drop='first' to avoid dummy variable trap
+
+# Fit and transform categorical columns
+encoded_data = encoder.fit_transform(final_df[categorical_cols])
+
+# Convert encoded data into a DataFrame with proper column names
+encoded_df = pd.DataFrame(encoded_data, columns=encoder.get_feature_names_out(categorical_cols))
+
+# Drop original categorical columns from final_df
+final_df = final_df.drop(columns=categorical_cols)
+
+# Concatenate encoded categorical columns back to final_df
+final_df = pd.concat([final_df, encoded_df], axis=1)
+
+# Display the updated DataFrame
+print(final_df.head())
+
+
+
+
+
+
+
+
+
+
 ty
 import cv2
 import pytesseract
