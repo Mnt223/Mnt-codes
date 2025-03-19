@@ -1,3 +1,37 @@
+from sklearn.preprocessing import MinMaxScaler
+
+# Preserve GA_CUST_ID
+ga_cust_id = final_df[['GA_CUST_ID']]  # Keeping it separately
+
+# Select all columns except GA_CUST_ID for scaling
+columns_to_scale = final_df.drop(columns=['GA_CUST_ID']).columns
+
+# Initialize MinMaxScaler
+scaler = MinMaxScaler()
+
+# Apply MinMaxScaler to numerical and one-hot encoded categorical columns
+final_df_scaled = pd.DataFrame(scaler.fit_transform(final_df[columns_to_scale]), columns=columns_to_scale)
+
+# Concatenate GA_CUST_ID back with the scaled data
+final_df_scaled = pd.concat([ga_cust_id, final_df_scaled], axis=1)
+
+# Display the updated DataFrame
+print(final_df_scaled.head())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 
