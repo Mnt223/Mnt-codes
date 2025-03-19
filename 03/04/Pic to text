@@ -1,3 +1,25 @@
+Color Coding Information
+Delivered Rate:
+	•	🟢 Green: Higher than 80%
+	•	🟡 Yellow: Between 80% - 20%
+	•	🔴 Red: Lower than 20%
+Opened Rate:
+	•	🟢 Green: Higher than 40%
+	•	🟡 Yellow: Between 40% - 10%
+	•	🔴 Red: Lower than 10%
+Clicked Rate:
+	•	🟢 Green: Higher than 20%
+	•	🟡 Yellow: Between 20% - 5%
+	•	🔴 Red: Lower than 5%
+	4.	Format the text box by adju
+
+
+
+
+
+
+
+
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 import pandas as pd
 
