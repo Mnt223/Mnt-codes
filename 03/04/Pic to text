@@ -1,3 +1,38 @@
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+import pandas as pd
+
+# Exclude GA_CUST_ID and Target variable from feature selection
+features = final_df_scaled.drop(columns=['GA_CUST_ID', 'target_variable'])  # Ensure target variable name is correct
+
+# Compute VIF for each feature
+vif_data = pd.DataFrame()
+vif_data["Feature"] = features.columns
+vif_data["VIF"] = [variance_inflation_factor(features.values, i) for i in range(features.shape[1])]
+
+# Display VIF values
+print("VIF values before removal:\n", vif_data)
+
+# Drop features with VIF > 5 (Threshold can be adjusted)
+high_vif_features = vif_data[vif_data["VIF"] > 5]["Feature"].tolist()
+features = features.drop(columns=high_vif_features)
+
+print("Removed features due to high collinearity:", high_vif_features)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from sklearn.preprocessing import MinMaxScaler
 
 # Preserve GA_CUST_ID
