@@ -1,3 +1,12 @@
+LatestMonthValue =
+VAR MaxMonth = CALCULATE(MAX('YourDataTable'[Month]), ALL('YourDataTable'))
+RETURN
+CALCULATE(SUM('YourDataTable'[Sales]), 'YourDataTable'[Month] = MaxMonth)
+
+
+
+
+
 1. Greater Kailash Branch, New Delhi
 	•	Address: R-47, Greater Kailash I, New Delhi, India, 110048 ￼
 	•	Latitude: 28.5485
