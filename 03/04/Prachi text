@@ -1,3 +1,21 @@
+LatestOrSelectedMonth =
+VAR SelectedDate = MAX('DateTable'[Date])
+VAR SelectedMonthStart = STARTOFMONTH(SelectedDate)
+VAR FinalMonthStart =
+    IF(
+        ISFILTERED('DateTable'[Month]) || ISFILTERED('DateTable'[Date]),
+        SelectedMonthStart,
+        CALCULATE(MAX('DateTable'[Date]), ALL('DateTable'))
+    )
+RETURN
+CALCULATE(
+    SUM(FactTable[Sales]),
+    DATESINPERIOD('DateTable'[Date], FinalMonthStart, -1, MONTH)
+)
+
+
+
+
 
 LatestMonthValue =
 VAR MaxDate = CALCULATE(MAX('DateTable'[Date]), ALL('DateTable'))
