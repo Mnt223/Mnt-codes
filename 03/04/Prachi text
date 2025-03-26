@@ -1,3 +1,16 @@
+
+LatestMonthValue =
+VAR MaxDate = CALCULATE(MAX('DateTable'[Date]), ALL('DateTable'))
+VAR MaxMonthStart = STARTOFMONTH(MaxDate)
+RETURN
+CALCULATE(
+    SUM(FactTable[Sales]),
+    DATESINPERIOD('DateTable'[Date], MaxDate, -1, MONTH)
+)
+
+
+
+
 LatestMonthValue =
 VAR MaxMonth = CALCULATE(MAX('YourDataTable'[Month]), ALL('YourDataTable'))
 RETURN
