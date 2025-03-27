@@ -1,3 +1,25 @@
+TotalRevenue_Smart = 
+VAR _sel = SELECTEDVALUE(DateDim[Date])
+VAR _latest = CALCULATE(MAX(DateDim[Date]), DateDim[IsLatestMonth] = 1)
+VAR _final = IF(ISBLANK(_sel), _latest, _sel)
+
+RETURN
+CALCULATE(
+    SUM(RevenueData[TotalRevenue]),
+    FILTER(RevenueData, EOMONTH(RevenueData[MonthDate], 0) = EOMONTH(_final, 0))
+)
+
+
+
+IsLatestMonth = 
+VAR MaxMonth = CALCULATE(MAX(DateDim[Date]), ALL(DateDim))
+RETURN IF(EOMONTH(DateDim[Date], 0) = EOMONTH(MaxMonth, 0), 1, 0)
+
+MonthLabel = 
+VAR _sel = SELECTEDVALUE(DateDim[MonthName])
+VAR _latest = CALCULATE(MAX(DateDim[MonthName]), DateDim[IsLatestMonth] = 1)
+RETURN "Reporting for: " & IF(ISBLANK(_sel), _latest, _sel)
+
 LatestOrSelectedMonth =
 VAR SelectedDate = MAX('DateTable'[Date])
 VAR SelectedMonthStart = STARTOFMONTH(SelectedDate)
