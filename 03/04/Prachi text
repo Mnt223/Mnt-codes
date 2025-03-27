@@ -1,31 +1,24 @@
-TriggerAchPct_Smart = 
-VAR _sel = SELECTEDVALUE('DateDim'[Date])
-VAR _latest = CALCULATE(MAX('DateDim'[Date]), 'DateDim'[IsLatestMonth] = 1)
-VAR _final = IF(ISBLANK(_sel), _latest, _sel)
-
-VAR _ach = CALCULATE(SUM('Activity_Mi'[Target Achieved]), FILTER('Activity_Mi', EOMONTH([date],0) = EOMONTH(_final,0)))
-VAR _tgt = CALCULATE(SUM('Activity_Mi'[Target]), FILTER('Activity_Mi', EOMONTH([date],0) = EOMONTH(_final,0)))
-
-RETURN DIVIDE(_ach, _tgt, 0)
-
-
-
-TriggerTarget_Smart = 
-VAR _sel = SELECTEDVALUE('DateDim'[Date])
-VAR _latest = CALCULATE(MAX('DateDim'[Date]), 'DateDim'[IsLatestMonth] = 1)
-VAR _final = IF(ISBLANK(_sel), _latest, _sel)
-
+DynamicRevenue = 
+VAR SelectedMonths = DISTINCTCOUNT('DateTable'[YearMonth])
 RETURN
-CALCULATE(SUM('Activity_Mi'[Target]), FILTER('Activity_Mi', EOMONTH([date],0) = EOMONTH(_final,0)))
+    IF(
+        ISFILTERED('DateTable'[YearMonth]) && SelectedMonths = 1,
+        [MonthlyRevenue],  -- Use selection if one month
+        IF(
+            ISFILTERED('DateTable'[YearMonth]) && SelectedMonths > 1,
+            [MonthlyRevenue],  -- Use total of selected months
+            CALCULATE(         -- No filter: Show latest month
+                [MonthlyRevenue],
+                FILTER(
+                    ALL('DateTable'),
+                    'DateTable'[YearMonth] = [LatestMonth]
+                )
+            )
+        )
+    )
 
 
 
-
-
-
-VAR _sel = SELECTEDVALUE('DateDim'[Date])
-VAR _latest = CALCULATE(MAX('DateDim'[Date]), 'DateDim'[IsLatestMonth] = 1)
-VAR _final = IF(ISBLANK(_sel), _latest, _sel)
 
 
 
