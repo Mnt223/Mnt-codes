@@ -1,13 +1,22 @@
-ContactTrigger_Smart =
-VAR _sel = SELECTEDVALUE('DateDim'[Date])
-VAR _latest = CALCULATE(MAX('DateDim'[Date]), 'DateDim'[IsLatestMonth] = 1)
-VAR _final = IF(ISBLANK(_sel), _latest, _sel)
+MTD_KPI_Display = 
+VAR ContactTarget = SUM(Activity_Mi[Contact Target])
+VAR TriggerAch = SUM(Activity_Mi[Trigger_Ach])
+VAR TriggerAchStaff = SUM(Activity_Mi[Trigger_Ach_staff])
 
 RETURN
-CALCULATE(
-    SUM('Activity_Mi'[Contact Trigger]),
-    FILTER('Activity_Mi', EOMONTH('Activity_Mi'[date], 0) = EOMONTH(_final, 0))
-)
+"👤 Contact Target: " & FORMAT(ContactTarget, "#,##0") & UNICHAR(10) &
+"✅ Trigger Achieved: " & FORMAT(TriggerAch, "#,##0") & UNICHAR(10) &
+"👥 Trigger Ach by Staff: " & FORMAT(TriggerAchStaff, "#,##0")
+
+
+
+
+
+
+
+
+
+
 
 
 
