@@ -1,3 +1,9 @@
+MonthYearNum = YEAR('DateDim'[Date]) * 100 + MONTH('DateDim'[Date])
+
+
+
+
+
 MonthName = FORMAT([Date], "MMM-YYYY")
 IsLatestMonth = 
 VAR MaxDate = CALCULATE(MAX('DateDim'[Date]), ALL('DateDim'))
