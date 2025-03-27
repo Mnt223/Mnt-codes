@@ -1,10 +1,20 @@
-transparent PNG icons:
-	•	target icon
-	•	tick/verify
-	•	share/contact icon
-	2.	In Power BI:
-	•	Go to Insert > Image > Upload icon
-	•	Position icons beside values in tooltip page
+ShowDataFlag = 
+VAR SelectedMonths = VALUES('DateTable'[YearMonth])
+VAR LatestMonth = CALCULATE(MAX('DateTable'[YearMonth]), ALL('DateTable'))
+VAR CurrentMonth = SELECTEDVALUE('DateTable'[YearMonth])
+RETURN
+IF (
+    ISFILTERED('DateTable'[YearMonth]),
+    IF (
+        COUNTROWS(FILTER(SelectedMonths, [YearMonth] = CurrentMonth)) > 0,
+        1,
+        0
+    ),
+    IF (CurrentMonth = LatestMonth, 1, 0)
+)
+
+
+
 
 
 
