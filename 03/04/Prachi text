@@ -1,4 +1,22 @@
 ShowDataFlag = 
+VAR LatestMonth = CALCULATE(MAX('DateTable'[YearMonth]), ALL('DateTable'))
+VAR CurrentMonth = MAX('DateTable'[YearMonth])
+VAR IsMonthSelected = ISFILTERED('DateTable'[YearMonth])
+RETURN
+IF (
+    IsMonthSelected,
+    1,  // If slicer is used, show all selected months
+    IF (CurrentMonth = LatestMonth, 1, 0)  // If no slicer, show only latest month
+)
+
+
+
+
+
+
+
+
+ShowDataFlag = 
 VAR SelectedMonths = VALUES('DateTable'[YearMonth])
 VAR LatestMonth = CALCULATE(MAX('DateTable'[YearMonth]), ALL('DateTable'))
 VAR CurrentMonth = MAX('DateTable'[YearMonth])
