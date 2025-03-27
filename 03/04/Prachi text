@@ -1,6 +1,31 @@
 ShowDataFlag = 
 VAR SelectedMonths = VALUES('DateTable'[YearMonth])
 VAR LatestMonth = CALCULATE(MAX('DateTable'[YearMonth]), ALL('DateTable'))
+VAR CurrentMonth = MAX('DateTable'[YearMonth])
+RETURN
+IF (
+    ISFILTERED('DateTable'[YearMonth]),
+    IF (
+        CurrentMonth IN SelectedMonths,
+        1,
+        0
+    ),
+    IF (CurrentMonth = LatestMonth, 1, 0)
+)
+
+
+
+
+
+
+
+
+
+
+
+ShowDataFlag = 
+VAR SelectedMonths = VALUES('DateTable'[YearMonth])
+VAR LatestMonth = CALCULATE(MAX('DateTable'[YearMonth]), ALL('DateTable'))
 VAR CurrentMonth = SELECTEDVALUE('DateTable'[YearMonth])
 RETURN
 IF (
