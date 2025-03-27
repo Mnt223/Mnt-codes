@@ -1,3 +1,27 @@
+TriggerAchPct_Smart = 
+VAR _sel = SELECTEDVALUE('DateDim'[Date])
+VAR _latest = CALCULATE(MAX('DateDim'[Date]), 'DateDim'[IsLatestMonth] = 1)
+VAR _final = IF(ISBLANK(_sel), _latest, _sel)
+
+VAR _ach = CALCULATE(SUM('Activity_Mi'[Target Achieved]), FILTER('Activity_Mi', EOMONTH([date],0) = EOMONTH(_final,0)))
+VAR _tgt = CALCULATE(SUM('Activity_Mi'[Target]), FILTER('Activity_Mi', EOMONTH([date],0) = EOMONTH(_final,0)))
+
+RETURN DIVIDE(_ach, _tgt, 0)
+
+
+
+TriggerTarget_Smart = 
+VAR _sel = SELECTEDVALUE('DateDim'[Date])
+VAR _latest = CALCULATE(MAX('DateDim'[Date]), 'DateDim'[IsLatestMonth] = 1)
+VAR _final = IF(ISBLANK(_sel), _latest, _sel)
+
+RETURN
+CALCULATE(SUM('Activity_Mi'[Target]), FILTER('Activity_Mi', EOMONTH([date],0) = EOMONTH(_final,0)))
+
+
+
+
+
 
 VAR _sel = SELECTEDVALUE('DateDim'[Date])
 VAR _latest = CALCULATE(MAX('DateDim'[Date]), 'DateDim'[IsLatestMonth] = 1)
