@@ -1,3 +1,29 @@
+MTD_KPI_Display_Clean = 
+VAR ContactTarget     = FORMAT(SUM(Activity_Mi[Contact Target]),     "#,##0")
+VAR TriggerAch        = FORMAT(SUM(Activity_Mi[Trigger_Ach]),        "#,##0")
+VAR TriggerAchStaff   = FORMAT(SUM(Activity_Mi[Trigger_Ach_staff]), "#,##0")
+
+// spacing to align values after colon
+VAR Label1 = "👤 Contact Target      : "
+VAR Label2 = "✅ Trigger Achieved    : "
+VAR Label3 = "👥 Trigger Ach by Staff: "
+VAR Divider = REPT(UNICHAR(9472), 38)  // horizontal line
+
+RETURN
+Label1 & ContactTarget & UNICHAR(10) &
+Divider & UNICHAR(10) &
+Label2 & TriggerAch & UNICHAR(10) &
+Divider & UNICHAR(10) &
+Label3 & TriggerAchStaff
+
+
+
+
+
+
+
+
+
 MTD_KPI_Display = 
 VAR ContactTarget = SUM(Activity_Mi[Contact Target])
 VAR TriggerAch = SUM(Activity_Mi[Trigger_Ach])
