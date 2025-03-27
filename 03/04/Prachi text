@@ -1,3 +1,14 @@
+MonthName = FORMAT([Date], "MMM-YYYY")
+IsLatestMonth = 
+VAR MaxDate = CALCULATE(MAX('DateDim'[Date]), ALL('DateDim'))
+RETURN IF(EOMONTH([Date], 0) = EOMONTH(MaxDate, 0), 1, 0)
+
+
+
+
+
+
+
 DateDim = 
 CALENDAR(
     MINX(UNION(
