@@ -1,3 +1,39 @@
+DateTable = 
+CALENDAR ( MIN('YourData'[Date]), MAX('YourData'[Date]) )
+
+LatestMonth = 
+CALCULATE(
+    MAX('YourData'[Date]),
+    ALL('YourData')
+)
+
+LatestYearMonth = 
+FORMAT(
+    CALCULATE(MAX('YourData'[Date]), ALL('YourData')),
+    "YYYYMM"
+)
+
+ShowDataFlag = 
+VAR SelectedMonth = SELECTEDVALUE('DateTable'[YearMonth])
+VAR LatestMonth = CALCULATE(MAX('DateTable'[YearMonth]), ALL('DateTable'))
+RETURN
+IF(
+    ISFILTERED('DateTable'[YearMonth]),
+    1, 
+    IF(SelectedMonth = LatestMonth || ISBLANK(SelectedMonth), 1, 0)
+)
+
+
+
+
+
+
+
+
+
+
+
+
 MonthYearNum = YEAR('DateDim'[Date]) * 100 + MONTH('DateDim'[Date])
 
 
