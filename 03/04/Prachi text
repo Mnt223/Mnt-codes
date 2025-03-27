@@ -1,3 +1,29 @@
+DateDim = 
+CALENDAR(
+    MINX(UNION(
+        SELECTCOLUMNS('Planner', "Date", 'Planner'[date]),
+        SELECTCOLUMNS('Activity_Mi', "Date", 'Activity_Mi'[date]),
+        SELECTCOLUMNS('Base file', "Date", 'Base file'[month_text])
+    ), [Date]),
+
+    MAXX(UNION(
+        SELECTCOLUMNS('Planner', "Date", 'Planner'[date]),
+        SELECTCOLUMNS('Activity_Mi', "Date", 'Activity_Mi'[date]),
+        SELECTCOLUMNS('Base file', "Date", 'Base file'[month_text])
+    ), [Date])
+)
+
+
+
+
+
+
+
+
+
+
+
+
 TotalRevenue_Smart = 
 VAR _sel = SELECTEDVALUE(DateDim[Date])
 VAR _latest = CALCULATE(MAX(DateDim[Date]), DateDim[IsLatestMonth] = 1)
