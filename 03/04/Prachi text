@@ -1,3 +1,28 @@
+MTD_KPI_CardFormatted = 
+VAR ContactTarget     = FORMAT(SUM(Activity_Mi[Contact Target]), "#,##0")
+VAR TriggerAch        = FORMAT(SUM(Activity_Mi[Trigger_Ach]), "#,##0")
+VAR TriggerAchStaff   = FORMAT(SUM(Activity_Mi[Trigger_Ach_staff]), "#,##0")
+
+-- Add padding to align value column (adjust spaces to taste)
+VAR Line1 = "👤 Contact Target       | " & ContactTarget
+VAR Line2 = "✅ Trigger Achieved     | " & TriggerAch
+VAR Line3 = "👥 Trigger Ach by Staff | " & TriggerAchStaff
+
+-- Use Unicode solid line (─) that scales properly
+VAR Separator = UNICHAR(10) & REPT(UNICHAR(9472), LEN(Line1)) & UNICHAR(10)
+
+RETURN
+Line1 & Separator &
+Line2 & Separator &
+Line3
+
+
+
+
+
+
+
+
 MTD_KPI_Display_Clean = 
 VAR ContactTarget     = FORMAT(SUM(Activity_Mi[Contact Target]),     "#,##0")
 VAR TriggerAch        = FORMAT(SUM(Activity_Mi[Trigger_Ach]),        "#,##0")
