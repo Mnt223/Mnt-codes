@@ -1,3 +1,16 @@
+
+VAR _sel = SELECTEDVALUE('DateDim'[Date])
+VAR _latest = CALCULATE(MAX('DateDim'[Date]), 'DateDim'[IsLatestMonth] = 1)
+VAR _final = IF(ISBLANK(_sel), _latest, _sel)
+
+
+
+
+
+
+
+
+
 ShowDataFlag = 
 VAR LatestMonth = CALCULATE(MAX('DateTable'[YearMonth]), ALL('DateTable'))
 VAR CurrentMonth = MAX('DateTable'[YearMonth])  -- Must use aggregation for fact table context
