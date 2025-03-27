@@ -1,3 +1,17 @@
+transparent PNG icons:
+	•	target icon
+	•	tick/verify
+	•	share/contact icon
+	2.	In Power BI:
+	•	Go to Insert > Image > Upload icon
+	•	Position icons beside values in tooltip page
+
+
+
+
+
+
+
 DateTable = 
 CALENDAR ( MIN('YourData'[Date]), MAX('YourData'[Date]) )
 
