@@ -1,3 +1,14 @@
+The Revolver at Risk Propensity Model is designed to identify heavy revolvers who are likely to transition into consistent transactors. It enables early detection of potential attrition within the revolve portfolio, supporting proactive retention strategies. By pinpointing customers showing signs of behavioral shift, the model helps mitigate interest income loss and enhances portfolio stability. This insight-driven approach ensures timely and targeted engagement with at-risk customers.
+
+
+
+
+
+
+
+
+
+
 MTD_KPI_CardFormatted = 
 VAR ContactTarget     = FORMAT(SUM(Activity_Mi[Contact Target]), "#,##0")
 VAR TriggerAch        = FORMAT(SUM(Activity_Mi[Trigger_Ach]), "#,##0")
