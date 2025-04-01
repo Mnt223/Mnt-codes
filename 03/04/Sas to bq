@@ -1,3 +1,63 @@
+import numpy as np
+import pandas as pd
+from statsmodels.tools.tools import add_constant
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+# Define target and fixed columns to exclude
+target_var = 'mevent'
+force_drop = ['selectionprob', 'cust_num', 'samplingweight', 'selection_month', 'key', 'age_yr_gdm', 'age_flag']
+
+# --- 1. Correlation-based Feature Removal ---
+def drop_correlated_features(df, threshold=0.9):
+    df = df.drop(columns=[col for col in force_drop + [target_var] if col in df.columns])
+    corr_matrix = df.corr().abs()
+    upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+    to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > threshold)]
+    return df.drop(columns=to_drop, errors='ignore')
+
+# Apply correlation filter
+raw_corr_filtered = drop_correlated_features(dev_data, threshold=0.9)
+
+# --- 2. VIF-based Feature Removal ---
+def drop_high_vif_features(df, threshold=10):
+    numeric_features = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    if not numeric_features:
+        print("No numeric features found for VIF calculation.")
+        return df
+
+    X = add_constant(df[numeric_features])
+    vif_data = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
+    to_drop = vif_data[vif_data > threshold].index.tolist()
+
+    # Remove 'const' if present
+    if 'const' in to_drop:
+        to_drop.remove('const')
+
+    print(f"Dropping {len(to_drop)} features with VIF > {threshold}: {to_drop}")
+    return df.drop(columns=to_drop, errors='ignore')
+
+# Apply VIF filter
+raw_vif_filtered = drop_high_vif_features(raw_corr_filtered, threshold=10)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import re
 import logging
 from flask import Flask, request, render_template, send_file
