@@ -1,3 +1,32 @@
+%macro export_loop;
+    %let list = dataset1 dataset2 dataset3;
+
+    %let i = 1;
+    %do %while(%scan(&list, &i) ne );
+        %let dsn = %scan(&list, &i);
+        proc export data=&dsn
+            outfile="&dsn..xlsx"
+            dbms=xlsx
+            replace;
+        run;
+        %let i = %eval(&i + 1);
+    %end;
+%mend;
+
+%export_loop;
+
+
+
+
+
+
+
+
+
+
+
+
+
 Subject: Important: Centralize Files to OneDrive or Z Drive for Data Safety
 
 Hi Team,
