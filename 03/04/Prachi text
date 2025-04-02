@@ -1,3 +1,51 @@
+/* Step 1: Convert character 'data_month' like 'DEC24' into numeric yyyymm format */
+data ploc_prepped;
+    set ploc_data;
+
+    /* Convert 'DEC24' to '202412', 'JAN25' to '202501', etc. */
+    sas_date = input('01' || strip(data_month), date9.);
+    yyyymm = put(sas_date, yymmn6.);  /* Final desired YYYYMM format */
+run;
+
+/* Step 2: Sort by custid, account_no, and yyyymm for lag */
+proc sort data=ploc_prepped;
+    by custid account_no yyyymm;
+run;
+
+/* Step 3: Create cust-account summary with SOM and EOM */
+data cust_account_summary;
+    set ploc_prepped;
+    by custid account_no;
+
+    retain SOM_Balance;
+
+    if first.account_no then SOM_Balance = 0;
+    else SOM_Balance = lag(end_of_month_balance);
+
+    EOM_Balance = end_of_month_balance;
+
+    Month_Label = yyyymm;  /* Already in YYYYMM format */
+
+    keep custid account_no Month_Label SOM_Balance EOM_Balance max_od_limit;
+run;
+
+/* Step 4: Final Output */
+proc print data=cust_account_summary noobs;
+    var custid account_no Month_Label SOM_Balance EOM_Balance max_od_limit;
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Convert month to proper SAS date */
 data ploc_prepped;
     set ploc_data;
