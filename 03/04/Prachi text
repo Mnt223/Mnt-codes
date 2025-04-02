@@ -1,3 +1,54 @@
+/* Step 1: Convert month to proper SAS date */
+data ploc_prepped;
+    set ploc_data;
+    data_month_num = input('01' || strip(data_month), date9.);
+    format data_month_num monyy7.;
+run;
+
+/* Step 2: Sort by custid, account_no, and month */
+proc sort data=ploc_prepped;
+    by custid account_no data_month_num;
+run;
+
+/* Step 3: Use LAG to create SOM_Balance from previous EOM_Balance */
+data cust_account_summary;
+    set ploc_prepped;
+    by custid account_no;
+
+    retain SOM_Balance;
+
+    /* Use LAG only within same cust+account group */
+    if first.account_no then SOM_Balance = 0;
+    else SOM_Balance = lag(EOM_Balance);
+
+    EOM_Balance = end_of_month_balance;
+    Month_Label = put(data_month_num, monyy7.);
+    
+    keep custid account_no Month_Label SOM_Balance EOM_Balance max_od_limit;
+run;
+
+/* Optional: View or export the final structure */
+proc print data=cust_account_summary noobs;
+    var custid account_no Month_Label SOM_Balance EOM_Balance max_od_limit;
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %macro export_loop;
 
     %let list = dataset1 dataset2;
