@@ -1,3 +1,30 @@
+Step No.,Process Stage,Description
+1,Raw Data Ingestion,Collected main and out-of-time (OOT) datasets with 1000+ features and binary target variable (mevent)
+2,Data Cleaning,Dropped columns with all nulls, duplicates, and user-defined irrelevant fields (like notes, flags)
+3,Target Validation,Ensured target column has no missing values and is binary (0/1)
+4,ID Columns Handling,Excluded columns like cusid, account_id from modeling but kept them for final output mapping
+5,Feature Missingness Filter,Removed features with >70% missing values
+6,Low Variance Removal,Dropped features with near-zero variance
+7,Correlation Filter,Removed features highly correlated with others (threshold > 0.85)
+8,VIF Reduction,Dropped features with Variance Inflation Factor (VIF > 5)
+9,Feature Scoring Methods,Calculated feature strength using: RFE, Mutual Information, and SHAP Impact Score
+10,Final Feature Selection,Selected features present in at least 2 out of 3 techniques
+11,PyCaret Setup,Used filtered features in PyCaret to identify the best model algorithm automatically
+12,Best Model Selected,Selected top-performing model from PyCaret (e.g., CatBoost, XGBoost, LightGBM)
+13,Hyperparameter Tuning,Manually ran 20 iterations with varying parameters to optimize model performance
+14,Model Evaluation,Calculated Gini, KS, AUC for Train, Test, and OOT datasets
+15,Score Generation,Converted probabilities to scores using: Score = 200 - 28.8539 * ln(odds)
+16,Stability Checks,Calculated PSI and CSI between Train and OOT datasets to ensure model stability
+17,Interpretability,Created SHAP summary plots and feature importance table
+18,Business-Friendly Outputs,Created Decile, Pentile, Gain Charts, and saved scored datasets
+19,Final Model Export,Saved best model as final_model.pkl and exported all outputs and logs for documentation
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 from statsmodels.tools.tools import add_constant
