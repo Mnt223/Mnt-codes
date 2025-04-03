@@ -1,3 +1,379 @@
+
+
+
+import pygame
+import sys
+from pygame import gfxdraw
+
+# Initialize pygame
+pygame.init()
+
+# Constants
+WIDTH, HEIGHT = 800, 800
+BOARD_SIZE = 8
+SQUARE_SIZE = WIDTH // BOARD_SIZE
+FPS = 60
+
+# Colors
+DARK_SQUARE = (181, 136, 99)
+LIGHT_SQUARE = (240, 217, 181)
+HIGHLIGHT = (247, 247, 105, 150)
+MOVE_HINT = (106, 168, 79, 150)
+LAST_MOVE = (244, 246, 128, 150)
+TEXT_COLOR = (50, 50, 50)
+
+# Piece symbols (using Unicode)
+PIECES = {
+    'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
+    'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
+}
+
+class ChessGame:
+    def __init__(self):
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Modern Chess")
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.SysFont('Arial Unicode MS', SQUARE_SIZE//2)
+        self.small_font = pygame.font.SysFont('Arial', 18)
+        
+        self.board = self.create_starting_board()
+        self.selected_piece = None
+        self.valid_moves = []
+        self.turn = 'white'
+        self.last_move = None
+        self.game_over = False
+        self.check = False
+        self.history = []
+        
+    def create_starting_board(self):
+        # Standard chess starting position
+        board = [[' ' for _ in range(8)] for _ in range(8)]
+        
+        # Black pieces
+        board[0] = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r']
+        board[1] = ['p'] * 8
+        
+        # White pieces
+        board[7] = [piece.upper() for piece in board[0]]
+        board[6] = ['P'] * 8
+        
+        return board
+    
+    def draw_board(self):
+        # Draw squares
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                color = LIGHT_SQUARE if (row + col) % 2 == 0 else DARK_SQUARE
+                pygame.draw.rect(
+                    self.screen, color,
+                    (col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE)
+                
+                # Highlight last move
+                if self.last_move:
+                    start, end = self.last_move
+                    if (row, col) == start or (row, col) == end:
+                        overlay = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
+                        overlay.fill(LAST_MOVE)
+                        self.screen.blit(overlay, (col * SQUARE_SIZE, row * SQUARE_SIZE))
+        
+        # Highlight selected piece and valid moves
+        if self.selected_piece:
+            row, col = self.selected_piece
+            overlay = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
+            overlay.fill(HIGHLIGHT)
+            self.screen.blit(overlay, (col * SQUARE_SIZE, row * SQUARE_SIZE))
+            
+            for move in self.valid_moves:
+                overlay = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
+                overlay.fill(MOVE_HINT)
+                self.screen.blit(overlay, (move[1] * SQUARE_SIZE, move[0] * SQUARE_SIZE))
+        
+        # Highlight king if in check
+        if self.check:
+            king_pos = self.find_king(self.turn)
+            if king_pos:
+                overlay = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
+                overlay.fill((255, 0, 0, 100))
+                self.screen.blit(overlay, (king_pos[1] * SQUARE_SIZE, king_pos[0] * SQUARE_SIZE))
+    
+    def draw_pieces(self):
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                piece = self.board[row][col]
+                if piece != ' ':
+                    # Determine color
+                    color = (255, 255, 255) if piece.isupper() else (0, 0, 0)
+                    
+                    # Render piece
+                    text = self.font.render(PIECES[piece], True, color)
+                    text_rect = text.get_rect(
+                        center=(col * SQUARE_SIZE + SQUARE_SIZE//2,
+                                row * SQUARE_SIZE + SQUARE_SIZE//2))
+                    self.screen.blit(text, text_rect)
+    
+    def draw_ui(self):
+        # Turn indicator
+        turn_text = self.small_font.render(
+            f"{'White' if self.turn == 'white' else 'Black'} to move",
+            True, TEXT_COLOR)
+        self.screen.blit(turn_text, (10, HEIGHT - 25))
+        
+        # Game over message
+        if self.game_over:
+            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            self.screen.blit(overlay, (0, 0))
+            
+            message = "Checkmate! " + ("White" if self.turn == 'black' else "Black") + " wins!"
+            if self.is_stalemate():
+                message = "Stalemate!"
+            
+            text = self.font.render(message, True, (255, 255, 255))
+            self.screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2 - text.get_height()//2))
+    
+    def get_valid_moves(self, row, col):
+        # This is a simplified version - a full implementation would need to:
+        # 1. Handle each piece's movement rules
+        # 2. Check for checks/checkmates
+        # 3. Handle special moves (castling, en passant, promotion)
+        
+        piece = self.board[row][col]
+        if piece == ' ':
+            return []
+        
+        moves = []
+        
+        # Pawn moves (simplified)
+        if piece.lower() == 'p':
+            direction = -1 if piece.isupper() else 1
+            # Forward move
+            if self.is_valid_square(row + direction, col) and self.board[row + direction][col] == ' ':
+                moves.append((row + direction, col))
+                # Double move from starting position
+                start_row = 6 if piece.isupper() else 1
+                if row == start_row and self.board[row + 2*direction][col] == ' ':
+                    moves.append((row + 2*direction, col))
+            # Captures
+            for dc in [-1, 1]:
+                if self.is_valid_square(row + direction, col + dc):
+                    target = self.board[row + direction][col + dc]
+                    if target != ' ' and target.islower() != piece.islower():
+                        moves.append((row + direction, col + dc))
+        
+        # Rook moves (simplified)
+        elif piece.lower() == 'r':
+            for dr, dc in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                for i in range(1, 8):
+                    r, c = row + i*dr, col + i*dc
+                    if not self.is_valid_square(r, c):
+                        break
+                    if self.board[r][c] == ' ':
+                        moves.append((r, c))
+                    else:
+                        if self.board[r][c].islower() != piece.islower():
+                            moves.append((r, c))
+                        break
+        
+        # Knight moves
+        elif piece.lower() == 'n':
+            for dr, dc in [(2, 1), (2, -1), (-2, 1), (-2, -1),
+                          (1, 2), (1, -2), (-1, 2), (-1, -2)]:
+                r, c = row + dr, col + dc
+                if self.is_valid_square(r, c):
+                    if self.board[r][c] == ' ' or self.board[r][c].islower() != piece.islower():
+                        moves.append((r, c))
+        
+        # Basic implementation for other pieces would go here...
+        
+        # Filter moves that would leave king in check
+        valid_moves = []
+        for move in moves:
+            # Simulate move
+            temp_board = [row[:] for row in self.board]
+            temp_board[move[0]][move[1]] = temp_board[row][col]
+            temp_board[row][col] = ' '
+            
+            # Check if king is in check after move
+            if not self.is_king_in_check(temp_board, self.turn):
+                valid_moves.append(move)
+        
+        return valid_moves
+    
+    def is_valid_square(self, row, col):
+        return 0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE
+    
+    def find_king(self, color):
+        king = 'K' if color == 'white' else 'k'
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                if self.board[row][col] == king:
+                    return (row, col)
+        return None
+    
+    def is_king_in_check(self, board, color):
+        king_pos = None
+        king = 'K' if color == 'white' else 'k'
+        
+        # Find king
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                if board[row][col] == king:
+                    king_pos = (row, col)
+                    break
+            if king_pos:
+                break
+        
+        if not king_pos:
+            return False
+        
+        # Check if any opponent piece can attack the king
+        opponent_color = 'black' if color == 'white' else 'white'
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                piece = board[row][col]
+                if piece != ' ' and (piece.islower() if opponent_color == 'black' else piece.isupper()):
+                    # Get all possible moves for this piece
+                    moves = []
+                    # (This would need proper move generation for each piece type)
+                    if piece.lower() == 'r':  # Rook
+                        for dr, dc in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                            for i in range(1, 8):
+                                r, c = row + i*dr, col + i*dc
+                                if not self.is_valid_square(r, c):
+                                    break
+                                moves.append((r, c))
+                                if board[r][c] != ' ':
+                                    break
+                    # Similar for other pieces...
+                    
+                    if king_pos in moves:
+                        return True
+        
+        return False
+    
+    def is_checkmate(self):
+        if not self.check:
+            return False
+        
+        # Check if any move can get out of check
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                piece = self.board[row][col]
+                if piece != ' ' and (piece.isupper() if self.turn == 'white' else piece.islower()):
+                    moves = self.get_valid_moves(row, col)
+                    if moves:
+                        return False
+        
+        return True
+    
+    def is_stalemate(self):
+        if self.check:
+            return False
+        
+        # Check if any legal move exists
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                piece = self.board[row][col]
+                if piece != ' ' and (piece.isupper() if self.turn == 'white' else piece.islower()):
+                    if self.get_valid_moves(row, col):
+                        return False
+        
+        return True
+    
+    def make_move(self, start, end):
+        start_row, start_col = start
+        end_row, end_col = end
+        
+        # Save move to history
+        self.history.append((start, end))
+        self.last_move = (start, end)
+        
+        # Move the piece
+        self.board[end_row][end_col] = self.board[start_row][start_col]
+        self.board[start_row][start_col] = ' '
+        
+        # Switch turns
+        self.turn = 'black' if self.turn == 'white' else 'white'
+        
+        # Check for check/checkmate
+        self.check = self.is_king_in_check(self.board, self.turn)
+        if self.is_checkmate():
+            self.game_over = True
+    
+    def handle_click(self, row, col):
+        if self.game_over:
+            return
+        
+        piece = self.board[row][col]
+        
+        # If a piece of the current turn is clicked
+        if piece != ' ' and ((piece.isupper() and self.turn == 'white') or 
+                            (piece.islower() and self.turn == 'black')):
+            self.selected_piece = (row, col)
+            self.valid_moves = self.get_valid_moves(row, col)
+        # If a square is clicked with a piece selected
+        elif self.selected_piece:
+            if (row, col) in self.valid_moves:
+                self.make_move(self.selected_piece, (row, col))
+                self.selected_piece = None
+                self.valid_moves = []
+            else:
+                # Select a different piece
+                if piece != ' ' and ((piece.isupper() and self.turn == 'white') or 
+                                    (piece.islower() and self.turn == 'black')):
+                    self.selected_piece = (row, col)
+                    self.valid_moves = self.get_valid_moves(row, col)
+    
+    def run(self):
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left click
+                        x, y = pygame.mouse.get_pos()
+                        col = x // SQUARE_SIZE
+                        row = y // SQUARE_SIZE
+                        self.handle_click(row, col)
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:  # Reset game
+                        self.__init__()
+            
+            self.screen.fill((0, 0, 0))
+            self.draw_board()
+            self.draw_pieces()
+            self.draw_ui()
+            pygame.display.flip()
+            self.clock.tick(FPS)
+        
+        pygame.quit()
+        sys.exit()
+
+if __name__ == "__main__":
+    game = ChessGame()
+    game.run()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pygame
 import random
 import math
