@@ -1,3 +1,18 @@
+CardColor =
+IF(
+    ISBLANK([Total CASA GROW]) || [Total CASA GROW] = 0,
+    BLANK(),
+    IF([Total CASA GROW] < 0, "#FFCCCC", "#CCFFCC")
+)
+
+
+
+
+
+
+
+
+
 data planner_latest_date;
     set Planner_planner_latest_date;
 
