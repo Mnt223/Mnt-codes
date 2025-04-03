@@ -1,3 +1,11 @@
+CardColor = 
+IF(SELECTEDVALUE('Data'[CASA_Growth]) < 0, "#FFCCCC", "#CCFFCC")
+
+
+
+
+
+
 <!DOCTYPE html>
 <html>
 <head>
