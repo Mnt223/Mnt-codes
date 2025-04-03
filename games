@@ -1,15 +1,10 @@
 import pygame
 import random
-import sys
 import math
 import json
-from pygame import freetype
-from pygame._sdl2 import Window, Texture, Image, Renderer, get_drivers, messagebox
 
 # Initialize Pygame
 pygame.init()
-pygame.mixer.init()
-pygame.freetype.init()
 
 # Constants
 WIDTH = 1280
@@ -29,7 +24,8 @@ THEMES = {
             "speed": (67, 255, 159),
             "multi": (255, 211, 61),
             "shield": (155, 81, 224)
-        }
+        },
+        "text": (255, 255, 255)
     },
     "Nature": {
         "bg": (40, 51, 43),
@@ -40,7 +36,8 @@ THEMES = {
             "speed": (100, 204, 197),
             "multi": (255, 206, 84),
             "shield": (244, 162, 97)
-        }
+        },
+        "text": (255, 255, 230)
     }
 }
 
@@ -48,8 +45,6 @@ class GameState:
     def __init__(self):
         self.high_score = 0
         self.current_theme = "Cyberpunk"
-        self.sound_volume = 0.5
-        self.music_volume = 0.3
         self.control_scheme = "arrows"
         self.load()
 
@@ -59,17 +54,13 @@ class GameState:
                 data = json.load(f)
                 self.high_score = data.get("high_score", 0)
                 self.current_theme = data.get("theme", "Cyberpunk")
-                self.sound_volume = data.get("sound", 0.5)
-                self.music_volume = data.get("music", 0.3)
-        except FileNotFoundError:
+        except (FileNotFoundError, json.JSONDecodeError):
             self.save()
 
     def save(self):
         data = {
             "high_score": self.high_score,
-            "theme": self.current_theme,
-            "sound": self.sound_volume,
-            "music": self.music_volume
+            "theme": self.current_theme
         }
         with open(SAVE_FILE, "w") as f:
             json.dump(data, f)
@@ -180,10 +171,11 @@ class PowerUp:
 
 class Game:
     def __init__(self):
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED | pygame.DOUBLEBUF)
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Ultimate Snake Game")
         self.clock = pygame.time.Clock()
         self.state = GameState()
-        self.font = pygame.freetype.Font("arial.ttf", 24)
+        self.font = pygame.font.SysFont('Arial', 24)  # Using system font
         self.snake = Snake(self.state)
         self.powerups = []
         self.score = 0
@@ -192,12 +184,6 @@ class Game:
         self.game_active = False
         self.in_menu = True
         self.paused = False
-
-        # Audio
-        self.eat_sound = pygame.mixer.Sound("eat.wav")
-        self.power_sound = pygame.mixer.Sound("powerup.wav")
-        self.music = pygame.mixer.music.load("music.mp3")
-        pygame.mixer.music.set_volume(self.state.music_volume)
 
     def handle_input(self):
         for event in pygame.event.get():
@@ -237,7 +223,6 @@ class Game:
         self.combo = 0
         self.game_active = True
         self.in_menu = False
-        pygame.mixer.music.play(-1)
 
     def quit_game(self):
         self.state.save()
@@ -271,7 +256,6 @@ class Game:
         self.spawn_powerup()
 
     def apply_powerup(self, type):
-        self.power_sound.play()
         if type == "speed":
             self.snake.speed *= 1.5
         elif type == "multi":
@@ -286,7 +270,6 @@ class Game:
             self.state.high_score = self.score
         self.game_active = False
         self.in_menu = True
-        pygame.mixer.music.stop()
 
     def draw_background(self):
         theme = THEMES[self.state.current_theme]
@@ -300,30 +283,42 @@ class Game:
     def draw_ui(self):
         theme = THEMES[self.state.current_theme]
         # Score
-        self.font.render_to(self.screen, (20, 20), 
-                          f"Score: {self.score} | High: {self.state.high_score}", 
-                          theme["snake"])
+        score_text = self.font.render(
+            f"Score: {self.score} | High: {self.state.high_score}", 
+            True, theme["text"]
+        )
+        self.screen.blit(score_text, (20, 20))
+        
         # Combo
         if self.combo > 0:
-            self.font.render_to(self.screen, (WIDTH-200, 20),
-                              f"Combo x{self.combo+1}!", theme["powerups"]["multi"])
+            combo_text = self.font.render(
+                f"Combo x{self.combo+1}!", 
+                True, theme["powerups"]["multi"]
+            )
+            self.screen.blit(combo_text, (WIDTH-200, 20))
         
         # Paused
         if self.paused:
-            self.font.render_to(self.screen, (WIDTH//2-50, HEIGHT//2), 
-                              "PAUSED", theme["food"])
+            paused_text = self.font.render("PAUSED", True, theme["food"])
+            self.screen.blit(paused_text, (WIDTH//2-50, HEIGHT//2))
 
     def draw_menu(self):
         theme = THEMES[self.state.current_theme]
         self.screen.fill(theme["bg"])
-        title = "ULTIMATE SNAKE"
-        self.font.render_to(self.screen, (WIDTH//2 - 120, HEIGHT//2 - 100), 
-                          title, theme["snake"])
-        self.font.render_to(self.screen, (WIDTH//2 - 150, HEIGHT//2),
-                          "Press SPACE to start", theme["food"])
-        self.font.render_to(self.screen, (WIDTH//2 - 180, HEIGHT//2 + 50),
-                          f"Current Theme: {self.state.current_theme} (T to change)",
-                          theme["powerups"]["speed"])
+        
+        # Title
+        title = self.font.render("ULTIMATE SNAKE", True, theme["snake"])
+        self.screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//2 - 100))
+        
+        # Instructions
+        start = self.font.render("Press SPACE to start", True, theme["food"])
+        self.screen.blit(start, (WIDTH//2 - start.get_width()//2, HEIGHT//2))
+        
+        theme_text = self.font.render(
+            f"Current Theme: {self.state.current_theme} (T to change)",
+            True, theme["powerups"]["speed"]
+        )
+        self.screen.blit(theme_text, (WIDTH//2 - theme_text.get_width()//2, HEIGHT//2 + 50))
 
     def run(self):
         while True:
