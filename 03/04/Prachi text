@@ -1,3 +1,13 @@
+<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAIAAADwf7zUAACwsG..." alt="CASA GROW MTD">
+
+
+
+
+
+
+
+
+
 /* Step 1: Convert character 'data_month' like 'DEC24' into numeric yyyymm format */
 data ploc_prepped;
     set ploc_data;
