@@ -1,341 +1,252 @@
 import pygame
 import random
 import math
-import json
+from pygame import gfxdraw
 
 # Initialize Pygame
 pygame.init()
 
-# Constants
-WIDTH = 1280
-HEIGHT = 720
+# Game Constants
+WIDTH, HEIGHT = 800, 600
 CELL_SIZE = 24
-FPS = 120
-SAVE_FILE = "snake_save.json"
+FPS = 60
+GRID_COLS, GRID_ROWS = WIDTH//CELL_SIZE, HEIGHT//CELL_SIZE
 
-# Color Themes
-THEMES = {
-    "Cyberpunk": {
-        "bg": (25, 29, 49),
-        "grid": (45, 49, 79, 50),
-        "snake": (102, 252, 241),
-        "food": (255, 46, 141),
-        "powerups": {
-            "speed": (67, 255, 159),
-            "multi": (255, 211, 61),
-            "shield": (155, 81, 224)
-        },
-        "text": (255, 255, 255)
-    },
-    "Nature": {
-        "bg": (40, 51, 43),
-        "grid": (68, 85, 72, 50),
-        "snake": (139, 212, 104),
-        "food": (255, 121, 97),
-        "powerups": {
-            "speed": (100, 204, 197),
-            "multi": (255, 206, 84),
-            "shield": (244, 162, 97)
-        },
-        "text": (255, 255, 230)
-    }
+# Modern Color Palette
+COLORS = {
+    "dark": (30, 35, 40),
+    "grid": (50, 55, 60),
+    "snake_head": (100, 230, 150),
+    "snake_body": (80, 180, 120),
+    "food": (250, 90, 90),
+    "text": (240, 240, 240),
+    "particle": (250, 150, 100)
 }
 
-class GameState:
-    def __init__(self):
-        self.high_score = 0
-        self.current_theme = "Cyberpunk"
-        self.control_scheme = "arrows"
-        self.load()
-
-    def load(self):
-        try:
-            with open(SAVE_FILE, "r") as f:
-                data = json.load(f)
-                self.high_score = data.get("high_score", 0)
-                self.current_theme = data.get("theme", "Cyberpunk")
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.save()
-
-    def save(self):
-        data = {
-            "high_score": self.high_score,
-            "theme": self.current_theme
-        }
-        with open(SAVE_FILE, "w") as f:
-            json.dump(data, f)
-
-class ParticleSystem:
-    def __init__(self):
-        self.particles = []
-
-    def add_particles(self, pos, color, count=10):
-        for _ in range(count):
-            angle = random.uniform(0, 2*math.pi)
-            speed = random.uniform(1, 3)
-            self.particles.append({
-                "pos": list(pos),
-                "color": color,
-                "velocity": [math.cos(angle)*speed, math.sin(angle)*speed],
-                "lifetime": random.randint(20, 40)
-            })
-
-    def update(self):
-        for p in self.particles:
-            p["pos"][0] += p["velocity"][0]
-            p["pos"][1] += p["velocity"][1]
-            p["lifetime"] -= 1
-        self.particles = [p for p in self.particles if p["lifetime"] > 0]
-
-    def draw(self, surface):
-        for p in self.particles:
-            alpha = int(255 * (p["lifetime"] / 40))
-            size = math.sin(p["lifetime"]/10) * 3 + 2
-            color = (*p["color"], alpha)
-            pygame.draw.circle(surface, color, (int(p["pos"][0]), int(p["pos"][1])), int(size))
-
 class Snake:
-    def __init__(self, game_state):
-        self.body = [(WIDTH//2, HEIGHT//2)]
-        self.direction = random.choice([(0, -1), (0, 1), (-1, 0), (1, 0)])
+    def __init__(self):
+        self.reset()
+        self.particles = []
+        
+    def reset(self):
+        self.body = [(GRID_COLS//2, GRID_ROWS//2)]
+        self.direction = (1, 0)
+        self.next_direction = (1, 0)
         self.grow = False
-        self.speed = 10
-        self.score_multiplier = 1.0
-        self.shield = False
-        self.particles = ParticleSystem()
-        self.tail_anim = 0
-        self.state = game_state
-
-    def move(self):
-        self.tail_anim = (self.tail_anim + 1) % 360
-        head = self.body[0]
-        new_head = (
-            (head[0] + self.direction[0]*CELL_SIZE) % WIDTH,
-            (head[1] + self.direction[1]*CELL_SIZE) % HEIGHT
-        )
-        self.body.insert(0, new_head)
-        if not self.grow:
-            self.body.pop()
-        else:
-            self.grow = False
-            self.particles.add_particles(new_head, THEMES[self.state.current_theme]["snake"], 15)
-
-    def check_collision(self):
-        return len(self.body) != len(set(self.body)) and not self.shield
-
+        self.speed = 8  # Moves per second
+        self.move_timer = 0
+        self.alive = True
+        
+    def update(self, dt):
+        self.move_timer += dt
+        move_interval = 1000 / self.speed  # ms per move
+        
+        if self.move_timer >= move_interval:
+            self.move_timer = 0
+            self.direction = self.next_direction
+            
+            # Move head
+            head_x, head_y = self.body[0]
+            new_head = (
+                (head_x + self.direction[0]) % GRID_COLS,
+                (head_y + self.direction[1]) % GRID_ROWS
+            )
+            
+            # Check collision with self
+            if new_head in self.body:
+                self.alive = False
+                self.create_particles(new_head)
+                return False
+            
+            self.body.insert(0, new_head)
+            
+            if not self.grow:
+                self.body.pop()
+            else:
+                self.grow = False
+                self.create_particles(new_head)
+                
+        return True
+    
+    def create_particles(self, pos):
+        for _ in range(15):
+            angle = random.uniform(0, math.pi*2)
+            speed = random.uniform(0.5, 2)
+            self.particles.append({
+                'pos': [pos[0]*CELL_SIZE + CELL_SIZE//2, pos[1]*CELL_SIZE + CELL_SIZE//2],
+                'vel': [math.cos(angle)*speed, math.sin(angle)*speed],
+                'life': random.randint(30, 60),
+                'size': random.randint(2, 4)
+            })
+    
+    def update_particles(self):
+        for p in self.particles[:]:
+            p['pos'][0] += p['vel'][0]
+            p['pos'][1] += p['vel'][1]
+            p['life'] -= 1
+            if p['life'] <= 0:
+                self.particles.remove(p)
+    
     def change_direction(self, new_dir):
-        if (new_dir[0] + self.direction[0], new_dir[1] + self.direction[1]) != (0, 0):
-            self.direction = new_dir
+        # Prevent 180-degree turns
+        if (new_dir[0] * -1, new_dir[1] * -1) != self.direction:
+            self.next_direction = new_dir
 
-    def draw(self, surface):
-        theme = THEMES[self.state.current_theme]
-        for i, segment in enumerate(self.body):
-            alpha = 255 - i*15
-            size = CELL_SIZE * (0.9 + 0.1 * math.sin(math.radians(self.tail_anim + i*20)))
-            color = (*theme["snake"], alpha)
-            pygame.draw.rect(surface, color, (*segment, size, size), border_radius=int(size/4))
-        self.particles.draw(surface)
-
-class PowerUp:
-    def __init__(self, game_state):
-        self.game_state = game_state
-        self.type = random.choices(
-            ["food", "speed", "multi", "shield"],
-            weights=[5, 2, 2, 1],
-            k=1
-        )[0]
-        self.pos = self.random_position()
-        self.anim_offset = 0
-        self.lifetime = 5000  # 5 seconds
-        self.spawn_time = pygame.time.get_ticks()
-
-    def random_position(self):
-        return (
-            random.randrange(0, WIDTH, CELL_SIZE),
-            random.randrange(0, HEIGHT, CELL_SIZE)
+class Food:
+    def __init__(self):
+        self.position = (0, 0)
+        self.spawn()
+        self.pulse = 0
+        
+    def spawn(self):
+        self.position = (
+            random.randint(0, GRID_COLS-1),
+            random.randint(0, GRID_ROWS-1)
         )
-
-    def active(self):
-        return pygame.time.get_ticks() - self.spawn_time < self.lifetime
-
-    def draw(self, surface):
-        theme = THEMES[self.game_state.current_theme]
-        self.anim_offset = math.sin(pygame.time.get_ticks() / 200) * 5
-        center = (
-            self.pos[0] + CELL_SIZE/2,
-            self.pos[1] + CELL_SIZE/2 + self.anim_offset
-        )
-        color = theme["powerups"].get(self.type, theme["food"])
-        pygame.draw.circle(surface, color, center, CELL_SIZE//2)
-        pygame.draw.circle(surface, (255,255,255,50), center, CELL_SIZE//2, 2)
+        self.pulse = 0
+        
+    def update(self):
+        self.pulse = (self.pulse + 0.05) % (math.pi*2)
 
 class Game:
     def __init__(self):
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
-        pygame.display.set_caption("Ultimate Snake Game")
+        pygame.display.set_caption("Modern Snake")
         self.clock = pygame.time.Clock()
-        self.state = GameState()
-        self.font = pygame.font.SysFont('Arial', 24)  # Using system font
-        self.snake = Snake(self.state)
-        self.powerups = []
+        self.font = pygame.font.SysFont('Arial', 24, bold=True)
+        self.small_font = pygame.font.SysFont('Arial', 16)
+        
+        self.snake = Snake()
+        self.food = Food()
         self.score = 0
-        self.combo = 0
-        self.combo_timer = 0
-        self.game_active = False
-        self.in_menu = True
-        self.paused = False
-
-    def handle_input(self):
+        self.high_score = 0
+        self.game_active = True
+        self.game_over = False
+        
+    def handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.quit_game()
+                return False
             
             if event.type == pygame.KEYDOWN:
-                if self.in_menu:
-                    if event.key == pygame.K_SPACE:
-                        self.start_game()
-                    elif event.key == pygame.K_t:
-                        self.state.current_theme = "Cyberpunk" if self.state.current_theme == "Nature" else "Nature"
+                if self.game_over and event.key == pygame.K_SPACE:
+                    self.reset_game()
                 elif self.game_active:
-                    if event.key == pygame.K_ESCAPE:
-                        self.paused = not self.paused
-                    else:
-                        if self.state.control_scheme == "arrows":
-                            dirs = {
-                                pygame.K_UP: (0, -1),
-                                pygame.K_DOWN: (0, 1),
-                                pygame.K_LEFT: (-1, 0),
-                                pygame.K_RIGHT: (1, 0)
-                            }
-                        else:  # WASD
-                            dirs = {
-                                pygame.K_w: (0, -1),
-                                pygame.K_s: (0, 1),
-                                pygame.K_a: (-1, 0),
-                                pygame.K_d: (1, 0)
-                            }
-                        if event.key in dirs:
-                            self.snake.change_direction(dirs[event.key])
-
-    def start_game(self):
-        self.snake = Snake(self.state)
-        self.score = 0
-        self.combo = 0
-        self.game_active = True
-        self.in_menu = False
-
-    def quit_game(self):
-        self.state.save()
-        pygame.quit()
-        sys.exit()
-
-    def spawn_powerup(self):
-        if random.random() < 0.02:  # 2% chance per frame
-            self.powerups.append(PowerUp(self.state))
-
-    def update_game(self):
-        if self.paused or not self.game_active:
+                    if event.key == pygame.K_UP:
+                        self.snake.change_direction((0, -1))
+                    elif event.key == pygame.K_DOWN:
+                        self.snake.change_direction((0, 1))
+                    elif event.key == pygame.K_LEFT:
+                        self.snake.change_direction((-1, 0))
+                    elif event.key == pygame.K_RIGHT:
+                        self.snake.change_direction((1, 0))
+        
+        return True
+    
+    def update(self, dt):
+        if not self.game_active:
             return
-
-        self.snake.move()
+            
+        if not self.snake.update(dt):
+            self.game_over = True
+            self.game_active = False
+            self.high_score = max(self.score, self.high_score)
         
-        # Check powerup collision
-        for p in self.powerups[:]:
-            if p.pos == self.snake.body[0]:
-                self.apply_powerup(p.type)
-                self.powerups.remove(p)
+        self.snake.update_particles()
+        self.food.update()
         
-        # Check combo timing
-        if pygame.time.get_ticks() > self.combo_timer:
-            self.combo = 0
+        # Check food collision
+        if self.snake.body[0] == self.food.position:
+            self.snake.grow = True
+            self.score += 10
+            self.food.spawn()
+            # Ensure food doesn't spawn on snake
+            while self.food.position in self.snake.body:
+                self.food.spawn()
+    
+    def draw(self):
+        # Dark background
+        self.screen.fill(COLORS["dark"])
         
-        if self.snake.check_collision():
-            self.game_over()
-
-        self.powerups = [p for p in self.powerups if p.active()]
-        self.spawn_powerup()
-
-    def apply_powerup(self, type):
-        if type == "speed":
-            self.snake.speed *= 1.5
-        elif type == "multi":
-            self.snake.score_multiplier += 0.5
-        elif type == "shield":
-            self.snake.shield = True
-        self.combo += 1
-        self.combo_timer = pygame.time.get_ticks() + 2000  # 2 seconds
-
-    def game_over(self):
-        if self.score > self.state.high_score:
-            self.state.high_score = self.score
-        self.game_active = False
-        self.in_menu = True
-
-    def draw_background(self):
-        theme = THEMES[self.state.current_theme]
-        self.screen.fill(theme["bg"])
-        # Draw grid
+        # Draw grid lines
         for x in range(0, WIDTH, CELL_SIZE):
-            pygame.draw.line(self.screen, theme["grid"], (x, 0), (x, HEIGHT))
+            pygame.draw.line(self.screen, COLORS["grid"], (x, 0), (x, HEIGHT), 1)
         for y in range(0, HEIGHT, CELL_SIZE):
-            pygame.draw.line(self.screen, theme["grid"], (0, y), (WIDTH, y))
-
-    def draw_ui(self):
-        theme = THEMES[self.state.current_theme]
-        # Score
-        score_text = self.font.render(
-            f"Score: {self.score} | High: {self.state.high_score}", 
-            True, theme["text"]
+            pygame.draw.line(self.screen, COLORS["grid"], (0, y), (WIDTH, y), 1)
+        
+        # Draw food with pulsing effect
+        food_size = CELL_SIZE * (0.8 + 0.2 * math.sin(self.food.pulse))
+        pygame.draw.circle(
+            self.screen, COLORS["food"],
+            (self.food.position[0]*CELL_SIZE + CELL_SIZE//2, 
+             self.food.position[1]*CELL_SIZE + CELL_SIZE//2),
+            food_size//2
         )
+        
+        # Draw snake
+        for i, segment in enumerate(self.snake.body):
+            x, y = segment
+            pos_x, pos_y = x*CELL_SIZE, y*CELL_SIZE
+            
+            # Head is brighter
+            color = COLORS["snake_head"] if i == 0 else COLORS["snake_body"]
+            
+            # Smooth rounded rectangles
+            pygame.draw.rect(
+                self.screen, color,
+                (pos_x + 2, pos_y + 2, CELL_SIZE - 4, CELL_SIZE - 4),
+                border_radius=4
+            )
+        
+        # Draw particles
+        for p in self.snake.particles:
+            alpha = min(255, p['life'] * 4)
+            color = (*COLORS["particle"], alpha)
+            gfxdraw.filled_circle(
+                self.screen, 
+                int(p['pos'][0]), int(p['pos'][1]),
+                p['size'], color
+            )
+        
+        # Draw score
+        score_text = self.font.render(f"Score: {self.score}", True, COLORS["text"])
         self.screen.blit(score_text, (20, 20))
         
-        # Combo
-        if self.combo > 0:
-            combo_text = self.font.render(
-                f"Combo x{self.combo+1}!", 
-                True, theme["powerups"]["multi"]
-            )
-            self.screen.blit(combo_text, (WIDTH-200, 20))
+        # Game over screen
+        if self.game_over:
+            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))
+            self.screen.blit(overlay, (0, 0))
+            
+            game_over_text = self.font.render("GAME OVER", True, COLORS["food"])
+            score_text = self.font.render(f"Final Score: {self.score}", True, COLORS["text"])
+            restart_text = self.small_font.render("Press SPACE to restart", True, COLORS["text"])
+            
+            self.screen.blit(game_over_text, (WIDTH//2 - game_over_text.get_width()//2, HEIGHT//2 - 50))
+            self.screen.blit(score_text, (WIDTH//2 - score_text.get_width()//2, HEIGHT//2))
+            self.screen.blit(restart_text, (WIDTH//2 - restart_text.get_width()//2, HEIGHT//2 + 50))
         
-        # Paused
-        if self.paused:
-            paused_text = self.font.render("PAUSED", True, theme["food"])
-            self.screen.blit(paused_text, (WIDTH//2-50, HEIGHT//2))
-
-    def draw_menu(self):
-        theme = THEMES[self.state.current_theme]
-        self.screen.fill(theme["bg"])
-        
-        # Title
-        title = self.font.render("ULTIMATE SNAKE", True, theme["snake"])
-        self.screen.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//2 - 100))
-        
-        # Instructions
-        start = self.font.render("Press SPACE to start", True, theme["food"])
-        self.screen.blit(start, (WIDTH//2 - start.get_width()//2, HEIGHT//2))
-        
-        theme_text = self.font.render(
-            f"Current Theme: {self.state.current_theme} (T to change)",
-            True, theme["powerups"]["speed"]
-        )
-        self.screen.blit(theme_text, (WIDTH//2 - theme_text.get_width()//2, HEIGHT//2 + 50))
-
+        pygame.display.flip()
+    
+    def reset_game(self):
+        self.snake.reset()
+        self.food.spawn()
+        self.score = 0
+        self.game_active = True
+        self.game_over = False
+    
     def run(self):
-        while True:
-            self.handle_input()
-            self.update_game()
+        running = True
+        last_time = pygame.time.get_ticks()
+        
+        while running:
+            current_time = pygame.time.get_ticks()
+            dt = current_time - last_time
+            last_time = current_time
             
-            self.draw_background()
-            
-            if self.game_active:
-                self.snake.draw(self.screen)
-                for p in self.powerups:
-                    p.draw(self.screen)
-                self.draw_ui()
-            elif self.in_menu:
-                self.draw_menu()
-            
-            pygame.display.flip()
+            running = self.handle_events()
+            self.update(dt)
+            self.draw()
             self.clock.tick(FPS)
 
 if __name__ == "__main__":
