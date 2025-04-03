@@ -1,6 +1,43 @@
 data planner_latest_date;
     set Planner_planner_latest_date;
 
+    length Role_category $40.;
+
+    select (upcase(role));
+        when ('PRM','PPRM','SPRM','PERM','PRMC_SUITE','EPRM','GPRM') 
+            Role_category = 'RM';
+        when ('TOP_TERM_RM','GPB_RM') 
+            Role_category = 'GPB_RM';
+        when ('PWD') 
+            Role_category = 'FMS_RM';
+        when ('PB','PM') 
+            Role_category = 'PB_PM';
+        when ('BAS','BAS_RP','REGIONAL_SUPPORT','BAS_LG','BAS_GP') 
+            Role_category = 'BAS';
+        when ('MANAGER','SENIORMANAGER','BM') 
+            Role_category = 'BM';
+        when ('REGIONHEAD','ZONALHEAD','REGIONALHEAD','GPBREGIONALHEAD') 
+            Role_category = 'GPB_RH';
+        when ('CSM','CEM','CEM_RM','CSM_PB','CSM_UB','UB_LEADER') 
+            Role_category = 'CSM';
+        when ('DBM','MRM') 
+            Role_category = 'DBM';
+        otherwise 
+            Role_category = role; /* Original role as fallback */
+    end;
+
+    if Planner_Name not in ("YSD","BD_BM_ADH") and Channel in ("BRANCH") then output;
+run;
+
+
+
+
+
+
+
+data planner_latest_date;
+    set Planner_planner_latest_date;
+
     length Role_category $40.; /* Define the length of the new variable */
 
     if compress(upcase(role)) in ('PRM','PPRM','SPRM','PERM','PRMC_SUITE','EPRM','GPRM') then 
