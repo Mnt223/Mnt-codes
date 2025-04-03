@@ -1,3 +1,42 @@
+data planner_latest_date;
+    set Planner_planner_latest_date;
+
+    length Role_category $40.; /* Define the length of the new variable */
+
+    if compress(upcase(role)) in ('PRM','PPRM','SPRM','PERM','PRMC_SUITE','EPRM','GPRM') then 
+        Role_category = 'RM';
+    else if compress(upcase(role)) in ('TOP_TERM_RM','GPB_RM') then 
+        Role_category = 'GPB_RM';
+    else if compress(upcase(role)) in ('PWD') then 
+        Role_category = 'FMS_RM';
+    else if compress(upcase(role)) in ('PB','PM') then 
+        Role_category = 'PB_PM';
+    else if compress(upcase(role)) in ('BAS','BAS_RP','REGIONAL_SUPPORT','BAS_LG','BAS_GP') then 
+        Role_category = 'BAS';
+    else if compress(upcase(role)) in ('MANAGER','SENIORMANAGER','BM') then 
+        Role_category = 'BM';
+    else if compress(upcase(role)) in ('REGIONHEAD','ZONALHEAD','REGIONALHEAD','GPBREGIONALHEAD') then 
+        Role_category = 'GPB_RH';
+    else if compress(upcase(role)) in ('CSM','CEM','CEM_RM','CSM_PB','CSM_UB','UB_LEADER') then 
+        Role_category = 'CSM';
+    else if compress(upcase(role)) in ('DBM','MRM') then 
+        Role_category = 'DBM';
+    else 
+        Role_category = role; /* Use role as-is if no match */
+
+    /* Apply the final filter */
+    if Planner_Name not in ("YSD","BD_BM_ADH") and Channel in ("BRANCH") then output;
+run;
+
+
+
+
+
+
+
+
+
+
 CardColor = 
 IF(SELECTEDVALUE('Data'[CASA_Growth]) < 0, "#FFCCCC", "#CCFFCC")
 
