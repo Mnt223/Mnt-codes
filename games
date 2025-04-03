@@ -1,4 +1,80 @@
+import pygame
+import sys
+from pygame import gfxdraw
 
+# Initialize pygame
+pygame.init()
+
+# Constants
+WIDTH, HEIGHT = 800, 800
+BOARD_SIZE = 8
+SQUARE_SIZE = WIDTH // BOARD_SIZE
+FPS = 60
+
+# Colors
+DARK_SQUARE = (181, 136, 99)
+LIGHT_SQUARE = (240, 217, 181)
+HIGHLIGHT = (247, 247, 105, 150)
+MOVE_HINT = (106, 168, 79, 150)
+LAST_MOVE = (244, 246, 128, 150)
+TEXT_COLOR = (50, 50, 50)
+
+# Piece symbols (using Unicode)
+PIECES = {
+    'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
+    'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
+}
+
+class ChessGame:
+    def __init__(self):
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Modern Chess")
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.SysFont('Arial Unicode MS', SQUARE_SIZE//2)
+        self.small_font = pygame.font.SysFont('Arial', 18)
+        
+        self.board = self.create_starting_board()
+        self.selected_piece = None
+        self.valid_moves = []
+        self.turn = 'white'
+        self.last_move = None  # Properly initialized here
+        self.game_over = False
+        self.check = False
+        self.history = []
+        
+    def create_starting_board(self):
+        # Standard chess starting position
+        board = [[' ' for _ in range(8)] for _ in range(8)]
+        
+        # Black pieces
+        board[0] = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r']
+        board[1] = ['p'] * 8
+        
+        # White pieces
+        board[7] = [piece.upper() for piece in board[0]]
+        board[6] = ['P'] * 8
+        
+        return board
+    
+    def draw_board(self):
+        # Draw squares
+        for row in range(BOARD_SIZE):
+            for col in range(BOARD_SIZE):
+                color = LIGHT_SQUARE if (row + col) % 2 == 0 else DARK_SQUARE
+                pygame.draw.rect(
+                    self.screen, color,
+                    (col * SQUARE_SIZE, row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
+                
+                # Highlight last move - now properly checks if last_move exists
+                if self.last_move is not None:  # Changed this line
+                    start, end = self.last_move
+                    if (row, col) == start or (row, col) == end:
+                        overlay = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
+                        overlay.fill(LAST_MOVE)
+                        self.screen.blit(overlay, (col * SQUARE_SIZE, row * SQUARE_SIZE))
+        
+        # Rest of the draw_board method remains the same...
+        # [Previous code continues...]
 
 
 import pygame
