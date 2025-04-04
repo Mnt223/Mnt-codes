@@ -1,3 +1,23 @@
+Hi [IT Team / Manager’s Name],
+
+As you are aware, my original laptop had a hardware issue, and I was provided with a temporary spare laptop to continue my work. I’ve now been informed that the original device cannot be repaired and that I would be issued a replacement of the same model, which is a used device.
+
+Given the nature of my work — which involves high-performance dashboard development, data processing, and automation — I’m concerned that the used replacement laptop may not deliver the same level of performance and stability required for my day-to-day tasks.
+
+Hence, I’d like to formally request a new, fresh laptop of similar or better configuration to ensure smooth workflow continuity without performance issues.
+
+Please let me know the process or approvals required from my side.
+
+
+
+
+
+
+
+
+
+
+
 CardColor =
 IF(
     ISBLANK([Total CASA GROW]) || [Total CASA GROW] = 0,
