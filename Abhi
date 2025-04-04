@@ -1,3 +1,15 @@
+
+The Revolver at Risk Propensity model helps identify credit card customers who are currently revolving but are likely to shift to transactor behavior in the near future. These customers are at risk of attrition from a high-interest income segment, directly impacting profitability. By predicting this behavioral shift early, the model enables proactive retention strategies through personalized offers, EMI conversions, or engagement campaigns. This ensures revenue preservation, improved customer lifecycle management, and more efficient campaign targeting. It also supports prioritization of high-value revolvers for focused interventions.
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
