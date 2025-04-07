@@ -1,0 +1,104 @@
+%let base_path = /sasdata/email_zips/;
+%let unzip_path = /sasdata/email_unzipped/;
+%let days_back = 20;
+
+data all_snapshots;
+    length check_date $10 file_name $50 
+           f1_status f2_status f3_status $15 
+           f1_size f2_size f3_size 8;
+    stop;
+run;
+
+
+%macro check_email_zip;
+%do i = 0 %to %eval(&days_back - 1);
+
+    %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i), date9.);
+    %let date_str = %sysfunc(putn("&raw_date"d, ddmmyyn8.));
+    %let zip_name = email_&date_str..zip;
+    %let zip_full_path = &base_path.&zip_name;
+    %let unzip_folder = &unzip_path.email_&date_str;
+
+    x "mkdir -p &unzip_folder";
+    x "unzip -o &zip_full_path -d &unzip_folder";
+
+    %let f1 = &unzip_folder/2000701325_detailed_report;
+    %let f2 = &unzip_folder/2000701398_detailed_report;
+    %let f3 = &unzip_folder/2000701606_detailed_report;
+
+    %macro check_file(file=, tag=);
+        data _null_;
+            length fpath $512;
+            fpath = "&file";
+            if fileexist(fpath) then do;
+                rc = filename("f", fpath);
+                fid = fopen("f");
+                size = fsize(fid);
+                rc = fclose(fid);
+                call symputx("&tag._status", "Present");
+                call symputx("&tag._size", size);
+            end;
+            else do;
+                call symputx("&tag._status", "Missing");
+                call symputx("&tag._size", 0);
+            end;
+        run;
+    %mend;
+
+    %check_file(file=&f1, tag=f1);
+    %check_file(file=&f2, tag=f2);
+    %check_file(file=&f3, tag=f3);
+
+    data temp;
+        length check_date $10 file_name $50 
+               f1_status f2_status f3_status $15;
+        check_date = "&raw_date";
+        file_name = "&zip_name";
+
+        f1_status = symget("f1_status");
+        f1_size   = input(symget("f1_size"), best12.);
+
+        f2_status = symget("f2_status");
+        f2_size   = input(symget("f2_size"), best12.);
+
+        f3_status = symget("f3_status");
+        f3_size   = input(symget("f3_size"), best12.);
+    run;
+
+    proc append base=all_snapshots data=temp force; run;
+
+%end;
+%mend;
+
+%check_email_zip;
+
+
+filename mymail email
+    to=('prachi.jain@noexternalmail.hsbc.com')
+    cc=('boss@company.com')
+    bcc=('audit@company.com')
+    from='monitoring.bot@company.com'
+    subject="Email File Check Report - Last 20 Days"
+    content_type='text/html';
+
+data _null_;
+    file mymail;
+    put "<html><body><h3>Email File Check - Last 20 Days</h3>";
+    put "<table border=1 cellpadding=4 cellspacing=0 style='border-collapse: collapse'>";
+    put "<tr><th>Date</th>
+             <th>2000701325 Status</th><th>Size</th>
+             <th>2000701398 Status</th><th>Size</th>
+             <th>2000701606 Status</th><th>Size</th></tr>";
+
+    set all_snapshots end=done;
+    format f1_size f2_size f3_size comma12.;
+
+    put "<tr>";
+    put "<td>" check_date "</td>";
+    put "<td>" f1_status "</td><td>" f1_size "</td>";
+    put "<td>" f2_status "</td><td>" f2_size "</td>";
+    put "<td>" f3_status "</td><td>" f3_size "</td>";
+    put "</tr>";
+
+    if done then put "</table></body></html>";
+run;
