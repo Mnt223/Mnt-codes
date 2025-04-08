@@ -1,3 +1,33 @@
+%let folder_path=/your/server/folder/path;
+
+filename delfiles pipe "ls &folder_path";
+
+/* Read list of files from folder */
+data _null_;
+    infile delfiles truncover;
+    input file_name $256.;
+
+    /* Construct full path */
+    full_path = cats("&folder_path/", file_name);
+
+    /* Delete the file */
+    rc = fdelete(filename("del", full_path));
+    if rc = 0 then 
+        put "NOTE: Deleted " full_path;
+    else 
+        put "WARNING: Could not delete " full_path " (rc=" rc ")";
+run;
+
+filename delfiles clear;
+
+
+
+
+
+
+
+
+
 proc sql;
     create table customer_status as
     select *,
