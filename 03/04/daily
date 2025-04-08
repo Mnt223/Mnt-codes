@@ -1,3 +1,7 @@
+filename del pipe "rm -rf /your/server/folder/path/*"; data _null_; infile del; input; run;
+
+
+
 
 “The mismatch between End-of-Month and Beginning-of-Month balances arises because months with only payments and no debit transactions are not captured in the EOM balance records.”
 
