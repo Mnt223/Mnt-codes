@@ -1,3 +1,14 @@
+
+“The mismatch between End-of-Month and Beginning-of-Month balances arises because months with only payments and no debit transactions are not captured in the EOM balance records.”
+
+
+
+
+
+
+
+
+
 %let folder_path=/your/server/folder/path;
 
 filename delfiles pipe "ls &folder_path";
