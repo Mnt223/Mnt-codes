@@ -1,3 +1,17 @@
+proc sql;
+    create table customer_status as
+    select *,
+        case 
+            when intck('month', joining_date, reference_date) < 3 then 'NTB'
+            else 'ETB'
+        end as customer_type
+    from your_table;
+quit;
+
+
+
+
+
 final_df = scaled_df.merge(final_df.drop(columns=numerical_cols), on='cusid', how='inner')
 
 
