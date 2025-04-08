@@ -2,6 +2,38 @@
 
 filename delfiles pipe "ls &folder_path";
 
+data _null_;
+    infile delfiles truncover;
+    input file_name $256.;
+
+    full_path = cats("&folder_path/", file_name);
+
+    /* Assign a unique fileref */
+    rc1 = filename("todel", full_path);
+    if rc1 = 0 then do;
+        rc2 = fdelete("todel");
+        if rc2 = 0 then 
+            put "NOTE: Deleted " full_path;
+        else 
+            put "WARNING: Could not delete " full_path " (fdelete rc=" rc2 ")";
+    end;
+    else 
+        put "ERROR: Could not assign fileref for " full_path " (filename rc=" rc1 ")";
+
+    /* Clear the fileref */
+    rc3 = filename("todel");
+run;
+
+filename delfiles clear;
+
+
+
+
+
+%let folder_path=/your/server/folder/path;
+
+filename delfiles pipe "ls &folder_path";
+
 /* Read list of files from folder */
 data _null_;
     infile delfiles truncover;
