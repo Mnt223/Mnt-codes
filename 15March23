@@ -1,3 +1,65 @@
+/* Step 1: Derive acquisition date from all product open dates */
+data customer_acquisition;
+    set customer_base;
+
+    acquisition_date = min(of card_open_date ploc_open_date loan_open_date); /* include all product columns */
+    if acquisition_date >= '01JAN2024'd;
+
+    mob3_date = intnx('month', acquisition_date, 2, 'b'); /* MOB3 = Acq + 2 months */
+    mob3_cube = lowcase(put(mob3_date, monname3.)) || put(mob3_date, year2.); /* e.g., mar24 */
+    format acquisition_date mob3_date date9.;
+run;
+
+/* Step 2: Extract unique cube months to dynamically loop */
+proc sql noprint;
+    select distinct mob3_cube into :cube_list separated by ' '
+    from customer_acquisition;
+quit;
+
+/* Step 3: Loop through each cube and extract MOB3 TRB */
+%macro fetch_mob3_trb_by_acquisition;
+    %let i = 1;
+    %do %while (%scan(&cube_list, &i) ne );
+        %let cube = %scan(&cube_list, &i);
+
+        proc sql;
+            create table trb_&cube as
+            select 
+                a.cust_id,
+                a.acquisition_date,
+                a.mob3_date,
+                /* Extract TRB for that month: either a total column, or sum individual product TRBs */
+                b.card_trb + b.ploc_trb + b.loan_trb as mob3_trb
+            from customer_acquisition a
+            inner join cube_&cube b
+                on a.cust_id = b.cust_id
+            where a.mob3_cube = "&cube";
+        quit;
+
+        %let i = %eval(&i + 1);
+    %end;
+
+    /* Combine all extracted TRB records into one final table */
+    data final_mob3_trb;
+        set 
+        %do j = 1 %to %eval(&i - 1);
+            %let cube = %scan(&cube_list, &j);
+            trb_&cube
+        %end;
+        ;
+    run;
+%mend;
+
+%fetch_mob3_trb_by_acquisition;
+
+
+
+
+
+
+
+
+
 # amount & freq model #
 import pandas as pd
 import numpy as np
