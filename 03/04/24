@@ -1,3 +1,116 @@
+import os
+import shutil
+import argparse
+import paramiko
+from scp import SCPClient
+import pandas as pd
+import xlsxwriter
+from dotenv import load_dotenv
+
+# --- Load credentials from .env ---
+load_dotenv()
+username = os.getenv("SSH_USER")
+password = os.getenv("SSH_PASS")
+host = os.getenv("SSH_HOST")
+
+# --- Parse inputs ---
+parser = argparse.ArgumentParser()
+parser.add_argument('--mode', choices=['upload', 'download'], required=True)
+parser.add_argument('--local_path', required=True)
+parser.add_argument('--remote_path', required=True)
+parser.add_argument('--sharepoint_path', required=False)
+parser.add_argument('--excel_password', required=False)
+parser.add_argument('--csv_file_name', required=False, default="report.csv")
+args = parser.parse_args()
+
+# --- SSH + SCP Setup ---
+def create_ssh_client(host, port, user, password):
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(host, port=port, username=user, password=password)
+    return ssh
+
+def transfer_files():
+    ssh = create_ssh_client(host, 22, username, password)
+    with SCPClient(ssh.get_transport()) as scp:
+        if args.mode == "download":
+            os.makedirs(args.local_path, exist_ok=True)
+            print(f"Downloading from {args.remote_path} to {args.local_path}")
+            scp.get(args.remote_path + "*", local_path=args.local_path, recursive=True)
+            print("Download complete.")
+        elif args.mode == "upload":
+            print(f"Uploading from {args.local_path} to {args.remote_path}")
+            scp.put(args.local_path + "*", remote_path=args.remote_path, recursive=True)
+            print("Upload complete.")
+
+def protect_and_move_to_sharepoint():
+    if not args.sharepoint_path or not args.excel_password:
+        print("Missing SharePoint path or Excel password. Skipping protection.")
+        return
+
+    csv_file = os.path.join(args.local_path, args.csv_file_name)
+    output_file = os.path.join(args.local_path, "Protected_Report.xlsx")
+
+    if not os.path.exists(csv_file):
+        print(f"CSV file not found: {csv_file}")
+        return
+
+    df = pd.read_csv(csv_file)
+    workbook = xlsxwriter.Workbook(output_file)
+    workbook.password = args.excel_password
+    worksheet = workbook.add_worksheet()
+    worksheet.write('A1', 'INTERNAL USE ONLY')
+
+    for col_idx, col in enumerate(df.columns):
+        worksheet.write(2, col_idx, col)
+        for row_idx, val in enumerate(df[col]):
+            worksheet.write(row_idx + 3, col_idx, val)
+    workbook.close()
+
+    shutil.copy(output_file, args.sharepoint_path)
+    print(f"Protected Excel file saved to SharePoint: {args.sharepoint_path}")
+
+# --- Execute ---
+transfer_files()
+if args.mode == "download":
+    protect_and_move_to_sharepoint()
+
+@echo off
+setlocal
+
+:: Ask user inputs
+set /p MODE=Enter operation (upload/download): 
+set /p LOCAL=Enter local path (e.g. D:\DataTransfers\21_04_25\): 
+set /p REMOTE=Enter server path (e.g. /sasdata/.../): 
+
+if "%MODE%"=="download" (
+    set /p SP=Enter SharePoint path (e.g. C:\Users\You\OneDrive - Org\SharePoint\): 
+    set /p PWD=Enter Excel password: 
+)
+
+:: Build command
+set CMD=python file_transfer_main.py --mode %MODE% --local_path "%LOCAL%" --remote_path "%REMOTE%"
+
+if "%MODE%"=="download" (
+    set CMD=%CMD% --sharepoint_path "%SP%" --excel_password "%PWD%"
+)
+
+:: Run it
+echo Running: %CMD%
+%CMD%
+
+pause
+
+pip install paramiko scp python-dotenv pandas xlsxwriter
+
+
+
+
+
+
+
+
+
 %let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/email/;
 %let unzip_path = /sasdata/hsbc/dil/INM/IMCE/sandbox/Prachi/SampleCheck/;
 %let days_back = 20;
