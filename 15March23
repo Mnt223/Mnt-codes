@@ -1,3 +1,52 @@
+%macro fetch_mob3_trb;
+    %let i = 1;
+    %do %while (%scan(&cube_list, &i) ne );
+        %let cube_ds = %scan(&cube_list, &i);
+        %let suffix  = %scan(&suffix_list, &i);
+        %let trb_var = trb_bal_&suffix._uniq;
+
+        /* Check if cube exists */
+        %if %sysfunc(exist(cube1.&cube_ds)) %then %do;
+
+            proc sql;
+                create table trb_&i as
+                select 
+                    a.cust_id,
+                    a.acquisition_date,
+                    a.mob3_date,
+                    b.&trb_var as mob3_trb
+                from customer_acquisition a
+                left join cube1.&cube_ds b
+                    on a.cust_id = b.cust_id
+                where a.mob3_cube_name = "&cube_ds";
+            quit;
+
+        %end;
+        %else %do;
+            %put NOTE: Dataset cube1.&cube_ds does not exist. Skipping this cube.;
+        %end;
+
+        %let i = %eval(&i + 1);
+    %end;
+
+    /* Combine all created TRB tables */
+    data final_mob3_trb;
+        set 
+        %do j = 1 %to %eval(&i - 1);
+            %if %sysfunc(exist(trb_&j)) %then trb_&j;
+        %end;
+        ;
+    run;
+%mend;
+
+%fetch_mob3_trb;
+
+
+
+
+
+
+
 /* Step 1: Determine acquisition date (earliest of product open dates) */
 data customer_acquisition;
     set customer_base;
