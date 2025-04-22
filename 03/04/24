@@ -1,6 +1,53 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Ask inputs
+set /p MODE=Enter operation (upload/download): 
+set /p LOCAL=Enter local path: 
+set /p REMOTE=Enter server path: 
+
+if "%MODE%"=="download" (
+    set /p SP=Enter SharePoint path: 
+    set /p PWD=Enter Excel password: 
+)
+
+:: Set command
+set CMD=python file_transfer_main.py --mode %MODE% --local_path "%LOCAL%" --remote_path "%REMOTE%"
+
+if "%MODE%"=="download" (
+    set CMD=%CMD% --sharepoint_path "%SP%" --excel_password "%PWD%"
+)
+
+echo.
+echo ========================
+echo Running Command:
+echo %CMD%
+echo ========================
+echo.
+
+:: Run Python and keep window open
+%CMD%
+echo.
+echo Script finished. Press any key to exit.
+pause >nul
+
+
+
+
+
+python file_transfer_main.py --mode download --local_path "D:\DataTransfers" --remote_path "/sasdata/test/" --sharepoint_path "C:\Users\YourUser\OneDrive\SharePoint" --excel_password "test123"
+
+
+
+
+
+
+
+
+
+@echo off
+setlocal enabledelayedexpansion
+
 :: Ask user inputs
 set /p MODE=Enter operation (upload/download): 
 set /p LOCAL=Enter local path (e.g. D:\DataTransfers\21_04_25\): 
