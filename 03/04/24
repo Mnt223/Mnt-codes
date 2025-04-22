@@ -1,4 +1,114 @@
+%let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/email/;
+%let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/EmailCheck/;
+%let days_back = 20;
+%let size_threshold = 102400; /* 100 KB */
 
+proc datasets lib=work nolist;
+    delete email_backlog email_summary;
+quit;
+
+data email_backlog;
+    length email_file_date $10 file_status $50 file_name $100 file_size 8 action $60;
+    stop;
+run;
+
+%macro check_email_files;
+
+    %do i = 0 %to %eval(&days_back - 1);
+
+        %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i));
+        %let day = %sysfunc(putn(&raw_date, z2.));
+        %let month = %sysfunc(putn(&raw_date, z2.));
+        %let year = %sysfunc(putn(&raw_date, z2.));
+        %let email_file_date = %sysfunc(putn(&raw_date, dd_mm_yy.)); /* e.g., 21_04_25 */
+
+        %let zip_name = email_&email_file_date..zip;
+        %let zip_path = &base_path.&zip_name;
+        %let extract_folder = &unzip_path.&email_file_date./;
+
+        /* Check if ZIP exists */
+        data _null_;
+            length path $512;
+            path = resolve("&zip_path");
+            exists = fileexist(path);
+            call symputx('zip_found', exists);
+        run;
+
+        %if &zip_found %then %do;
+            x "mkdir -p &extract_folder";
+            x "unzip -o &zip_path -d &extract_folder";
+
+            /* List files in extracted folder */
+            filename filelist pipe "ls &extract_folder";
+            data _null_;
+                infile filelist truncover;
+                input fname $100.;
+                call execute('%nrstr(%check_file)(' || quote("&email_file_date") || ',' || quote(trim(fname)) || ',' || quote("&extract_folder") || ');');
+            run;
+        %end;
+        %else %do;
+            data temp;
+                email_file_date = "&email_file_date";
+                file_status = "Missing ZIP";
+                file_name = "_";
+                file_size = .;
+                action = "Alert: Missing File - Repush Required";
+            run;
+            proc append base=email_backlog data=temp force; run;
+        %end;
+
+    %end;
+
+%mend;
+
+%macro check_file(email_file_date, fname, extract_folder);
+    %let full_path = &extract_folder.&fname;
+
+    data _null_;
+        length full_path $512;
+        full_path = resolve("&full_path");
+        exists = fileexist(full_path);
+        call symputx('file_exists', exists);
+    run;
+
+    %if &file_exists %then %do;
+        data _null_;
+            infile "du -sb &full_path" pipe;
+            input fsize 8.;
+            call symputx('file_size', fsize);
+        run;
+
+        %let file_status = Valid;
+        %let action = Valid File - No Action;
+
+        %if %sysevalf(&file_size < &size_threshold) %then %do;
+            %let file_status = Valid (Below Threshold);
+            %let action = Alert: File Size - Repush Required;
+        %end;
+
+        data temp;
+            email_file_date = &email_file_date;
+            file_status = "&file_status";
+            file_name = &fname;
+            file_size = &file_size;
+            action = "&action";
+        run;
+        proc append base=email_backlog data=temp force; run;
+    %end;
+    %else %do;
+        data temp;
+            email_file_date = &email_file_date;
+            file_status = "File Missing After Extraction";
+            file_name = &fname;
+            file_size = .;
+            action = "Alert: Missing File - Repush Required";
+        run;
+        proc append base=email_backlog data=temp force; run;
+    %end;
+
+%mend;
+
+%check_email_files;
 
 
 
