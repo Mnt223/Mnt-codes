@@ -1,3 +1,71 @@
+import os
+import paramiko
+from dotenv import load_dotenv
+
+# Load credentials from .env
+load_dotenv()
+username = os.getenv("SSH_USER")
+password = os.getenv("SSH_PASS")
+host = os.getenv("SSH_HOST")
+port = int(os.getenv("SSH_PORT", 22))
+
+def create_ssh_client():
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(host, port=port, username=username, password=password)
+    return ssh
+
+try:
+    print(f"Connecting to {host} as {username}...")
+    ssh = create_ssh_client()
+    sftp = ssh.open_sftp()
+
+    print("\nRoot directory files (sftp.listdir('.')):")
+    print(sftp.listdir('.'))
+
+    folders_to_try = [
+        "Suyash",
+        "Suyash/inapp day 1",
+        "/sasdata/user/.home/d5331629/Suyash",
+        "/sasdata/user/.home/d5331629/Suyash/inapp day 1",
+        "inapp day 1",
+    ]
+
+    print("\n--- Path Discovery ---")
+    for folder in folders_to_try:
+        try:
+            print(f"\nTrying: {folder}")
+            print("Contents:", sftp.listdir(folder))
+        except Exception as e:
+            print(f"Failed to access {folder} --> {e}")
+
+    sftp.close()
+    ssh.close()
+
+except Exception as e:
+    print("\nConnection failed:", e)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 @echo off
 setlocal enabledelayedexpansion
 
