@@ -1,3 +1,44 @@
+@echo off
+setlocal enabledelayedexpansion
+
+:: Ask user inputs
+set /p MODE=Enter operation (upload/download): 
+set /p LOCAL=Enter local path (e.g. D:\DataTransfers\21_04_25\): 
+set /p REMOTE=Enter server path (e.g. /sasdata/.../): 
+
+if "%MODE%"=="download" (
+    set /p SP=Enter SharePoint path (e.g. C:\Users\You\OneDrive - Org\SharePoint\): 
+    set /p PWD=Enter Excel password: 
+)
+
+:: Build command
+set CMD=python file_transfer_main.py --mode %MODE% --local_path "%LOCAL%" --remote_path "%REMOTE%"
+
+if "%MODE%"=="download" (
+    set CMD=!CMD! --sharepoint_path "%SP%" --excel_password "%PWD%"
+)
+
+:: Echo command for debug
+echo.
+echo Running the following command:
+echo !CMD!
+echo.
+
+:: Actually run it and keep window open
+cmd /k "!CMD!"
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import shutil
 import argparse
