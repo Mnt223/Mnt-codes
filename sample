@@ -1,3 +1,28 @@
+%let folder_path = /your/folder/path;
+
+%macro create_folder_if_not_exists(path);
+    %if %sysfunc(fileexist(&path)) = 0 %then %do;
+        options noxwait noxsync;
+        x "mkdir &path";
+        %put NOTE: Folder created - &path;
+    %end;
+    %else %do;
+        %put NOTE: Folder already exists - &path;
+    %end;
+%mend;
+
+%create_folder_if_not_exists(&folder_path);
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Clean previous data */
 proc datasets lib=work nolist;
     delete backlog summary;
