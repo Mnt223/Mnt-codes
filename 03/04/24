@@ -1,3 +1,74 @@
+@echo off
+setlocal enabledelayedexpansion
+
+:: Get operation mode
+set /p MODE=Enter operation (upload/download): 
+
+:: Get local path
+set /p LOCAL=Enter local folder path (e.g. C:\Users\You\Downloads\): 
+
+:: Get remote SFTP path (e.g., Suyash/inapp_day_1/)
+set /p REMOTE=Enter remote SFTP path (folder only, e.g. Suyash/inapp_day_1/): 
+
+:: Ask if targeting a specific file
+set /p FILEMODE=Do you want to transfer a specific file? (yes/no): 
+
+set TARGETFILE=
+if /I "%FILEMODE%"=="yes" (
+    set /p TARGETFILE=Enter exact file name (e.g., Branch_file.xlsx): 
+)
+
+:: For download, ask about SharePoint and Excel password
+set SPATH=
+set PWD=
+if /I "%MODE%"=="download" (
+    set /p SPATH=Enter SharePoint path (optional, e.g. C:\Users\You\OneDrive - HSBC\Target\): 
+    set /p PWD=Enter Excel password (optional): 
+)
+
+:: Build command
+set CMD=python file_transfer_main.py --mode %MODE% --local_path "%LOCAL%" --remote_path "%REMOTE%"
+
+if NOT "%TARGETFILE%"=="" (
+    set CMD=!CMD! --target_file "%TARGETFILE%"
+)
+
+if /I "%MODE%"=="download" (
+    if NOT "%SPATH%"=="" (
+        set CMD=!CMD! --sharepoint_path "%SPATH%"
+    )
+    if NOT "%PWD%"=="" (
+        set CMD=!CMD! --excel_password "%PWD%"
+    )
+)
+
+echo.
+echo ========================
+echo Running:
+echo !CMD!
+echo ========================
+echo.
+
+:: Run and keep window open
+%CMD%
+
+echo.
+echo Done. Press any key to exit.
+pause >nul
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import shutil
 import argparse
