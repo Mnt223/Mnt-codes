@@ -1,3 +1,167 @@
+%let base_path = /sasdata/hsbc/email/inbound/;
+%let unzip_path = /sasdata/hsbc/sandbox/email/processed/;
+%let days_back = 20;
+%let size_threshold = 102400; /* 100 KB */
+
+%let f1 = 2000701325_detailed_report.csv;
+%let f2 = 2000701398_detailed_report.csv;
+%let f3 = 2000701606_detailed_report.csv;
+
+proc datasets lib=work nolist;
+    delete backlog summary;
+quit;
+
+/* Create empty log dataset */
+data backlog;
+    length file_date $10 sas_file_date 8 file_name $100 file_status $50 file_size 8 formatted_size $20 action $60;
+    format sas_file_date date9.;
+    stop;
+run;
+
+%macro check_email_files;
+
+    %do i = 0 %to %eval(&days_back - 1);
+
+        /* Step 1: Get date in DD_MM_YY format */
+        %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i));
+        %let dd = %sysfunc(putn(&raw_date, dd2.));
+        %let mm = %sysfunc(putn(&raw_date, mm2.));
+        %let yy = %sysfunc(putn(&raw_date, year2.));
+        %let short_yy = %substr(&yy, 3, 2);
+        %let file_date = &dd._&mm._&short_yy;
+        %let full_zip_file = &base_path.Email_&file_date..zip;
+        %let extract_folder = &unzip_path.&file_date./;
+
+        /* Step 2: Check if ZIP exists */
+        %let zip_found = %sysfunc(fileexist(&full_zip_file));
+
+        %if &zip_found %then %do;
+
+            /* Step 3: Extract ZIP contents */
+            x "mkdir -p &extract_folder";
+            x "unzip -o &full_zip_file -d &extract_folder";
+
+            /* Step 4: Check each expected CSV file */
+            %do j = 1 %to 3;
+                %let curr_file = &&f&j;
+                %let full_file_path = &extract_folder.&curr_file;
+                %let file_exists = %sysfunc(fileexist(&full_file_path));
+
+                %if &file_exists %then %do;
+                    /* Get file size */
+                    data _null_;
+                        infile "ls -l &full_file_path" pipe;
+                        input @19 size 8.;
+                        call symputx('file_size', size);
+                    run;
+
+                    %if %sysevalf(&file_size < &size_threshold) %then
+                        %let file_status = Valid (Below Threshold);
+                    %else
+                        %let file_status = Valid;
+                %end;
+                %else %do;
+                    %let file_status = Missing;
+                    %let file_size = .;
+                %end;
+
+                /* Step 5: Record log */
+                data temp;
+                    length file_date $10 file_name $100 file_status $50 formatted_size $20 action $60;
+                    format sas_file_date date9.;
+
+                    file_date = "&file_date";
+                    file_name = "&&f&j";
+                    file_status = "&file_status";
+                    sas_file_date = input(file_date, ddmmyy10.);
+                    file_size = &file_size;
+
+                    if file_size > 1073741824 then formatted_size = catx(" ", round(file_size/1073741824, 0.01), "GB");
+                    else if file_size > 1048576 then formatted_size = catx(" ", round(file_size/1048576, 0.01), "MB");
+                    else if file_size > 1024 then formatted_size = catx(" ", round(file_size/1024, 0.01), "KB");
+                    else if file_size > 0 then formatted_size = catx(" ", file_size, "Bytes");
+                    else formatted_size = "_";
+                run;
+
+                proc append base=backlog data=temp force; run;
+
+            %end;
+
+        %end;
+        %else %do;
+
+            /* Step 6: ZIP Missing - log all 3 files as Missing */
+            %do j = 1 %to 3;
+                data temp;
+                    length file_date $10 file_name $100 file_status $50 formatted_size $20 action $60;
+                    format sas_file_date date9.;
+                    
+                    file_date = "&file_date";
+                    file_name = "&&f&j";
+                    file_status = "Missing ZIP";
+                    file_size = .;
+                    sas_file_date = input(file_date, ddmmyy10.);
+                    formatted_size = "_";
+                run;
+
+                proc append base=backlog data=temp force; run;
+            %end;
+
+        %end;
+
+    %end;
+
+%mend;
+
+%check_email_files;
+
+/* Step 7: Add Action Tags */
+data backlog1;
+    set backlog;
+    length action $60;
+
+    if file_status = "Missing ZIP" then action = "Alert: Missing ZIP - Repush Required";
+    else if file_status = "Missing" then action = "Alert: Missing File - Repush Required";
+    else if file_status = "Valid (Below Threshold)" then action = "Alert: File Size - Repush Required";
+    else if file_status = "Valid" then action = "Valid File - No Action";
+    else action = "Check Required";
+run;
+
+/* Step 8: Summary Table */
+proc sql;
+    create table summary as
+    select 
+        sas_file_date,
+        file_date,
+        count(*) as Total_Entries,
+        sum(file_status = "Valid") as Valid_Files,
+        sum(index(file_status, "Threshold") > 0) as Below_Threshold,
+        sum(file_status = "Missing") as Missing_Files,
+        sum(file_status = "Missing ZIP") as Missing_ZIPs
+    from backlog1
+    group by sas_file_date, file_date
+    order by sas_file_date;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/email/;
 %let unzip_base = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/EmailCheck/;
 %let days_back = 20;
