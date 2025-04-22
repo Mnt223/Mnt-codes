@@ -1,6 +1,166 @@
 %let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/email/;
 %let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/EmailCheck/;
 %let days_back = 20;
+%let size_threshold = 102400;
+
+proc datasets lib=work nolist;
+    delete email_backlog email_backlog1 email_summary;
+quit;
+
+data email_backlog;
+    length email_file_date $10 file_status $50 file_name $100 formatted_size $20 action $60;
+    format sas_file_date date9.;
+    file_size = .;
+    stop;
+run;
+
+%macro check_email_files;
+
+    %do i = 0 %to %eval(&days_back - 1);
+        %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i));
+        %let formatted_date = %sysfunc(putn(&raw_date, dd_mm_yy.));
+        %let zip_name = Email_&formatted_date..zip;
+        %let zip_path = &base_path.&zip_name;
+        %let extract_folder = &unzip_path.&formatted_date./;
+
+        data _null_;
+            length path $512;
+            path = resolve("&zip_path");
+            exists = fileexist(path);
+            call symputx('zip_found', exists);
+        run;
+
+        %if &zip_found %then %do;
+            x "mkdir -p &extract_folder";
+            x "unzip -o &zip_path -d &extract_folder";
+
+            filename filelist pipe "ls &extract_folder";
+            data _null_;
+                infile filelist truncover;
+                length fname $100;
+                input fname $char100.;
+                call execute('%nrstr(%check_file)(' || quote("&formatted_date") || ',' || quote(trim(fname)) || ',' || quote("&extract_folder") || ');');
+            run;
+
+        %end;
+        %else %do;
+            data temp;
+                length email_file_date $10 file_status $50 file_name $100 formatted_size $20 action $60;
+                format sas_file_date date9.;
+                email_file_date = "&&formatted_date";
+                file_status = "Missing ZIP";
+                file_name = "_";
+                file_size = .;
+                formatted_size = "_";
+                sas_file_date = input(scan(email_file_date,1,'_') || scan(email_file_date,2,'_') || scan(email_file_date,3,'_'), ddmmyy8.);
+            run;
+            proc append base=email_backlog data=temp force; run;
+        %end;
+
+    %end;
+
+%mend;
+
+%macro check_file(email_file_date, file_name, extract_folder);
+    %let full_path = &extract_folder.&file_name;
+
+    data _null_;
+        length fpath $512;
+        fpath = resolve("&full_path");
+        exists = fileexist(fpath);
+        call symputx('file_found', exists);
+    run;
+
+    %if &file_found %then %do;
+        data _null_;
+            infile "du -sb &full_path" pipe;
+            input fsize 8.;
+            call symputx('file_size', fsize);
+        run;
+
+        %let file_status = Valid;
+        %if %sysevalf(&file_size < &size_threshold) %then %let file_status = Valid (Below Threshold);
+
+    %end;
+    %else %do;
+        %let file_status = File Missing After Extraction;
+        %let file_size = .;
+    %end;
+
+    data temp;
+        length email_file_date $10 file_status $50 file_name $100 formatted_size $20 action $60;
+        format sas_file_date date9.;
+
+        email_file_date = "&email_file_date";
+        file_status = "&file_status";
+        file_name = "&file_name";
+        file_size = &file_size;
+
+        /* Correct conversion to SAS date */
+        sas_file_date = input(scan(email_file_date,1,'_') || scan(email_file_date,2,'_') || scan(email_file_date,3,'_'), ddmmyy8.);
+
+        if file_size > 1073741824 then formatted_size = catx(" ", round(file_size/1073741824, 0.01), "GB");
+        else if file_size > 1048576 then formatted_size = catx(" ", round(file_size/1048576, 0.01), "MB");
+        else if file_size > 1024 then formatted_size = catx(" ", round(file_size/1024, 0.01), "KB");
+        else if file_size > 0 then formatted_size = catx(" ", file_size, "Bytes");
+        else formatted_size = "_";
+    run;
+
+    proc append base=email_backlog data=temp force; run;
+
+%mend;
+
+%check_email_files;
+
+/* Final Action Mapping */
+data email_backlog1;
+    set email_backlog;
+    length action $60;
+
+    if file_status = "Missing ZIP" then action = "Alert: Missing File - Repush Required";
+    else if file_status = "File Missing After Extraction" then action = "Alert: Missing File - Repush Required";
+    else if file_status = "Valid" then action = "Valid File - No Action";
+    else if file_status = "Valid (Below Threshold)" then action = "Alert: File Size - Repush Required";
+    else action = "Check Required";
+run;
+
+/* Summary */
+proc sql;
+    create table email_summary as
+    select 
+        sas_file_date,
+        email_file_date,
+        count(*) as Total_Files,
+        sum(file_status = "Valid") as Valid,
+        sum(index(file_status, "Threshold") > 0) as Below_Threshold,
+        sum(file_status = "File Missing After Extraction") as Missing_Files,
+        sum(file_status = "Missing ZIP") as Missing_ZIPs
+    from email_backlog1
+    group by sas_file_date, email_file_date
+    order by sas_file_date;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/email/;
+%let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/EmailCheck/;
+%let days_back = 20;
 %let size_threshold = 102400; /* 100 KB */
 
 proc datasets lib=work nolist;
