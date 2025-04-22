@@ -1,4 +1,137 @@
 %let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/email/;
+%let unzip_base = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/EmailCheck/;
+%let days_back = 20;
+%let size_threshold = 102400;
+
+proc datasets lib=work nolist;
+    delete email_backlog email_backlog1 email_summary;
+quit;
+
+data email_backlog;
+    length file_date $10 file_status $50 file_name $100 formatted_size $20 action $60;
+    format sas_file_date date9.;
+    file_size = .;
+    stop;
+run;
+
+%macro check_files;
+
+    %do i = 0 %to %eval(&days_back - 1);
+
+        /* Step 1: Calculate raw SAS date */
+        %let raw_date = %sysfunc(intnx(day, %sysfunc(today()), -&i));
+        %let dd = %sysfunc(putn(&raw_date, dd2.));
+        %let mm = %sysfunc(putn(&raw_date, mm2.));
+        %let yy = %sysfunc(putn(&raw_date, year2.));
+        %let short_yy = %substr(&yy, 3, 2);
+
+        /* Step 2: Build original file format and internal YYYY-MM-DD format */
+        %let original_format = &dd._&mm._&short_yy;
+        %let std_date = &yy-&mm-&dd;
+
+        %let file_name = Email_&original_format..zip;
+        %let full_file_path = &base_path.&file_name;
+        %let extract_folder = &unzip_base.&std_date./;
+
+        /* Step 3: Check ZIP exists */
+        data _null_;
+            length file_path $512;
+            file_path = resolve("&full_file_path");
+            file_exists = fileexist(file_path);
+            call symputx('file_found', file_exists);
+        run;
+
+        %if &file_found %then %do;
+
+            x "mkdir -p &extract_folder";
+            x "unzip -o &full_file_path -d &extract_folder";
+
+            /* Step 4: Check extracted folder size */
+            data _null_;
+                infile "du -sb &extract_folder" pipe;
+                input size 8.;
+                call symputx('file_size', size);
+            run;
+
+            %let file_status = Valid;
+            %if %sysevalf(&file_size < &size_threshold) %then
+                %let file_status = Valid (Below Threshold);
+
+        %end;
+        %else %do;
+            %let file_status = Missing ZIP;
+            %let file_size = .;
+        %end;
+
+        /* Step 5: Create backlog record */
+        data temp;
+            length file_date $10 file_status $50 file_name $100 formatted_size $20 action $60;
+            format sas_file_date date9.;
+
+            file_date = "&std_date";
+            file_status = "&file_status";
+            file_name = "&file_name";
+            file_size = &file_size;
+            sas_file_date = input(file_date, yymmdd10.);
+
+            if file_size > 1073741824 then formatted_size = catx(" ", round(file_size/1073741824, 0.01), "GB");
+            else if file_size > 1048576 then formatted_size = catx(" ", round(file_size/1048576, 0.01), "MB");
+            else if file_size > 1024 then formatted_size = catx(" ", round(file_size/1024, 0.01), "KB");
+            else if file_size > 0 then formatted_size = catx(" ", file_size, "Bytes");
+            else formatted_size = "_";
+        run;
+
+        proc append base=email_backlog data=temp force; run;
+
+    %end;
+
+%mend;
+
+%check_files;
+
+/* Step 6: Add action flag */
+data email_backlog1;
+    set email_backlog;
+    length action $60;
+
+    if file_status = "Missing ZIP" then action = "Alert: Missing File - Repush Required";
+    else if file_status = "Valid" then action = "Valid File - No Action";
+    else if file_status = "Valid (Below Threshold)" then action = "Alert: File Size - Repush Required";
+    else action = "Check Required";
+run;
+
+/* Step 7: Daily summary */
+proc sql;
+    create table email_summary as
+    select 
+        sas_file_date,
+        file_date,
+        count(*) as Total_Files,
+        sum(file_status = "Valid") as Valid,
+        sum(index(file_status, "Threshold") > 0) as Below_Threshold,
+        sum(file_status = "Missing ZIP") as Missing_ZIPs
+    from email_backlog1
+    group by sas_file_date, file_date
+    order by sas_file_date;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%let base_path = /sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/email/;
 %let unzip_path = /sasdata/hsbc/dil/INM/IM/SASBAU/sandbox/Prachi/EmailCheck/;
 %let days_back = 20;
 %let size_threshold = 102400; /* 100 KB */
