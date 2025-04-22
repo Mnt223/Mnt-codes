@@ -1,4 +1,117 @@
 import os
+import shutil
+import argparse
+import paramiko
+from scp import SCPClient, SCPException
+import pandas as pd
+import xlsxwriter
+from dotenv import load_dotenv
+
+# Load credentials from .env
+load_dotenv()
+username = os.getenv("SSH_USER")
+password = os.getenv("SSH_PASS")
+host = os.getenv("SSH_HOST")
+port = int(os.getenv("SSH_PORT", 22))
+
+# Parse input arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--mode', choices=['upload', 'download'], required=True)
+parser.add_argument('--local_path', required=True)
+parser.add_argument('--remote_path', required=True)
+parser.add_argument('--sharepoint_path', required=False)
+parser.add_argument('--excel_password', required=False)
+parser.add_argument('--csv_file_name', required=False, default="report.csv")
+parser.add_argument('--target_file', required=False)
+args = parser.parse_args()
+
+# Progress bar display
+def progress(filename, size, sent):
+    percent = float(sent) / float(size) * 100
+    print(f"\rTransferring {filename}... {percent:.2f}% completed", end='')
+
+def create_ssh_client():
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(host, port=port, username=username, password=password)
+    return ssh
+
+def transfer_files():
+    ssh = create_ssh_client()
+    with SCPClient(ssh.get_transport(), progress=progress) as scp:
+        if args.mode == "download":
+            os.makedirs(args.local_path, exist_ok=True)
+            if args.target_file:
+                remote_file = os.path.join(args.remote_path, args.target_file)
+                print(f"Downloading file: {remote_file}")
+                scp.get(remote_file, local_path=args.local_path)
+            else:
+                print(f"Downloading all files from: {args.remote_path}")
+                scp.get(args.remote_path, local_path=args.local_path, recursive=True)
+        elif args.mode == "upload":
+            if args.target_file:
+                local_file = os.path.join(args.local_path, args.target_file)
+                print(f"Uploading file: {local_file}")
+                scp.put(local_file, remote_path=args.remote_path)
+            else:
+                print(f"Uploading all files from: {args.local_path}")
+                scp.put(args.local_path + "*", remote_path=args.remote_path, recursive=True)
+
+def protect_and_move_to_sharepoint():
+    if not args.sharepoint_path or not args.excel_password:
+        print("\nSkipping SharePoint transfer or password protection (missing args).")
+        return
+
+    csv_file = os.path.join(args.local_path, args.csv_file_name)
+    output_file = os.path.join(args.local_path, "Protected_Report.xlsx")
+
+    if not os.path.exists(csv_file):
+        print(f"\nCSV file not found: {csv_file}")
+        return
+
+    df = pd.read_csv(csv_file)
+    workbook = xlsxwriter.Workbook(output_file)
+    workbook.password = args.excel_password
+    worksheet = workbook.add_worksheet()
+    worksheet.write('A1', 'INTERNAL USE ONLY')
+
+    for col_idx, col in enumerate(df.columns):
+        worksheet.write(2, col_idx, col)
+        for row_idx, val in enumerate(df[col]):
+            worksheet.write(row_idx + 3, col_idx, val)
+    workbook.close()
+
+    shutil.copy(output_file, args.sharepoint_path)
+    print(f"\nPassword-protected Excel file saved to SharePoint: {args.sharepoint_path}")
+
+# Main execution
+try:
+    transfer_files()
+    if args.mode == "download":
+        protect_and_move_to_sharepoint()
+except SCPException as e:
+    print(f"\nSCP Error: {e}")
+except Exception as e:
+    print(f"\nGeneral Error: {e}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import os
 import paramiko
 from dotenv import load_dotenv
 
