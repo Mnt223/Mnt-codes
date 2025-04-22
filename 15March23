@@ -1,3 +1,63 @@
+/* Step 1: Determine acquisition date (earliest of product open dates) */
+data customer_acquisition;
+    set customer_base;
+    acquisition_date = min(of card_open_date ploc_open_date loan_open_date);  /* Add all product dates here */
+    if acquisition_date >= '01JAN2024'd;
+
+    mob3_date = intnx('month', acquisition_date, 2, 'b');
+    mob3_cube_name = "cust_cube_" || lowcase(put(mob3_date, monname3.)) || put(mob3_date, year2.) || "_data";
+    mob3_var_suffix = put(mob3_date, mmyyn4.);  /* e.g., 0324 for Mar 2024 */
+    format acquisition_date mob3_date date9.;
+run;
+
+/* Step 2: Get unique cube names + suffixes */
+proc sql noprint;
+    select distinct mob3_cube_name, mob3_var_suffix 
+        into :cube_list separated by ' ', :suffix_list separated by ' '
+    from customer_acquisition;
+quit;
+
+/* Step 3: Loop through cubes, use correct TRB variable */
+%macro fetch_mob3_trb;
+    %let i = 1;
+    %do %while (%scan(&cube_list, &i) ne );
+        %let cube_ds = %scan(&cube_list, &i);
+        %let suffix = %scan(&suffix_list, &i);
+        %let trb_var = trb_bal_&suffix._uniq;
+
+        proc sql;
+            create table trb_&i as
+            select 
+                a.cust_id,
+                a.acquisition_date,
+                a.mob3_date,
+                b.&trb_var as mob3_trb
+            from customer_acquisition a
+            inner join cube1.&cube_ds b
+                on a.cust_id = b.cust_id
+            where a.mob3_cube_name = "&cube_ds";
+        quit;
+
+        %let i = %eval(&i + 1);
+    %end;
+
+    /* Combine all temp results */
+    data final_mob3_trb;
+        set 
+        %do j = 1 %to %eval(&i - 1);
+            trb_&j
+        %end;
+        ;
+    run;
+%mend;
+
+%fetch_mob3_trb;
+
+
+
+
+
+
 /* Step 1: Get acquisition date (earliest of all product open dates) */
 data customer_acquisition;
     set customer_base;
