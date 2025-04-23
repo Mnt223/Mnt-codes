@@ -1,3 +1,105 @@
+Sub SplitDataByRM_WithFoldersAndPassword()
+
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim rmDict As Object
+    Dim rmName As Variant
+    Dim basePath As String
+    Dim headerRange As Range
+    Dim r As Long
+
+    Set ws = ThisWorkbook.Sheets(1) ' Use your main sheet
+    lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
+    Set headerRange = ws.Range("A1", ws.Cells(1, ws.UsedRange.Columns.Count))
+
+    Set rmDict = CreateObject("Scripting.Dictionary")
+
+    ' Get all unique RM names
+    For r = 2 To lastRow
+        rmName = Trim(ws.Cells(r, 3).Value)
+        If Len(rmName) > 0 Then
+            If Not rmDict.exists(rmName) Then
+                rmDict.Add rmName, Nothing
+            End If
+        End If
+    Next r
+
+    ' Ask where to save the main folder
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "Select Main Folder to Save RM Folders"
+        If .Show <> -1 Then
+            MsgBox "No folder selected. Exiting.", vbExclamation
+            Exit Sub
+        End If
+        basePath = .SelectedItems(1) & "\"
+    End With
+
+    ' Loop through RMs
+    For Each rmName In rmDict.Keys
+
+        Dim newWB As Workbook
+        Set newWB = Workbooks.Add
+        headerRange.Copy Destination:=newWB.Sheets(1).Range("A1")
+
+        Dim pasteRow As Long
+        pasteRow = 2
+
+        For r = 2 To lastRow
+            If Trim(ws.Cells(r, 3).Value) = rmName Then
+                ws.Range("A" & r, ws.Cells(r, ws.UsedRange.Columns.Count)).Copy _
+                    Destination:=newWB.Sheets(1).Range("A" & pasteRow)
+                pasteRow = pasteRow + 1
+            End If
+        Next r
+
+        ' Clean RM name
+        Dim cleanName As String
+        cleanName = Replace(rmName, "/", "_")
+        cleanName = Replace(cleanName, "\", "_")
+        cleanName = Replace(cleanName, "*", "_")
+        cleanName = Replace(cleanName, "?", "_")
+        cleanName = Replace(cleanName, ":", "_")
+        cleanName = Replace(cleanName, "[", "_")
+        cleanName = Replace(cleanName, "]", "_")
+
+        ' Create folder for this RM
+        Dim rmFolder As String
+        rmFolder = basePath & cleanName & "\"
+        If Dir(rmFolder, vbDirectory) = "" Then MkDir rmFolder
+
+        ' Save file inside RM's folder
+        Dim filePath As String
+        filePath = rmFolder & cleanName & "_Records.xlsx"
+
+        Application.DisplayAlerts = False
+        newWB.SaveAs Filename:=filePath, Password:="hsbc123@"
+        Application.DisplayAlerts = True
+
+        newWB.Close SaveChanges:=False
+
+    Next rmName
+
+    MsgBox "All files created in separate folders with password: hsbc123@", vbInformation
+
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Sub SplitDataByRM_WithFixedPassword()
 
     Dim ws As Worksheet
