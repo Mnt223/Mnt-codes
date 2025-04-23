@@ -1,6 +1,85 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: === Initial Prompt ===
+echo ================================
+echo     FILE TRANSFER AUTOMATION    
+echo ================================
+
+:: Mode Selection
+set /p MODE=Enter operation (upload/download): 
+if /I "%MODE%" NEQ "upload" if /I "%MODE%" NEQ "download" (
+    echo Invalid mode entered. Must be 'upload' or 'download'.
+    pause
+    exit /b
+)
+
+:: Local path
+set /p LOCAL=Enter local path (e.g. C:\Users\You\Downloads\): 
+if not exist "%LOCAL%" (
+    echo Local path does not exist.
+    pause
+    exit /b
+)
+
+:: Remote SFTP path
+set /p REMOTE=Enter remote SFTP path (e.g. Suyash/inapp_day_1/): 
+
+:: File selection prompt
+set /p FILEMODE=Do you want to transfer a specific file? (yes/no): 
+if /I "%FILEMODE%"=="yes" (
+    set /p TARGETFILE=Enter exact file name (e.g. Branch_file.xlsx): 
+)
+
+:: Download options
+if /I "%MODE%"=="download" (
+    set /p SPATH=Enter SharePoint path (optional): 
+    set /p PWD=Enter Excel password (optional): 
+)
+
+:: === Build the Python Command ===
+set CMD=python file_transfer_main.py --mode %MODE% --local_path "%LOCAL%" --remote_path "%REMOTE%"
+
+if defined TARGETFILE (
+    set CMD=%CMD% --target_file "%TARGETFILE%"
+)
+if defined SPATH (
+    set CMD=%CMD% --sharepoint_path "%SPATH%"
+)
+if defined PWD (
+    set CMD=%CMD% --excel_password "%PWD%"
+)
+
+:: === Execute ===
+echo.
+echo Final command:
+echo %CMD%
+echo --------------------------------
+echo Executing...
+echo --------------------------------
+
+:: Actual run
+cmd /k "%CMD%"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@echo off
+setlocal enabledelayedexpansion
+
 :: Get operation mode
 set /p MODE=Enter operation (upload/download): 
 
