@@ -1,3 +1,146 @@
+import os
+import shutil
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from dotenv import load_dotenv
+import paramiko
+from scp import SCPClient
+import pandas as pd
+import xlsxwriter
+
+load_dotenv()
+
+# Load from .env
+HOST = os.getenv("SSH_HOST")
+PORT = int(os.getenv("SSH_PORT", 22))
+USER = os.getenv("SSH_USER")
+PASS = os.getenv("SSH_PASS")
+DEFAULT_PASSWORD = os.getenv("EXCEL_PASSWORD", "default123")
+
+# Preset saved paths
+SAVED_REMOTE_PATHS = ["Suyash/inapp_day_1/", "Suyash/weekly_reports/", "Suyash/raw_data/"]
+SAVED_LOCAL_PATHS = [os.path.expanduser("~/Downloads"), os.path.expanduser("~/Desktop")]
+
+def create_ssh_client():
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(HOST, port=PORT, username=USER, password=PASS)
+    return ssh
+
+def transfer(mode, local_path, remote_path, file_name, transfer_all, excel_pw, apply_excel, sharepoint_path, move_to_sharepoint):
+    ssh = create_ssh_client()
+    with SCPClient(ssh.get_transport()) as scp:
+        if mode == "Download":
+            os.makedirs(local_path, exist_ok=True)
+            if transfer_all:
+                scp.get(remote_path, local_path=local_path, recursive=True)
+            else:
+                scp.get(os.path.join(remote_path, file_name), local_path=local_path)
+        else:
+            if transfer_all:
+                scp.put(local_path + "/*", remote_path=remote_path, recursive=True)
+            else:
+                scp.put(os.path.join(local_path, file_name), remote_path=remote_path)
+
+    if mode == "Download" and file_name.endswith(".xlsx") and apply_excel:
+        input_file = os.path.join(local_path, file_name)
+        df = pd.read_excel(input_file)
+        output_file = os.path.join(local_path, "Protected_" + file_name)
+        workbook = xlsxwriter.Workbook(output_file)
+        workbook.password = excel_pw
+        worksheet = workbook.add_worksheet()
+        worksheet.write('A1', 'INTERNAL USE ONLY')
+        for col_idx, col in enumerate(df.columns):
+            worksheet.write(2, col_idx, col)
+            for row_idx, val in enumerate(df[col]):
+                worksheet.write(row_idx + 3, col_idx, val)
+        workbook.close()
+        if move_to_sharepoint and sharepoint_path:
+            try:
+                os.makedirs(sharepoint_path, exist_ok=True)
+                shutil.copy(output_file, sharepoint_path)
+                messagebox.showinfo("SharePoint Upload", f"Protected file copied to: {sharepoint_path}")
+            except Exception as e:
+                messagebox.showerror("SharePoint Error", f"Failed to copy to SharePoint: {e}")
+
+def run_transfer():
+    mode = mode_var.get()
+    local_path = local_entry.get()
+    remote_path = remote_combo.get()
+    file_name = file_entry.get()
+    transfer_all = transfer_all_var.get()
+    apply_excel = apply_excel_var.get()
+    excel_pw = password_entry.get() or DEFAULT_PASSWORD
+    sharepoint_path = sharepoint_entry.get()
+    move_to_sharepoint = move_sharepoint_var.get()
+
+    if not local_path or not remote_path:
+        messagebox.showerror("Input Error", "Local and Remote paths are required.")
+        return
+
+    try:
+        transfer(mode, local_path, remote_path, file_name, transfer_all, excel_pw, apply_excel, sharepoint_path, move_to_sharepoint)
+        messagebox.showinfo("Success", f"{mode} completed successfully!")
+    except Exception as e:
+        messagebox.showerror("Transfer Failed", str(e))
+
+# GUI Setup
+root = tk.Tk()
+root.title("Secure File Transfer Utility")
+
+tk.Label(root, text="Transfer Mode").grid(row=0, column=0, sticky="w")
+mode_var = tk.StringVar(value="Download")
+tk.OptionMenu(root, mode_var, "Download", "Upload").grid(row=0, column=1, sticky="ew")
+
+tk.Label(root, text="Local Path").grid(row=1, column=0, sticky="w")
+local_entry = ttk.Combobox(root, values=SAVED_LOCAL_PATHS, width=50)
+local_entry.set(SAVED_LOCAL_PATHS[0])
+local_entry.grid(row=1, column=1, sticky="ew")
+tk.Button(root, text="Browse", command=lambda: local_entry.set(filedialog.askdirectory())).grid(row=1, column=2)
+
+tk.Label(root, text="Remote Path").grid(row=2, column=0, sticky="w")
+remote_combo = ttk.Combobox(root, values=SAVED_REMOTE_PATHS, width=50)
+remote_combo.set(SAVED_REMOTE_PATHS[0])
+remote_combo.grid(row=2, column=1, sticky="ew")
+
+tk.Label(root, text="File Name").grid(row=3, column=0, sticky="w")
+file_entry = tk.Entry(root, width=52)
+file_entry.grid(row=3, column=1, sticky="ew")
+
+transfer_all_var = tk.BooleanVar(value=False)
+tk.Checkbutton(root, text="Transfer All Files from Folder", variable=transfer_all_var).grid(row=4, column=1, sticky="w")
+
+apply_excel_var = tk.BooleanVar(value=True)
+tk.Checkbutton(root, text="Apply Excel Password if .xlsx", variable=apply_excel_var).grid(row=5, column=1, sticky="w")
+
+tk.Label(root, text="Excel Password (blank = default)").grid(row=6, column=0, sticky="w")
+password_entry = tk.Entry(root, width=52, show="*")
+password_entry.grid(row=6, column=1, sticky="ew")
+
+tk.Label(root, text="SharePoint Path").grid(row=7, column=0, sticky="w")
+sharepoint_entry = tk.Entry(root, width=52)
+sharepoint_entry.grid(row=7, column=1, sticky="ew")
+tk.Button(root, text="Browse", command=lambda: sharepoint_entry.set(filedialog.askdirectory())).grid(row=7, column=2)
+
+move_sharepoint_var = tk.BooleanVar(value=True)
+tk.Checkbutton(root, text="Move Excel to SharePoint after protection", variable=move_sharepoint_var).grid(row=8, column=1, sticky="w")
+
+tk.Button(root, text="Run Transfer", command=run_transfer).grid(row=9, column=1, pady=10)
+
+root.mainloop()
+
+
+
+
+
+
+
+
+
+
+
+
+
 @echo off
 setlocal enabledelayedexpansion
 
