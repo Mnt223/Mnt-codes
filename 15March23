@@ -1,3 +1,101 @@
+Sub SplitDataByRM_WithFixedPassword()
+
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim rmDict As Object
+    Dim rmName As String
+    Dim savePath As String
+    Dim headerRange As Range
+    Dim fileName As String
+    Dim r As Long
+
+    Set ws = ThisWorkbook.Sheets(1) ' Update if needed
+    lastRow = ws.Cells(ws.Rows.Count, "C").End(xlUp).Row
+    Set headerRange = ws.Range("A1", ws.Cells(1, ws.UsedRange.Columns.Count))
+
+    Set rmDict = CreateObject("Scripting.Dictionary")
+
+    ' Collect unique RM names from column C
+    For r = 2 To lastRow
+        rmName = Trim(ws.Cells(r, 3).Value)
+        If Len(rmName) > 0 Then
+            If Not rmDict.exists(rmName) Then
+                rmDict.Add rmName, Nothing
+            End If
+        End If
+    Next r
+
+    ' Prompt user to choose folder
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "Select Folder to Save RM Files"
+        If .Show <> -1 Then
+            MsgBox "No folder selected. Exiting.", vbExclamation
+            Exit Sub
+        End If
+        savePath = .SelectedItems(1) & "\"
+    End With
+
+    ' Loop through each RM
+    For Each rmName In rmDict.Keys
+
+        Dim newWB As Workbook
+        Set newWB = Workbooks.Add
+        headerRange.Copy Destination:=newWB.Sheets(1).Range("A1")
+
+        Dim pasteRow As Long
+        pasteRow = 2
+
+        For r = 2 To lastRow
+            If Trim(ws.Cells(r, 3).Value) = rmName Then
+                ws.Range("A" & r, ws.Cells(r, ws.UsedRange.Columns.Count)).Copy _
+                    Destination:=newWB.Sheets(1).Range("A" & pasteRow)
+                pasteRow = pasteRow + 1
+            End If
+        Next r
+
+        ' Clean RM name for file name
+        Dim cleanName As String
+        cleanName = Replace(rmName, "/", "_")
+        cleanName = Replace(cleanName, "\", "_")
+        cleanName = Replace(cleanName, "*", "_")
+        cleanName = Replace(cleanName, "?", "_")
+        cleanName = Replace(cleanName, ":", "_")
+        cleanName = Replace(cleanName, "[", "_")
+        cleanName = Replace(cleanName, "]", "_")
+
+        fileName = savePath & cleanName & "_Records.xlsx"
+
+        ' Save with fixed password
+        Application.DisplayAlerts = False
+        newWB.SaveAs Filename:=fileName, Password:="hsbc123@"
+        Application.DisplayAlerts = True
+
+        newWB.Close SaveChanges:=False
+
+    Next rmName
+
+    MsgBox "All RM files created with password protection: hsbc123@", vbInformation
+
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %macro fetch_mob3_trb;
     %let i = 1;
     %do %while (%scan(&cube_list, &i) ne );
