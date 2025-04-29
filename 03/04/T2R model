@@ -1,1 +1,31 @@
-'utilization_3m_min', 'utilization_1m', 'billed_balance_6m_min', 'cc_cl_amt_6m_mean', 'cc_utilization_3m', 'cc_ovs_amt_1m', 'cc_mb_tran_3m_sum', 'cc_ent_tran_3m_mean', 'cc_ser_amt_1_6', 'cc_or_amt_1_3', 'cc_tran_3m_mean', 'payment_3m_max', 'eop_casa_bal_avg_r13', 'sav_dep_ddp_cr_bal_3m_mean', 'sav_dep_ddp_bal_6m_mean', 'sav_dep_ddp_cnt_lcy_3m_mean', 'credit_limit_6m_max', 'val_cc_totlmt_offus', 'onus_unsec_bal_6m', 'cnt_ln_offus', 'max_offus_ln_open_mob', 'dsr_lending_ccpilhml_1m', 'onus_max_pil_tenor', 'cib_score_bucket', 'cnt_enquiries_6m', 'cust_mob_gdm', 'max_acct_mob_1m', 'reln_trb_max_final_3avg', 'pay_ratio_6m_mean', 'balance_active_1m'
+import pandas as pd
+import numpy as np
+
+# Step 1: Define your selected variables
+selected_vars = [
+    'utilization_3m_min', 'utilization_1m', 'billed_balance_6m_min', 'cc_cl_amt_6m_mean', 'cc_utilization_3m',
+    'cc_ovs_amt_1m', 'cc_mb_tran_3m_sum', 'cc_ent_tran_3m_mean', 'cc_ser_amt_1_6', 'cc_or_amt_1_3',
+    'cc_tran_3m_mean', 'payment_3m_max', 'eop_casa_bal_avg_r13', 'sav_dep_ddp_cr_bal_3m_mean',
+    'sav_dep_ddp_bal_6m_mean', 'sav_dep_ddp_cnt_lcy_3m_mean', 'credit_limit_6m_max', 'val_cc_totlmt_offus',
+    'onus_unsec_bal_6m', 'cnt_ln_offus', 'max_offus_ln_open_mob', 'dsr_lending_ccpilhml_1m',
+    'onus_max_pil_tenor', 'cib_score_bucket', 'cnt_enquiries_6m', 'cust_mob_gdm', 'max_acct_mob_1m',
+    'reln_trb_max_final_3avg', 'pay_ratio_6m_mean', 'balance_active_1m'
+]
+
+# Step 2: Subset the data
+subset_df = raw[selected_vars].copy()
+
+# Step 3: Compute correlation matrix
+corr_matrix = subset_df.corr().abs()
+
+# Step 4: Get upper triangle of the correlation matrix
+upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+
+# Step 5: Find features with correlation > 0.85
+to_drop = [column for column in upper.columns if any(upper[column] > 0.85)]
+
+# Step 6: Final variable list after removing highly correlated ones
+final_vars = [col for col in selected_vars if col not in to_drop]
+
+# Step 7: Print final variable list as comma-separated string with quotes
+print(', '.join([f"'{v}'" for v in final_vars]))
