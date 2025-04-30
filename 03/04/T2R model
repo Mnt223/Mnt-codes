@@ -1,45 +1,53 @@
 def gain_matrix(input_gm):
-    # Assign weighted deciles based on final score
-    input_gm["deciles"] = pd.qcut(input_gm["final_score"], 10, labels=False)
+    df = input_gm.copy()
 
-    # Aggregate using sampling weight or count fallback
-    if "samplingweight" in input_gm.columns:
-        gainsfreq = input_gm.groupby(["deciles", "mevent"])["samplingweight"].sum().to_frame()
+    # Step 1: Remove rows with missing final score or mevent
+    df = df[~df["final_score"].isna()]
+    df = df[~df["mevent"].isna()]
+
+    # Step 2: Bin into deciles (drop NaNs safely)
+    try:
+        df["deciles"] = pd.qcut(df["final_score"], 10, labels=False, duplicates='drop')
+    except ValueError as e:
+        print("Error in qcut: ", e)
+        return None
+
+    # Step 3: Weighted or unweighted aggregation
+    if "samplingweight" in df.columns:
+        gainsfreq = df.groupby(["deciles", "mevent"])["samplingweight"].sum().reset_index()
         gainsfreq = gainsfreq.rename(columns={"samplingweight": "count"})
     else:
-        gainsfreq = input_gm.groupby(["deciles", "mevent"]).size().to_frame(name="count")
+        gainsfreq = df.groupby(["deciles", "mevent"]).size().reset_index(name="count")
 
-    # Pivot: rows = deciles, columns = mevent (0/1), values = count
+    # Step 4: Pivot cleanly (only 2 mevent levels expected: 0, 1)
     pivot_df = gainsfreq.pivot(index="deciles", columns="mevent", values="count").fillna(0).reset_index()
-
-    # Remove any column index names (from pivot)
     pivot_df.columns.name = None
 
-    # Rename columns for clarity
-    pivot_df.columns = ["Decile", "Non-Events", "Events"]
+    # Step 5: Rename columns based on actual content
+    actual_cols = pivot_df.columns.tolist()
+    if 0 in pivot_df.columns and 1 in pivot_df.columns:
+        pivot_df.columns = ["Decile", "Non-Events", "Events"]
+    else:
+        pivot_df.columns = ["Decile"] + [str(c) for c in actual_cols[1:]]
 
-    # Sort by descending decile (so D1 = highest score)
+    # Step 6: Sort in descending decile order
     pivot_df.sort_values(by="Decile", ascending=False, inplace=True)
 
-    # Cumulative counts
+    # Step 7: Cumulative and metrics
     pivot_df["Cum Non-Events"] = pivot_df["Non-Events"].cumsum()
     pivot_df["Cum Events"] = pivot_df["Events"].cumsum()
 
-    # Totals
     total_non_events = pivot_df["Non-Events"].sum()
     total_events = pivot_df["Events"].sum()
 
-    # Cumulative % calculations
     pivot_df["% Cum Non-Events"] = (pivot_df["Cum Non-Events"] / total_non_events) * 100
     pivot_df["% Cum Events"] = (pivot_df["Cum Events"] / total_events) * 100
 
-    # Event Rate
     pivot_df["Event Rate"] = (pivot_df["Events"] / (pivot_df["Non-Events"] + pivot_df["Events"])) * 100
     pivot_df["Cum Event Rate"] = (
-        pivot_df["Cum Events"] / (pivot_df["Cum Non-Events"] + pivot_df["Cum Events"])
+        pivot_df["Cum Events"] / (pivot_df["Cum Events"] + pivot_df["Cum Non-Events"])
     ) * 100
 
-    # Separation
     pivot_df["Separation"] = pivot_df["% Cum Events"] - pivot_df["% Cum Non-Events"]
 
     return pivot_df
