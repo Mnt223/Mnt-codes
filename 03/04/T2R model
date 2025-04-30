@@ -1,3 +1,61 @@
+def gain_matrix(input_gm):
+    # Assign weighted deciles based on final score
+    input_gm["deciles"] = pd.qcut(input_gm["final_score"], 10, labels=False)
+
+    # Aggregate using sampling weight or count fallback
+    if "samplingweight" in input_gm.columns:
+        gainsfreq = input_gm.groupby(["deciles", "mevent"])["samplingweight"].sum().to_frame()
+        gainsfreq = gainsfreq.rename(columns={"samplingweight": "count"})
+    else:
+        gainsfreq = input_gm.groupby(["deciles", "mevent"]).size().to_frame(name="count")
+
+    # Pivot: rows = deciles, columns = mevent (0/1), values = count
+    pivot_df = gainsfreq.pivot(index="deciles", columns="mevent", values="count").fillna(0).reset_index()
+
+    # Remove any column index names (from pivot)
+    pivot_df.columns.name = None
+
+    # Rename columns for clarity
+    pivot_df.columns = ["Decile", "Non-Events", "Events"]
+
+    # Sort by descending decile (so D1 = highest score)
+    pivot_df.sort_values(by="Decile", ascending=False, inplace=True)
+
+    # Cumulative counts
+    pivot_df["Cum Non-Events"] = pivot_df["Non-Events"].cumsum()
+    pivot_df["Cum Events"] = pivot_df["Events"].cumsum()
+
+    # Totals
+    total_non_events = pivot_df["Non-Events"].sum()
+    total_events = pivot_df["Events"].sum()
+
+    # Cumulative % calculations
+    pivot_df["% Cum Non-Events"] = (pivot_df["Cum Non-Events"] / total_non_events) * 100
+    pivot_df["% Cum Events"] = (pivot_df["Cum Events"] / total_events) * 100
+
+    # Event Rate
+    pivot_df["Event Rate"] = (pivot_df["Events"] / (pivot_df["Non-Events"] + pivot_df["Events"])) * 100
+    pivot_df["Cum Event Rate"] = (
+        pivot_df["Cum Events"] / (pivot_df["Cum Non-Events"] + pivot_df["Cum Events"])
+    ) * 100
+
+    # Separation
+    pivot_df["Separation"] = pivot_df["% Cum Events"] - pivot_df["% Cum Non-Events"]
+
+    return pivot_df
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 
