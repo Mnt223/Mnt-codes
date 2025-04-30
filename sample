@@ -1,3 +1,20 @@
+
+Hi Souvik,
+
+I connected with Bharat regarding the HML pricing data. He mentioned that the data we are currently using is incorrect and has already shared the correct dataset with you.
+
+As per the updated file, the salary TRB amount needs to be included along with the correct SM, RM, and BAS names.
+
+Also, could you please share with me the code or let me know if there are any pre-set codes available for their current ask?
+
+Bharat has requested the updated output by the upcoming Monday.
+
+
+
+
+
+
+
 %let folder_path = /your/folder/path;
 
 %macro create_folder_if_not_exists(path);
