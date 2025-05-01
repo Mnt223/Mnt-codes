@@ -20,25 +20,23 @@ for df in [df_train, df_test, df_oot, df_main]:
 
 
 
-
-def generate_gain_table(data, score_col='final_score', target_col='mevent', deciles=10):
-    df = data[[score_col, target_col]].copy()
-    df['decile'] = pd.qcut(df[score_col].rank(method='first'), deciles, labels=False, duplicates='drop') + 1
-    df = df.sort_values(by=score_col, ascending=False)
-
-    gain_table = df.groupby('decile').agg(
+def generate_gain_table_from_decile(df, target_col='mevent', decile_col='decile'):
+    gain_table = df.groupby(decile_col).agg(
         Total_Customers=(target_col, 'count'),
         Events=(target_col, 'sum')
-    ).sort_index(ascending=False).reset_index()
+    ).sort_index(ascending=True).reset_index()
 
     gain_table['Non_Events'] = gain_table['Total_Customers'] - gain_table['Events']
     gain_table['Event_Rate'] = gain_table['Events'] / gain_table['Total_Customers']
     gain_table['Cumulative_Events'] = gain_table['Events'].cumsum()
-    gain_table['Cumulative_Pop'] = gain_table['Total_Customers'].cumsum()
-    gain_table['Cumulative_Event_Rate'] = gain_table['Cumulative_Events'] / gain_table['Cumulative_Pop']
-    gain_table['Cumulative_Percent_Customers'] = gain_table['Cumulative_Pop'] / gain_table['Total_Customers'].sum()
-    baseline_event_rate = df[target_col].mean()
+    gain_table['Cumulative_Customers'] = gain_table['Total_Customers'].cumsum()
+    gain_table['Cumulative_Event_Rate'] = gain_table['Cumulative_Events'] / gain_table['Cumulative_Customers']
+    total_events = gain_table['Events'].sum()
+    total_customers = gain_table['Total_Customers'].sum()
+    baseline_event_rate = total_events / total_customers
     gain_table['Lift'] = gain_table['Event_Rate'] / baseline_event_rate
+    gain_table['Cumulative_Perc_Events'] = gain_table['Cumulative_Events'] / total_events
+    gain_table['Cumulative_Perc_Customers'] = gain_table['Cumulative_Customers'] / total_customers
 
     return gain_table
 
