@@ -1,13 +1,14 @@
-# Step 1: Create true decile edges from score values
+# Step 1: Create decile bins using actual final_score
 decile_edges = pd.qcut(df_train['final_score'], 10, retbins=True, duplicates='drop')[1]
 
-# Step 2: Apply deciles using score-based cutpoints
+# Step 2: Apply consistent deciles across all datasets
 def assign_deciles(df, score_col='final_score', bins=decile_edges):
     return pd.cut(df[score_col], bins=bins, labels=list(range(10, 0, -1)), include_lowest=True)
 
-# Step 3: Apply to all datasets
+# Step 3: Apply and safely convert to integer using .cat.codes + 1
 for df in [df_train, df_test, df_oot, df_main]:
-    df['decile'] = assign_deciles(df).astype(int)
+    df['decile'] = assign_deciles(df)
+    df['decile'] = df['decile'].cat.codes + 1  # Handles NaNs gracefully
 
 
 
