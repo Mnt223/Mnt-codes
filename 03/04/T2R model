@@ -1,32 +1,32 @@
 import pandas as pd
 import numpy as np
 
-# List of top SHAP features
+# Define top features
 top_features = [
     'utilization_1m', 'cnt_ln_offus', 'balance_active_1m',
     'cib_score_bucket', 'cnt_enquiries_6m', 'dsr_lending_ccpihml_1m'
 ]
 
-# Step 1: Score Banding from Train cutoffs
+# Create score bands
 score_bins = [0, 175, 192, 208, 229, df_main['final_score'].max()]
 score_labels = ['E. <= 175', 'D. 175 - 192', 'C. 192 - 208', 'B. 208 - 229', 'A. > 229']
 df_main['score_band'] = pd.cut(df_main['final_score'], bins=score_bins, labels=score_labels, include_lowest=True)
 
-# Step 2: Create Feature Buckets and Summary Tables
 feature_tables = {}
 
 for feature in top_features:
     try:
-        # Generate quantile-based bin edges and remove duplicates
+        # Step 1: Get raw bins
         raw_bins = pd.qcut(df_main[feature], 5, retbins=True, duplicates='drop')[1]
+        # Step 2: Remove bins where left == right
         feat_bins = np.unique(raw_bins)
+        feat_bins = [b for i, b in enumerate(feat_bins) if i == 0 or b != feat_bins[i - 1]]
 
-        # Skip features with <2 unique bins
         if len(feat_bins) <= 2:
-            feature_tables[feature] = f"Skipped: Not enough distinct bin edges"
+            feature_tables[feature] = "Skipped: not enough usable bins"
             continue
 
-        # Label generation
+        # Step 3: Generate labels for remaining bins
         num_bins = len(feat_bins) - 1
         label_base = ['A', 'B', 'C', 'D', 'E'][:num_bins]
         feat_labels = [
@@ -34,17 +34,20 @@ for feature in top_features:
             for i in range(num_bins)
         ]
 
-        # Apply binning
+        # Step 4: Create feature bucket column
         df_main[f'{feature}_bucket'] = pd.cut(
-            df_main[feature], bins=feat_bins, labels=feat_labels, include_lowest=True
+            df_main[feature],
+            bins=feat_bins,
+            labels=feat_labels,
+            include_lowest=True
         )
 
-        # Create and store summary table
-        summary_table = df_main.groupby(['score_band', f'{feature}_bucket']).size().reset_index(name='freq')
-        feature_tables[feature] = summary_table
+        # Step 5: Group and summarize
+        summary = df_main.groupby(['score_band', f'{feature}_bucket']).size().reset_index(name='freq')
+        feature_tables[feature] = summary
 
     except Exception as e:
-        feature_tables[feature] = f"Error processing {feature}: {str(e)}"
+        feature_tables[feature] = f"Error: {str(e)}"
 
 
 feature_tables['utilization_1m']
