@@ -1,6 +1,55 @@
 import pandas as pd
 import numpy as np
 
+# Define top features
+top_features = [
+    'utilization_1m', 'cnt_ln_offus', 'balance_active_1m',
+    'cib_score_bucket', 'cnt_enquiries_6m', 'dsr_lending_ccpihml_1m'
+]
+
+# Step 1: Create score bands
+score_bins = [0, 175, 192, 208, 229, df_main['final_score'].max()]
+score_labels = ['E. <= 175', 'D. 175 - 192', 'C. 192 - 208', 'B. 208 - 229', 'A. > 229']
+df_main['score_band'] = pd.cut(df_main['final_score'], bins=score_bins, labels=score_labels, include_lowest=True)
+
+# Step 2: Create tables for each feature
+feature_tables = {}
+
+for feature in top_features:
+    try:
+        # Get quantile bin edges (removing duplicates)
+        feat_bins = pd.qcut(df_main[feature], 5, retbins=True, duplicates='drop')[1]
+        feat_bins = np.round(np.unique(feat_bins), 4)
+        num_bins = len(feat_bins) - 1
+
+        # Generate reversed labels (A = highest)
+        label_base = ['A', 'B', 'C', 'D', 'E'][:num_bins][::-1]
+        feat_labels = [
+            f"{label_base[i]}. {feat_bins[i]} - {feat_bins[i + 1]}"
+            for i in range(num_bins)
+        ]
+
+        # Assign bucket
+        df_main[f'{feature}_bucket'] = pd.cut(
+            df_main[feature], bins=feat_bins, labels=feat_labels, include_lowest=True
+        )
+
+        # Group and count
+        summary_table = df_main.groupby(['score_band', f'{feature}_bucket']).size().reset_index(name='freq')
+        feature_tables[feature] = summary_table
+
+    except Exception as e:
+        feature_tables[feature] = f"Error processing {feature}: {str(e)}"
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+
 # Define your actual top features
 top_features = [
     'utilization_1m', 'cnt_ln_offus', 'balance_active_1m',
