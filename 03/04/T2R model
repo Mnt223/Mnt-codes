@@ -1,4 +1,59 @@
 1. CC Balance & Utilization
+	•	utilization_3m_min
+	•	utilization_1m
+	•	billed_balance_6m_min
+	•	cc_cl_amt_6m_mean
+	•	cc_ovs_amt_1m
+	•	onus_unsec_bal_6m
+	•	val_cc_totlmt_offus
+
+⸻
+
+2. Payment Behavior
+	•	payment_3m_max
+	•	pay_ratio_6m_mean
+
+⸻
+
+3. Spending Pattern
+	•	cc_mb_tran_3m_sum
+	•	cc_ent_tran_3m_mean
+	•	cc_ser_amt_1_6
+	•	cc_or_amt_1_3
+	•	cc_tran_3m_mean
+
+⸻
+
+4. Account Activity
+	•	balance_active_1m
+	•	cnt_ln_offus
+	•	max_offus_ln_open_mob
+
+⸻
+
+5. Loan & Lending Behavior
+	•	onus_max_pil_tenor
+	•	dsr_lending_ccpilhml_1m
+
+⸻
+
+6. Banking Pattern
+	•	eop_casa_bal_avg_r13
+	•	sav_dep_ddp_cnt_lcy_3m_mean
+	•	reln_trb_max_final_3avg
+
+⸻
+
+7. Credit Profile
+	•	credit_limit_6m_max
+	•	cnt_enquiries_6m
+	•	cib_score_bucket
+
+
+
+
+
+1. CC Balance & Utilization
 	•	Minimum Utilization in Last 3 Months
 	•	Utilization in Last 1 Month
 	•	Minimum Billed Balance in Last 6 Months
