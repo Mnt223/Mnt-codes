@@ -1,56 +1,13 @@
-import pandas as pd
-import matplotlib.pyplot as plt
+def assign_deciles(df, score_col='final_score'):
+    # Rank scores in descending order: highest score = rank 1
+    ranked_scores = df[score_col].rank(method='first', ascending=False)
+    
+    # Create deciles from ranked scores
+    return pd.qcut(ranked_scores, 10, labels=list(range(1, 11)))
 
-# Step 1: Create decile edges (ascending score = high risk at decile 1)
-decile_edges = pd.qcut(df_train['final_score'], 10, retbins=True, duplicates='drop')[1]
-
-def assign_deciles(df, score_col='final_score', bins=None):
-    return pd.cut(df[score_col], bins=bins, labels=list(range(1, 11)), include_lowest=True)
-
-# Apply deciles to all datasets
+# Apply to all datasets
 for df in [df_train, df_test, df_oot]:
-    df['decile'] = assign_deciles(df, bins=decile_edges).cat.codes + 1
-
-# Step 2: Gain table generator
-def generate_gain_table(df, target_col='mevent'):
-    gain_table = (
-        df.groupby('decile')
-        .apply(lambda d: pd.Series({
-            'Total_Customers': len(d),
-            'Events': d[target_col].sum(),
-            'Non_Events': len(d) - d[target_col].sum(),
-            'Event_Rate': d[target_col].mean()
-        }))
-        .reset_index()
-        .sort_values(by='decile')
-    )
-
-    gain_table['Cumulative_Events'] = gain_table['Events'].cumsum()
-    gain_table['Cumulative_Pop'] = gain_table['Total_Customers'].cumsum()
-    total_events = gain_table['Events'].sum()
-    gain_table['Cumulative_Event_Rate'] = gain_table['Cumulative_Events'] / total_events
-    gain_table['Cumulative_Percent_Customers'] = gain_table['Cumulative_Pop'] / gain_table['Total_Customers'].sum()
-    gain_table['Lift'] = gain_table['Event_Rate'] / (total_events / gain_table['Total_Customers'].sum())
-
-    return gain_table
-
-# Step 3: Create all gain tables
-gain_train = generate_gain_table(df_train)
-gain_test = generate_gain_table(df_test)
-gain_oot = generate_gain_table(df_oot)
-
-# Step 4: Plot lift chart
-plt.figure(figsize=(8, 5))
-plt.plot(gain_train['decile'], gain_train['Lift'], marker='o', label='Train')
-plt.plot(gain_test['decile'], gain_test['Lift'], marker='o', label='Test')
-plt.plot(gain_oot['decile'], gain_oot['Lift'], marker='o', label='OOT')
-plt.xlabel('Decile (1 = Worst Score / Highest Risk)')
-plt.ylabel('Lift')
-plt.title('Lift Comparison by Decile (Train vs Test vs OOT)')
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+    df['decile'] = assign_deciles(df)
 
 
 
