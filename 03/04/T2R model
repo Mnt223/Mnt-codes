@@ -1,3 +1,22 @@
+import matplotlib.pyplot as plt
+
+# Step 1: If not done, sort shap_importance from previous SHAP block
+shap_top15 = shap_importance.sort_values(by='Mean_SHAP', ascending=True).tail(15)
+
+# Step 2: Plot horizontal bar chart
+plt.figure(figsize=(8, 6))
+plt.barh(shap_top15['Feature'], shap_top15['Mean_SHAP'], color='darkcyan')
+plt.xlabel('Mean |SHAP Value|', fontsize=12)
+plt.title('Top 15 Features by SHAP Importance', fontsize=14, fontweight='bold')
+plt.grid(axis='x', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
 # Top 6 SHAP features (replace with your actual list)
 top_features = [
     'utilization_1m', 'cnt_ln_offus', 'balance_active_1m',
