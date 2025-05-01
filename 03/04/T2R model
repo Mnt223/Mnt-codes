@@ -1,3 +1,49 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve
+
+# Step 1: KS calculator
+def calculate_ks(df, score_col='final_score', target_col='mevent'):
+    fpr, tpr, _ = roc_curve(df[target_col], df[score_col])
+    return round(max(tpr - fpr), 4)
+
+# Step 2: Calculate KS for Train, Test, OOT
+ks_table = pd.DataFrame({
+    'Dataset': ['Train', 'Test', 'Out-of-Time'],
+    'KS Value': [
+        calculate_ks(df_train),
+        calculate_ks(df_test),
+        calculate_ks(df_oot)
+    ]
+})
+
+# Step 3: Show KS Table
+print("KS Value Summary:")
+display(ks_table)
+
+# Step 4: Plot KS Bar Chart
+plt.figure(figsize=(6, 4))
+plt.bar(ks_table['Dataset'], ks_table['KS Value'], color=['steelblue', 'orange', 'green'])
+plt.title("KS Value Comparison", fontsize=14, fontweight='bold')
+plt.ylabel("KS Value")
+plt.ylim(0, 1)
+for i, v in enumerate(ks_table['KS Value']):
+    plt.text(i, v + 0.02, f"{v:.2f}", ha='center', fontweight='bold')
+plt.grid(axis='y', linestyle='--', alpha=0.6)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
