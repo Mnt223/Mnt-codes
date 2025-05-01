@@ -1,3 +1,48 @@
+def generate_gain_table(data, score_col='final_score', target_col='mevent', deciles=10):
+    df = data[[score_col, target_col]].copy()
+    df['decile'] = pd.qcut(df[score_col].rank(method='first'), deciles, labels=False, duplicates='drop') + 1
+    df = df.sort_values(by=score_col, ascending=False)
+
+    gain_table = df.groupby('decile').agg(
+        Total_Customers=(target_col, 'count'),
+        Events=(target_col, 'sum')
+    ).sort_index(ascending=False).reset_index()
+
+    gain_table['Non_Events'] = gain_table['Total_Customers'] - gain_table['Events']
+    gain_table['Event_Rate'] = gain_table['Events'] / gain_table['Total_Customers']
+    gain_table['Cumulative_Events'] = gain_table['Events'].cumsum()
+    gain_table['Cumulative_Pop'] = gain_table['Total_Customers'].cumsum()
+    gain_table['Cumulative_Event_Rate'] = gain_table['Cumulative_Events'] / gain_table['Cumulative_Pop']
+    gain_table['Cumulative_Percent_Customers'] = gain_table['Cumulative_Pop'] / gain_table['Total_Customers'].sum()
+    baseline_event_rate = df[target_col].mean()
+    gain_table['Lift'] = gain_table['Event_Rate'] / baseline_event_rate
+
+    return gain_table
+
+gain_train = generate_gain_table(df_train)
+gain_test = generate_gain_table(df_test)
+gain_oot = generate_gain_table(df_oot)
+
+print("Train Gain Table:")
+display(gain_train)
+
+print("Test Gain Table:")
+display(gain_test)
+
+print("OOT Gain Table:")
+display(gain_oot)
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 
 # Constants (can be adjusted)
