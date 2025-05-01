@@ -1,3 +1,66 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve
+
+def plot_lift_ks(df, score_col='final_score', target_col='mevent', dataset_label='Train'):
+    df = df[[score_col, target_col]].copy()
+    df['decile'] = pd.qcut(df[score_col].rank(method='first'), 10, labels=False, duplicates='drop')
+    df = df.sort_values(by=score_col, ascending=False).reset_index(drop=True)
+
+    # Lift Chart
+    total_events = df[target_col].sum()
+    df['cumulative_events'] = df[target_col].cumsum()
+    df['population'] = np.arange(1, len(df) + 1)
+    df['cumulative_event_rate'] = df['cumulative_events'] / total_events
+    df['cumulative_population_rate'] = df['population'] / len(df)
+    df['lift'] = df['cumulative_event_rate'] / df['cumulative_population_rate']
+
+    # KS Curve
+    fpr, tpr, thresholds = roc_curve(df[target_col], df[score_col])
+    ks = max(tpr - fpr)
+
+    # Plotting
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle(f"{dataset_label} - Lift and KS Curve", fontsize=14, fontweight='bold')
+
+    # 1. Lift Chart
+    axs[0].plot(df['cumulative_population_rate'], df['lift'], label='Lift', color='blue')
+    axs[0].hlines(1, 0, 1, colors='gray', linestyles='dashed')
+    axs[0].set_title('Lift Chart')
+    axs[0].set_xlabel('% of Population')
+    axs[0].set_ylabel('Lift')
+    axs[0].grid(True)
+
+    # 2. KS Chart
+    axs[1].plot(fpr, label='False Positive Rate', color='red')
+    axs[1].plot(tpr, label='True Positive Rate', color='green')
+    axs[1].fill_between(np.arange(len(fpr)), tpr - fpr, color='lightgray', alpha=0.5)
+    axs[1].set_title(f'KS Curve (KS = {ks:.3f})')
+    axs[1].set_xlabel('Threshold Index')
+    axs[1].set_ylabel('Rate')
+    axs[1].legend()
+    axs[1].grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+plot_lift_ks(df_train, dataset_label='Train')
+plot_lift_ks(df_test, dataset_label='Test')
+plot_lift_ks(df_oot, dataset_label='OOT')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def calculate_csi_for_feature(feature, base_df, target_df, bins=5):
     base = base_df[[feature]].copy()
     target = target_df[[feature]].copy()
