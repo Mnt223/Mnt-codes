@@ -1,3 +1,33 @@
+import shap
+
+# Step 1: Initialize SHAP explainer for CatBoost
+explainer = shap.TreeExplainer(final_model)
+
+# Step 2: Calculate SHAP values on train data
+shap_values = explainer.shap_values(df_train[selected_features])
+
+# Step 3: Convert SHAP values to importance DataFrame
+shap_df = pd.DataFrame(shap_values, columns=selected_features)
+shap_importance = shap_df.abs().mean().sort_values(ascending=False).reset_index()
+shap_importance.columns = ['Feature', 'Mean_SHAP']
+
+# Display top 10
+top_10_features = shap_importance.head(10)
+print("Top 10 Features by Mean SHAP Value:")
+display(top_10_features)
+
+shap.summary_plot(shap_values, df_train[selected_features], max_display=10)
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
