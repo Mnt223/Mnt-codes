@@ -1,3 +1,70 @@
+import pandas as pd
+import numpy as np
+
+# Top 6 SHAP features
+top_features = [
+    'utilization_1m', 'cnt_ln_offus', 'balance_active_1m',
+    'cib_score_bucket', 'cnt_enquiries_6m', 'dsr_lending_ccpihml_1m'
+]
+
+# Create score buckets
+score_bins = [0, 175, 192, 208, 229, df_main['final_score'].max()]
+score_labels = ['E. <= 175', 'D. 175 - 192', 'C. 192 - 208', 'B. 208 - 229', 'A. > 229']
+df_main['score_band'] = pd.cut(df_main['final_score'], bins=score_bins, labels=score_labels, include_lowest=True)
+
+# Dictionary to store final tables
+feature_tables = {}
+
+for feature in top_features:
+    try:
+        # Get quantile-based bins
+        feat_bins = pd.qcut(df_main[feature], 5, retbins=True, duplicates='drop')[1]
+        num_bins = len(feat_bins) - 1
+
+        # Create labels
+        label_base = ['A', 'B', 'C', 'D', 'E']
+        feat_labels = []
+
+        for i in range(num_bins):
+            if i == 0:
+                feat_labels.append(f"{label_base[i]}. > {round(feat_bins[-1], 2)}")
+            elif i == num_bins - 1:
+                feat_labels.append(f"{label_base[i]}. <= {round(feat_bins[1], 2)}")
+            else:
+                feat_labels.append(f"{label_base[i]}. {round(feat_bins[-(i+1)], 2)} - {round(feat_bins[-i], 2)}")
+
+        # Apply binning
+        df_main[f'{feature}_bucket'] = pd.cut(df_main[feature], bins=feat_bins, labels=feat_labels, include_lowest=True)
+
+        # Create grouped table
+        summary_table = df_main.groupby(['score_band', f'{feature}_bucket']).size().reset_index(name='freq')
+        feature_tables[feature] = summary_table
+
+    except Exception as e:
+        feature_tables[feature] = f"Error for {feature}: {str(e)}"
+
+feature_tables['utilization_1m']
+feature_tables['cnt_ln_offus']
+...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import matplotlib.pyplot as plt
 
 # Step 1: If not done, sort shap_importance from previous SHAP block
