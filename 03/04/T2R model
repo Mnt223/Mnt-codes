@@ -1,3 +1,110 @@
+from catboost import CatBoostClassifier
+from sklearn.metrics import roc_auc_score
+import pandas as pd
+import numpy as np
+import random
+
+SEED = 1992
+random.seed(SEED)
+np.random.seed(SEED)
+
+features = selected_features
+target = 'mevent'
+
+results = []
+
+# Step 1: Run 20 iterations
+for i in range(1, 21):
+    params = {
+        'depth': random.choice([3, 4, 5, 6, 7]),
+        'learning_rate': random.choice([0.01, 0.05, 0.1]),
+        'l2_leaf_reg': random.choice([1, 3, 5]),
+        'iterations': 300,
+        'verbose': 0,
+        'random_seed': SEED
+    }
+
+    model = CatBoostClassifier(**params)
+    model.fit(df_train[features], df_train[target])
+
+    # Predict probs
+    train_score = model.predict_proba(df_train[features])[:, 1]
+    test_score = model.predict_proba(df_test[features])[:, 1]
+    oot_score = model.predict_proba(df_oot[features])[:, 1]
+
+    # Compute AUC & Gini
+    auc_train = roc_auc_score(df_train[target], train_score)
+    auc_test = roc_auc_score(df_test[target], test_score)
+    auc_oot = roc_auc_score(df_oot[target], oot_score)
+
+    gini_train = 2 * auc_train - 1
+    gini_test = 2 * auc_test - 1
+    gini_oot = 2 * auc_oot - 1
+    gini_gap = abs(gini_train - gini_oot)
+
+    results.append({
+        'Iteration': i,
+        'depth': params['depth'],
+        'learning_rate': params['learning_rate'],
+        'l2_leaf_reg': params['l2_leaf_reg'],
+        'Train_Gini': round(gini_train, 4),
+        'Test_Gini': round(gini_test, 4),
+        'OOT_Gini': round(gini_oot, 4),
+        'Gini_Gap': round(gini_gap, 4)
+    })
+
+# Step 2: Build final table
+gini_table = pd.DataFrame(results)
+
+# Step 3: Select best iteration (highest Test_Gini with lowest Gini_Gap)
+best_row = gini_table.sort_values(by=['Test_Gini', 'Gini_Gap'], ascending=[False, True]).iloc[0]
+print("\nBest Iteration Chosen:")
+print(best_row)
+
+# Step 4: Retrain best model
+best_model = CatBoostClassifier(
+    depth=int(best_row['depth']),
+    learning_rate=best_row['learning_rate'],
+    l2_leaf_reg=best_row['l2_leaf_reg'],
+    iterations=300,
+    verbose=0,
+    random_seed=SEED
+)
+best_model.fit(df_train[features], df_train[target])
+
+# Step 5: Predict final scores on all datasets
+df_train['score_final'] = best_model.predict_proba(df_train[features])[:, 1]
+df_test['score_final'] = best_model.predict_proba(df_test[features])[:, 1]
+df_oot['score_final'] = best_model.predict_proba(df_oot[features])[:, 1]
+df_main['score_final'] = best_model.predict_proba(df_main[features])[:, 1]
+
+# Final Output
+print("\nFinal Scoring Completed on: Train, Test, OOT, and Full Base (df_main)")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from pycaret.classification import setup, compare_models
 
 # Step 1: Prepare data for PyCaret
