@@ -1,3 +1,81 @@
+2nd trial: 
+import optuna
+from catboost import CatBoostClassifier
+from sklearn.metrics import roc_auc_score
+import numpy as np
+import pandas as pd
+
+SEED = 1992
+np.random.seed(SEED)
+
+# Objective function for Optuna
+def objective(trial):
+    params = {
+        'depth': trial.suggest_int('depth', 3, 7),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1, log=True),
+        'l2_leaf_reg': trial.suggest_int('l2_leaf_reg', 1, 7),
+        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+        'iterations': 300,
+        'random_seed': SEED,
+        'verbose': 0
+    }
+
+    model = CatBoostClassifier(**params)
+    model.fit(df_train[selected_features], df_train['mevent'])
+
+    test_probs = model.predict_proba(df_test[selected_features])[:, 1]
+    test_auc = roc_auc_score(df_test['mevent'], test_probs)
+    test_gini = 2 * test_auc - 1
+
+    return test_gini  # Maximize Gini
+
+# Run Optuna study
+study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=SEED))
+study.optimize(objective, n_trials=30, show_progress_bar=True)
+
+# Show best hyperparameters
+print("\nBest hyperparameters:")
+print(study.best_trial.params)
+print(f"Best Test Gini: {round(study.best_value, 4)}")
+
+# Retrain best model on df_train
+best_params = study.best_trial.params
+best_params.update({'iterations': 300, 'random_seed': SEED, 'verbose': 0})
+
+final_model = CatBoostClassifier(**best_params)
+final_model.fit(df_train[selected_features], df_train['mevent'])
+
+# Score all datasets
+df_train['score_final'] = final_model.predict_proba(df_train[selected_features])[:, 1]
+df_test['score_final'] = final_model.predict_proba(df_test[selected_features])[:, 1]
+df_oot['score_final'] = final_model.predict_proba(df_oot[selected_features])[:, 1]
+df_main['score_final'] = final_model.predict_proba(df_main[selected_features])[:, 1]
+
+# Final Gini calculation
+def gini(y_true, y_score):
+    return round(2 * roc_auc_score(y_true, y_score) - 1, 4)
+
+print("\nFinal Gini Scores:")
+print(f"Train Gini: {gini(df_train['mevent'], df_train['score_final'])}")
+print(f"Test  Gini: {gini(df_test['mevent'], df_test['score_final'])}")
+print(f"OOT   Gini: {gini(df_oot['mevent'], df_oot['score_final'])}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1st trial:
 from catboost import CatBoostClassifier
 from sklearn.metrics import roc_auc_score
 import pandas as pd
