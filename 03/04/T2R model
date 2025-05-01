@@ -1,3 +1,89 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.impute import SimpleImputer
+import random
+
+# Set seed
+SEED = 1992
+np.random.seed(SEED)
+random.seed(SEED)
+
+# Step 1: Read & clean columns
+raw.columns = [x.lower().strip() for x in raw.columns]
+raw_OOT.columns = [x.lower().strip() for x in raw_OOT.columns]
+
+# Step 2: Rename if needed
+raw.rename(columns={'custid': 'cust_num'}, inplace=True)
+raw_OOT.rename(columns={'custid': 'cust_num'}, inplace=True)
+
+# Step 3: Define important columns
+target_col = 'mevent'
+weight_col = 'samplingweight'
+selection_col = 'selection_month'
+
+# Final 25 SHAP-selected features
+selected_features = [
+    'utilization_1m', 'cib_score_bucket', 'dsr_lending_ccpihml_1m', 'credit_limit_6m_max',
+    'val_cc_totlmt_offus', 'max_offus_ln_open_mob', 'balance_active_1m', 'cnt_ln_offus',
+    'cc_tran_3m_mean', 'cnt_enquiries_6m', 'reln_trb_max_final_3avg', 'billed_balance_6m_min',
+    'pay_ratio_6m_mean', 'onus_unsec_bal_6m', 'sav_dep_ddp_cnt_lcy_3m_mean',
+    'eop_casa_bal_avg_r13', 'payment_3m_max', 'cc_mb_tran_3m_sum', 'cc_ser_amt_1_6',
+    'onus_max_pil_tenor', 'cc_ovs_amt_1m', 'utilization_3m_min', 'cc_or_amt_1_3',
+    'cc_ent_tran_3m_mean', 'cc_cl_amt_6m_mean'
+]
+
+# Include target + utility columns
+full_features = selected_features + [target_col, weight_col, selection_col, 'cust_num']
+
+# Step 4: Filter raw data
+df_main = raw[full_features].copy()
+df_oot = raw_OOT[full_features].copy()
+
+# Step 5: Handle categorical encoding (if needed)
+for df in [df_main, df_oot]:
+    for col in selected_features:
+        if df[col].dtype == 'object':
+            le = LabelEncoder()
+            df[col] = le.fit_transform(df[col].astype(str))
+
+# Step 6: Impute missing values
+imputer = SimpleImputer(strategy='median')
+df_main[selected_features] = imputer.fit_transform(df_main[selected_features])
+df_oot[selected_features] = imputer.transform(df_oot[selected_features])  # Use same stats
+
+# Step 7: Train-Test Split (Stratified)
+X = df_main[selected_features]
+y = df_main[target_col]
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, stratify=y, random_state=SEED
+)
+
+# Also extract matching metadata
+train_index = X_train.index
+test_index = X_test.index
+df_train = df_main.loc[train_index].reset_index(drop=True)
+df_test = df_main.loc[test_index].reset_index(drop=True)
+df_oot = df_oot.reset_index(drop=True)
+
+# Final Print
+print(f"Train shape: {df_train.shape}, Event Ratio: {df_train[target_col].mean():.4f}")
+print(f"Test shape : {df_test.shape}, Event Ratio: {df_test[target_col].mean():.4f}")
+print(f"OOT shape  : {df_oot.shape}, Event Ratio: {df_oot[target_col].mean():.4f}")
+
+
+
+
+
+
+
+
+
+
+
+
+
 def gain_matrix(input_gm):
     df = input_gm.copy()
 
