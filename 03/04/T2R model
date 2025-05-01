@@ -7,41 +7,39 @@ top_features = [
     'cib_score_bucket', 'cnt_enquiries_6m', 'dsr_lending_ccpihml_1m'
 ]
 
-# Create score buckets
+# Step 1: Create score buckets using train-derived cutoffs
 score_bins = [0, 175, 192, 208, 229, df_main['final_score'].max()]
 score_labels = ['E. <= 175', 'D. 175 - 192', 'C. 192 - 208', 'B. 208 - 229', 'A. > 229']
 df_main['score_band'] = pd.cut(df_main['final_score'], bins=score_bins, labels=score_labels, include_lowest=True)
 
-# Dictionary to store final tables
+# Step 2: Generate tables for each feature
 feature_tables = {}
 
 for feature in top_features:
     try:
-        # Get quantile-based bins
+        # Create quantile-based bin edges
         feat_bins = pd.qcut(df_main[feature], 5, retbins=True, duplicates='drop')[1]
         num_bins = len(feat_bins) - 1
 
-        # Create labels
-        label_base = ['A', 'B', 'C', 'D', 'E']
-        feat_labels = []
+        # Create accurate bin labels based on edges
+        label_base = ['A', 'B', 'C', 'D', 'E'][:num_bins]
+        feat_labels = [
+            f"{label_base[i]}. {round(feat_bins[i], 2)} - {round(feat_bins[i+1], 2)}"
+            for i in range(num_bins)
+        ]
 
-        for i in range(num_bins):
-            if i == 0:
-                feat_labels.append(f"{label_base[i]}. > {round(feat_bins[-1], 2)}")
-            elif i == num_bins - 1:
-                feat_labels.append(f"{label_base[i]}. <= {round(feat_bins[1], 2)}")
-            else:
-                feat_labels.append(f"{label_base[i]}. {round(feat_bins[-(i+1)], 2)} - {round(feat_bins[-i], 2)}")
+        # Assign feature value buckets
+        df_main[f'{feature}_bucket'] = pd.cut(
+            df_main[feature], bins=feat_bins, labels=feat_labels, include_lowest=True
+        )
 
-        # Apply binning
-        df_main[f'{feature}_bucket'] = pd.cut(df_main[feature], bins=feat_bins, labels=feat_labels, include_lowest=True)
-
-        # Create grouped table
+        # Group and summarize
         summary_table = df_main.groupby(['score_band', f'{feature}_bucket']).size().reset_index(name='freq')
         feature_tables[feature] = summary_table
 
     except Exception as e:
-        feature_tables[feature] = f"Error for {feature}: {str(e)}"
+        feature_tables[feature] = f"Error processing {feature}: {str(e)}"
+
 
 feature_tables['utilization_1m']
 feature_tables['cnt_ln_offus']
