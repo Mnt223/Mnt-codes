@@ -1,3 +1,59 @@
+def calculate_csi_for_feature(feature, base_df, target_df, bins=5):
+    base = base_df[[feature]].copy()
+    target = target_df[[feature]].copy()
+    
+    # Handle categoricals separately
+    if str(base[feature].dtype) == 'object' or base[feature].nunique() <= 10:
+        base[feature] = base[feature].astype(str)
+        target[feature] = target[feature].astype(str)
+        all_values = list(set(base[feature].unique()).union(set(target[feature].unique())))
+        base_dist = base[feature].value_counts(normalize=True).reindex(all_values, fill_value=0.0001)
+        target_dist = target[feature].value_counts(normalize=True).reindex(all_values, fill_value=0.0001)
+    else:
+        edges = pd.qcut(base[feature], bins, duplicates='drop', retbins=True)[1]
+        base['bucket'] = pd.cut(base[feature], bins=edges, include_lowest=True)
+        target['bucket'] = pd.cut(target[feature], bins=edges, include_lowest=True)
+        all_values = base['bucket'].cat.categories
+        base_dist = base['bucket'].value_counts(normalize=True).reindex(all_values, fill_value=0.0001)
+        target_dist = target['bucket'].value_counts(normalize=True).reindex(all_values, fill_value=0.0001)
+
+    csi = ((base_dist - target_dist) * np.log(base_dist / target_dist)).sum()
+    return round(csi, 4)
+
+# Example: Top 10 features (replace with your actual list)
+top_features = [
+    'utilization_1m', 'cib_score_bucket', 'dsr_lending_ccpihml_1m', 'credit_limit_6m_max',
+    'val_cc_totlmt_offus', 'max_offus_ln_open_mob', 'balance_active_1m',
+    'cnt_ln_offus', 'cc_tran_3m_mean', 'cnt_enquiries_6m'
+]
+
+# Run CSI for each
+csi_results = []
+for feat in top_features:
+    csi = calculate_csi_for_feature(feat, df_train, df_oot)
+    csi_results.append({'Feature': feat, 'CSI': csi})
+
+# Create DataFrame
+csi_df = pd.DataFrame(csi_results).sort_values(by='CSI', ascending=False).reset_index(drop=True)
+print("\nCharacteristic Stability Index (CSI):")
+display(csi_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import shap
 
 # Step 1: Initialize SHAP explainer for CatBoost
