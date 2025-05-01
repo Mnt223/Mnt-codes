@@ -1,3 +1,56 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Step 1: Lift calculation function
+def compute_lift_by_decile(df, score_col='final_score', target_col='mevent'):
+    df = df[[score_col, target_col]].copy()
+    df['decile'] = pd.qcut(df[score_col].rank(method='first'), 10, labels=False, duplicates='drop') + 1
+    baseline = df[target_col].mean()
+    lift = df.groupby('decile').agg(
+        events=(target_col, 'sum'),
+        count=(target_col, 'count')
+    ).reset_index()
+    lift['lift'] = (lift['events'] / lift['count']) / baseline
+    return lift[['decile', 'lift']]
+
+# Step 2: Compute lift tables
+train_lift = compute_lift_by_decile(df_train)
+test_lift = compute_lift_by_decile(df_test)
+oot_lift = compute_lift_by_decile(df_oot)
+
+# Step 3: Merge for plotting
+lift_df = train_lift.merge(test_lift, on='decile', suffixes=('_train', '_test'))
+lift_df = lift_df.merge(oot_lift, on='decile')
+lift_df.rename(columns={'lift': 'lift_oot'}, inplace=True)
+
+# Step 4: Plot grouped bar chart
+bar_width = 0.25
+deciles = lift_df['decile']
+x = np.arange(len(deciles))
+
+plt.figure(figsize=(10, 6))
+plt.bar(x - bar_width, lift_df['lift_train'], width=bar_width, label='Train')
+plt.bar(x, lift_df['lift_test'], width=bar_width, label='Test')
+plt.bar(x + bar_width, lift_df['lift_oot'], width=bar_width, label='OOT')
+
+plt.xticks(x, [str(d) for d in deciles])
+plt.xlabel('Decile (1 = Highest Score)')
+plt.ylabel('Lift')
+plt.title('Lift by Decile - Train vs Test vs OOT')
+plt.legend()
+plt.grid(axis='y', linestyle='--', alpha=0.6)
+plt.tight_layout()
+plt.show()
+
+
+
+
+
+
+
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve
