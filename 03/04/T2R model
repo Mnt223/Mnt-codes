@@ -4,7 +4,15 @@ import numpy as np
 
 def compute_lift_per_decile(df, score_col='final_score', target_col='mevent', deciles=10):
     df = df[[score_col, target_col]].copy()
-    df['decile'] = pd.qcut(df[score_col].rank(method='first'), deciles, labels=False, duplicates='drop') + 1
+    
+    # Sort descending to ensure decile 1 = highest score
+    df['decile'] = pd.qcut(
+        df[score_col].rank(method='first', ascending=False),
+        deciles,
+        labels=False,
+        duplicates='drop'
+    ) + 1
+    
     gain_table = df.groupby('decile').agg(
         total=('decile', 'count'),
         events=(target_col, 'sum')
