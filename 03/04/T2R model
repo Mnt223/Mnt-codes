@@ -1,3 +1,48 @@
+# Top 6 SHAP features (replace with your actual list)
+top_features = [
+    'utilization_1m', 'cnt_ln_offus', 'balance_active_1m',
+    'cib_score_bucket', 'cnt_enquiries_6m', 'dsr_lending_ccpihml_1m'
+]
+
+# Score band (fixed from Train-based score cutoffs)
+score_bins = [0, 175, 192, 208, 229, df_main['final_score'].max()]
+score_labels = ['E. <= 175', 'D. 175 - 192', 'C. 192 - 208', 'B. 208 - 229', 'A. > 229']
+df_main['score_band'] = pd.cut(df_main['final_score'], bins=score_bins, labels=score_labels, include_lowest=True)
+
+# Generate tables for each feature
+feature_tables = {}
+
+for feature in top_features:
+    # Create quantile-based feature buckets
+    feat_bins = pd.qcut(df_main[feature], 5, retbins=True, duplicates='drop')[1]
+    feat_labels = [
+        f"A. > {round(feat_bins[-1], 2)}",
+        f"B. {round(feat_bins[-2], 2)} - {round(feat_bins[-1], 2)}",
+        f"C. {round(feat_bins[-3], 2)} - {round(feat_bins[-2], 2)}",
+        f"D. {round(feat_bins[-4], 2)} - {round(feat_bins[-3], 2)}",
+        f"E. <= {round(feat_bins[1], 2)}"
+    ]
+    df_main[f'{feature}_bucket'] = pd.cut(df_main[feature], bins=feat_bins, labels=feat_labels, include_lowest=True)
+
+    # Group and count
+    temp = df_main.groupby(['score_band', f'{feature}_bucket']).size().reset_index(name='freq')
+    feature_tables[feature] = temp
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve
