@@ -1,3 +1,35 @@
+from pycaret.classification import setup, compare_models
+
+# Step 1: Prepare data for PyCaret
+df_pycaret = df_train[selected_features + ['mevent']].copy()
+
+# Step 2: PyCaret setup
+pycaret_setup = setup(
+    data=df_pycaret,
+    target='mevent',
+    session_id=1992,
+    normalize=False,        # No scaling for tree models
+    silent=True,
+    verbose=False,
+    fold=5,
+    use_gpu=False,
+    train_size=1.0          # Use full data for comparing models
+)
+
+# Step 3: Compare models sorted by AUC
+top_model = compare_models(sort='AUC')
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
