@@ -1,4 +1,51 @@
-3rd trial:
+import numpy as np
+
+# Constants (can be adjusted)
+BASE_SCORE = 200
+FACTOR = 28.8539
+
+# Convert probability score to log-odds score
+def convert_to_score(prob_series):
+    odds = prob_series / (1 - prob_series)
+    return BASE_SCORE + FACTOR * np.log(odds)
+
+# Apply to all datasets
+df_train['final_score'] = convert_to_score(df_train['score_final'])
+df_test['final_score'] = convert_to_score(df_test['score_final'])
+df_oot['final_score'] = convert_to_score(df_oot['score_final'])
+df_main['final_score'] = convert_to_score(df_main['score_final'])
+
+# Optional: Check score distribution
+print("Train Score Distribution:", df_train['final_score'].describe())
+print("Test Score Distribution :", df_test['final_score'].describe())
+print("OOT Score Distribution  :", df_oot['final_score'].describe())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+3rd trial: final used
+
 import optuna
 from catboost import CatBoostClassifier
 from sklearn.metrics import roc_auc_score
