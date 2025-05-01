@@ -1,3 +1,29 @@
+# Step: Create consistent decile bands across datasets using train cutoffs
+
+# 1. Generate decile bin edges from train set
+decile_edges = pd.qcut(df_train['final_score'].rank(method='first'), 10, retbins=True, duplicates='drop')[1]
+
+# 2. Function to assign decile labels (1=highest score, 10=lowest)
+def assign_deciles(df, score_col='final_score', bins=decile_edges):
+    return pd.cut(df[score_col], bins=bins, labels=list(range(1, 11)), include_lowest=True)
+
+# 3. Apply to all datasets
+for df in [df_train, df_test, df_oot, df_main]:
+    df['decile'] = assign_deciles(df).astype(int)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def generate_gain_table(data, score_col='final_score', target_col='mevent', deciles=10):
     df = data[[score_col, target_col]].copy()
     df['decile'] = pd.qcut(df[score_col].rank(method='first'), deciles, labels=False, duplicates='drop') + 1
