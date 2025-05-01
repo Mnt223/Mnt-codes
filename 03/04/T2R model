@@ -1,53 +1,41 @@
+import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 
-# Step 1: Lift calculation function
-def compute_lift_by_decile(df, score_col='final_score', target_col='mevent'):
+def compute_lift_per_decile(df, score_col='final_score', target_col='mevent', deciles=10):
     df = df[[score_col, target_col]].copy()
-    df['decile'] = pd.qcut(df[score_col].rank(method='first'), 10, labels=False, duplicates='drop') + 1
-    baseline = df[target_col].mean()
-    lift = df.groupby('decile').agg(
-        events=(target_col, 'sum'),
-        count=(target_col, 'count')
-    ).reset_index()
-    lift['lift'] = (lift['events'] / lift['count']) / baseline
-    return lift[['decile', 'lift']]
+    df['decile'] = pd.qcut(df[score_col].rank(method='first'), deciles, labels=False, duplicates='drop') + 1
+    gain_table = df.groupby('decile').agg(
+        total=('decile', 'count'),
+        events=(target_col, 'sum')
+    ).sort_index()
 
-# Step 2: Compute lift tables
-train_lift = compute_lift_by_decile(df_train)
-test_lift = compute_lift_by_decile(df_test)
-oot_lift = compute_lift_by_decile(df_oot)
+    baseline_rate = df[target_col].mean()
+    gain_table['event_rate'] = gain_table['events'] / gain_table['total']
+    gain_table['lift'] = gain_table['event_rate'] / baseline_rate
+    return gain_table['lift'].values
 
-# Step 3: Merge for plotting
-lift_df = train_lift.merge(test_lift, on='decile', suffixes=('_train', '_test'))
-lift_df = lift_df.merge(oot_lift, on='decile')
-lift_df.rename(columns={'lift': 'lift_oot'}, inplace=True)
+# Compute lift arrays
+lift_train = compute_lift_per_decile(df_train)
+lift_test = compute_lift_per_decile(df_test)
+lift_oot = compute_lift_per_decile(df_oot)
 
-# Step 4: Plot grouped bar chart
-bar_width = 0.25
-deciles = lift_df['decile']
-x = np.arange(len(deciles))
+# Plotting
+plt.figure(figsize=(8, 5))
+x = np.arange(1, 11)
 
-plt.figure(figsize=(10, 6))
-plt.bar(x - bar_width, lift_df['lift_train'], width=bar_width, label='Train')
-plt.bar(x, lift_df['lift_test'], width=bar_width, label='Test')
-plt.bar(x + bar_width, lift_df['lift_oot'], width=bar_width, label='OOT')
+plt.plot(x, lift_train, marker='o', label='Train')
+plt.plot(x, lift_test, marker='o', label='Test')
+plt.plot(x, lift_oot, marker='o', label='OOT')
 
-plt.xticks(x, [str(d) for d in deciles])
-plt.xlabel('Decile (1 = Highest Score)')
-plt.ylabel('Lift')
-plt.title('Lift by Decile - Train vs Test vs OOT')
+plt.title("Lift Chart by Decile (Train vs Test vs OOT)", fontsize=14, fontweight='bold')
+plt.xlabel("Decile (1 = Best Score)", fontsize=12)
+plt.ylabel("Lift", fontsize=12)
+plt.xticks(x)
+plt.grid(True)
 plt.legend()
-plt.grid(axis='y', linestyle='--', alpha=0.6)
 plt.tight_layout()
 plt.show()
-
-
-
-
-
-
 
 
 
