@@ -1,24 +1,17 @@
-# Score bucket from train-based cutoffs
-score_bins = pd.qcut(df_train['final_score'], 5, retbins=True, duplicates='drop')[1]
-score_labels = ['A', 'B', 'C', 'D', 'E']
-df_main['score_bucket'] = pd.cut(df_main['final_score'], bins=score_bins, labels=score_labels, include_lowest=True)
-
-# Container for separate tables
 separate_feature_tables = {}
 
-# Loop for each feature
 for feature in top_6_features:
     try:
-        # Univariate 5-bucket binning
+        # Dynamically generate quantile bins
         feature_bins = pd.qcut(df_main[feature], 5, retbins=True, duplicates='drop')[1]
-        bucket_labels = ['A', 'B', 'C', 'D', 'E']
+        label_count = len(feature_bins) - 1
+        bucket_labels = ['A', 'B', 'C', 'D', 'E'][:label_count]
+
         df_main[f'{feature}_bucket'] = pd.cut(df_main[feature], bins=feature_bins, labels=bucket_labels, include_lowest=True)
 
-        # Grouped table: score band × feature bucket → customer count
+        # Group and reshape
         temp_df = df_main.groupby(['score_bucket', f'{feature}_bucket']).size().reset_index(name='freq')
         temp_df.columns = ['score_band', f'{feature}_bucket', 'freq']
-
-        # Store in dictionary
         separate_feature_tables[feature] = temp_df
 
     except Exception as e:
