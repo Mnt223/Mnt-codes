@@ -1,3 +1,56 @@
+def calculate_psi(base, target, score_col='final_score', buckets=10, bucket_type='quantile'):
+    base = base[[score_col]].copy()
+    target = target[[score_col]].copy()
+    
+    if bucket_type == 'quantile':
+        bins = pd.qcut(base[score_col], q=buckets, duplicates='drop', retbins=True)[1]
+    elif bucket_type == 'fixed':
+        bins = np.linspace(base[score_col].min(), base[score_col].max(), buckets + 1)
+    else:
+        raise ValueError("bucket_type must be 'quantile' or 'fixed'")
+
+    base['bucket'] = pd.cut(base[score_col], bins=bins, include_lowest=True)
+    target['bucket'] = pd.cut(target[score_col], bins=bins, include_lowest=True)
+
+    dist_base = base['bucket'].value_counts(normalize=True).sort_index()
+    dist_target = target['bucket'].value_counts(normalize=True).sort_index()
+
+    psi_df = pd.DataFrame({
+        'Score_Bucket': dist_base.index.astype(str),
+        'Base_Dist': dist_base.values,
+        'Target_Dist': dist_target.values
+    })
+
+    psi_df['Base_Dist'] = psi_df['Base_Dist'].replace(0, 0.0001)
+    psi_df['Target_Dist'] = psi_df['Target_Dist'].replace(0, 0.0001)
+
+    psi_df['PSI'] = (psi_df['Base_Dist'] - psi_df['Target_Dist']) * np.log(psi_df['Base_Dist'] / psi_df['Target_Dist'])
+    total_psi = psi_df['PSI'].sum()
+
+    return total_psi, psi_df
+
+psi_test_val, psi_test_df = calculate_psi(df_train, df_test)
+psi_oot_val, psi_oot_df = calculate_psi(df_train, df_oot)
+
+print(f"\nPSI - Train vs Test: {round(psi_test_val, 4)}")
+display(psi_test_df)
+
+print(f"\nPSI - Train vs OOT : {round(psi_oot_val, 4)}")
+display(psi_oot_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Step 1: Create decile bins using actual final_score
 decile_edges = pd.qcut(df_train['final_score'], 10, retbins=True, duplicates='drop')[1]
 
