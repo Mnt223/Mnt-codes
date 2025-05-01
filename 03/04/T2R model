@@ -1,3 +1,68 @@
+1. CC Balance & Utilization
+	•	Minimum Utilization in Last 3 Months
+	•	Utilization in Last 1 Month
+	•	Minimum Billed Balance in Last 6 Months
+	•	Credit Card Limit Average (6 Months)
+	•	Credit Card Overlimit Amount (1 Month)
+	•	On-Us Unsecured Balance (6 Months)
+	•	Total Credit Card Limit (Off-Us)
+
+⸻
+
+2. Payment Behavior
+	•	Maximum Payment in Last 3 Months
+	•	Average Payment-to-Balance Ratio (6 Months)
+
+⸻
+
+3. Spending Pattern
+	•	M-Banking Transactions Sum (3 Months)
+	•	Entertainment Transactions Average (3 Months)
+	•	Service Amount (1–6 Months)
+	•	Other Retail Amount (1–3 Months)
+	•	Credit Card Transactions Average (3 Months)
+
+⸻
+
+4. Account Activity
+	•	Balance Active (1 Month)
+	•	Count of Loans (Off-Us)
+	•	Maximum Vintage of Open Loans (Off-Us)
+
+⸻
+
+5. Loan & Lending Behavior
+	•	Maximum PIL Tenor (On-Us)
+	•	DSR from Lending (CC + PIL + HML) – 1 Month
+
+⸻
+
+6. Banking Pattern
+	•	Average CASA Balance (Last 13 Months)
+	•	Average Monthly Credit in Savings Account (LCY) – 3 Months
+	•	Average of Maximum TRB (Final) Over Last 3 Months
+
+⸻
+
+7. Credit Profile
+	•	Maximum Credit Limit (6 Months)
+	•	Enquiry Count in Last 6 Months
+	•	CIBIL Score Bucket
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import pandas as pd
 
 # Step 1: Define helper to format bins with Excel-style labels
