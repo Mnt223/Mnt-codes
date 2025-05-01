@@ -1,3 +1,124 @@
+3rd trial:
+import optuna
+from catboost import CatBoostClassifier
+from sklearn.metrics import roc_auc_score
+import pandas as pd
+import numpy as np
+
+SEED = 1992
+np.random.seed(SEED)
+
+# Function to calculate Gini
+def gini_score(y_true, y_prob):
+    return 2 * roc_auc_score(y_true, y_prob) - 1
+
+# Store all trial results
+trial_results = []
+
+# Define Optuna objective
+def objective(trial):
+    params = {
+        'depth': trial.suggest_int('depth', 3, 7),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1, log=True),
+        'l2_leaf_reg': trial.suggest_int('l2_leaf_reg', 1, 7),
+        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+        'iterations': 300,
+        'random_seed': SEED,
+        'verbose': 0
+    }
+
+    model = CatBoostClassifier(**params)
+    model.fit(df_train[selected_features], df_train['mevent'])
+
+    # Predictions
+    train_prob = model.predict_proba(df_train[selected_features])[:, 1]
+    test_prob = model.predict_proba(df_test[selected_features])[:, 1]
+    oot_prob = model.predict_proba(df_oot[selected_features])[:, 1]
+
+    # Gini scores
+    gini_train = gini_score(df_train['mevent'], train_prob)
+    gini_test = gini_score(df_test['mevent'], test_prob)
+    gini_oot = gini_score(df_oot['mevent'], oot_prob)
+    gini_gap = abs(gini_train - gini_oot)
+
+    # Save to list
+    trial_results.append({
+        'Iteration': len(trial_results) + 1,
+        'depth': params['depth'],
+        'learning_rate': round(params['learning_rate'], 4),
+        'l2_leaf_reg': params['l2_leaf_reg'],
+        'subsample': round(params['subsample'], 2),
+        'Train_Gini': round(gini_train, 4),
+        'Test_Gini': round(gini_test, 4),
+        'OOT_Gini': round(gini_oot, 4),
+        'Gini_Gap': round(gini_gap, 4)
+    })
+
+    return gini_test
+
+# Run Optuna with 100 trials
+study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler(seed=SEED))
+study.optimize(objective, n_trials=100, show_progress_bar=True)
+
+# Step 1: Create full table from all 100 trials
+gini_table_all = pd.DataFrame(trial_results)
+
+# Step 2: Select top 20 by Test Gini
+gini_table_top20 = gini_table_all.sort_values(by='Test_Gini', ascending=False).head(20).reset_index(drop=True)
+print("\nTop 20 Models by Test Gini:")
+print(gini_table_top20)
+
+# Step 3: From top 20, select best model with minimal Train–OOT Gini gap
+best_row = gini_table_top20.sort_values(by='Gini_Gap', ascending=True).iloc[0]
+print("\nSelected Best Model:")
+print(best_row)
+
+# Step 4: Retrain final best model
+final_model = CatBoostClassifier(
+    depth=int(best_row['depth']),
+    learning_rate=best_row['learning_rate'],
+    l2_leaf_reg=int(best_row['l2_leaf_reg']),
+    subsample=best_row['subsample'],
+    iterations=300,
+    random_seed=SEED,
+    verbose=0
+)
+final_model.fit(df_train[selected_features], df_train['mevent'])
+
+# Step 5: Score all datasets
+df_train['score_final'] = final_model.predict_proba(df_train[selected_features])[:, 1]
+df_test['score_final'] = final_model.predict_proba(df_test[selected_features])[:, 1]
+df_oot['score_final'] = final_model.predict_proba(df_oot[selected_features])[:, 1]
+df_main['score_final'] = final_model.predict_proba(df_main[selected_features])[:, 1]
+
+# Final Gini print
+def show_ginis():
+    print("\nFinal Gini Scores:")
+    print(f"Train Gini: {gini_score(df_train['mevent'], df_train['score_final']):.4f}")
+    print(f"Test  Gini: {gini_score(df_test['mevent'], df_test['score_final']):.4f}")
+    print(f"OOT   Gini: {gini_score(df_oot['mevent'], df_oot['score_final']):.4f}")
+
+show_ginis()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 2nd trial: 
 import optuna
 from catboost import CatBoostClassifier
