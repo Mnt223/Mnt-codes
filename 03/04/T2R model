@@ -1,53 +1,52 @@
 import pandas as pd
 import numpy as np
 
-# Define top features
+# Define your actual top features
 top_features = [
     'utilization_1m', 'cnt_ln_offus', 'balance_active_1m',
     'cib_score_bucket', 'cnt_enquiries_6m', 'dsr_lending_ccpihml_1m'
 ]
 
-# Create score bands
+# Create score bands using your existing logic
 score_bins = [0, 175, 192, 208, 229, df_main['final_score'].max()]
 score_labels = ['E. <= 175', 'D. 175 - 192', 'C. 192 - 208', 'B. 208 - 229', 'A. > 229']
 df_main['score_band'] = pd.cut(df_main['final_score'], bins=score_bins, labels=score_labels, include_lowest=True)
 
+# Dictionary to store final cross-tab tables
 feature_tables = {}
 
 for feature in top_features:
     try:
-        # Step 1: Get raw bins
-        raw_bins = pd.qcut(df_main[feature], 5, retbins=True, duplicates='drop')[1]
-        # Step 2: Remove bins where left == right
-        feat_bins = np.unique(raw_bins)
-        feat_bins = [b for i, b in enumerate(feat_bins) if i == 0 or b != feat_bins[i - 1]]
+        # Remove missing values
+        feature_data = df_main[feature].dropna()
 
-        if len(feat_bins) <= 2:
-            feature_tables[feature] = "Skipped: not enough usable bins"
-            continue
-
-        # Step 3: Generate labels for remaining bins
+        # Generate unique bin edges with qcut
+        feat_bins = pd.qcut(feature_data, 5, retbins=True, duplicates='drop')[1]
+        feat_bins = np.unique(feat_bins)
         num_bins = len(feat_bins) - 1
-        label_base = ['A', 'B', 'C', 'D', 'E'][:num_bins]
+
+        # Reverse label order: A = highest, E = lowest
+        label_base = ['E', 'D', 'C', 'B', 'A'][-num_bins:]
+
+        # Build clean interval labels
         feat_labels = [
-            f"{label_base[i]}. {round(feat_bins[i], 2)} - {round(feat_bins[i+1], 2)}"
+            f"{label_base[i]}. {round(feat_bins[i], 4)} - {round(feat_bins[i + 1], 4)}"
             for i in range(num_bins)
         ]
 
-        # Step 4: Create feature bucket column
+        # Assign bucket to main data
         df_main[f'{feature}_bucket'] = pd.cut(
-            df_main[feature],
-            bins=feat_bins,
-            labels=feat_labels,
-            include_lowest=True
+            df_main[feature], bins=feat_bins, labels=feat_labels, include_lowest=True
         )
 
-        # Step 5: Group and summarize
-        summary = df_main.groupby(['score_band', f'{feature}_bucket']).size().reset_index(name='freq')
-        feature_tables[feature] = summary
+        # Group by score band and feature bucket
+        summary_table = df_main.groupby(['score_band', f'{feature}_bucket']).size().reset_index(name='freq')
+        feature_tables[feature] = summary_table
 
     except Exception as e:
-        feature_tables[feature] = f"Error: {str(e)}"
+        feature_tables[feature] = f"Error processing {feature}: {str(e)}"
+
+
 
 
 feature_tables['utilization_1m']
