@@ -1,3 +1,23 @@
+The mapping for the campaign dashboard was completed on time. However, the refresh for April 15th has not been done this month. This delay is due to unresolved issues with GupShup, specifically because SAS automated mails cannot be sent to external recipients, as confirmed by Raj.
+
+To address this, we’ve implemented a workaround where the SAS-generated mail is received internally and then auto-forwarded to GupShup using Outlook rules. I hope this approach works smoothly and that GupShup receives the files on time without any manual intervention.
+
+As discussed and agreed, the dashboard will be refreshed for the full month of April next week.
+Could you please confirm if we are aligned on this? Also, kindly let me know if there are any queries or if further clarification is needed.
+
+Additionally, could you please guide me on who can help with setting up the codes in Control-M?
+
+
+
+
+
+
+
+
+
+
+
+
 
 Hi Souvik,
 
