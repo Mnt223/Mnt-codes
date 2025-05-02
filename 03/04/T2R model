@@ -1,3 +1,85 @@
+# Final setup
+nan_zero_separate = [
+    'balance_active_1m', 'onus_unsec_bal_6m', 'eop_casa_bal_avg_r13',
+    'reln_trb_max_final_3avg', 'cc_tran_3m_mean', 'cc_mb_tran_3m_sum',
+    'cc_ser_amt_1_6', 'cc_or_amt_1_3', 'cc_ent_tran_3m_mean',
+    'cc_cl_amt_6m_mean', 'payment_3m_max', 'billed_balance_6m_min', 'cc_ovs_amt_1m'
+]
+
+nan_zero_same = [
+    'utilization_1m', 'utilization_3m_min', 'cib_score_bucket',
+    'cnt_ln_offus', 'cnt_enquiries_6m', 'credit_limit_6m_max',
+    'val_cc_totlmt_offus', 'max_offus_ln_open_mob', 'dsr_lending_ccpilhml_1m',
+    'pay_ratio_6m_mean', 'sav_dep_ddp_cnt_lcy_3m_mean', 'onus_max_pil_tenor'
+]
+
+def format_bins_with_labels(bins, label_prefixes):
+    labels = []
+    for i in range(len(bins) - 1):
+        left = round(bins[i], 2)
+        right = round(bins[i + 1], 2)
+        if i == 0:
+            labels.append(f"{label_prefixes[i]} <= {right}")
+        elif i == len(bins) - 2:
+            labels.append(f"{label_prefixes[i]} > {left}")
+        else:
+            labels.append(f"{label_prefixes[i]} {left}–{right}")
+    return labels
+
+def create_flexible_feature_buckets(df, feature, separate_nan_zero=True, label_prefixes=['A', 'B', 'C', 'D', 'E']):
+    bucket_col = f'{feature}_bucket'
+    df[bucket_col] = None
+
+    if separate_nan_zero:
+        df.loc[df[feature].isna(), bucket_col] = 'No Product'
+        df.loc[(df[feature] == 0) & (~df[feature].isna()), bucket_col] = 'Zero Balance'
+        pos_values = df.loc[df[feature] > 0, feature]
+    else:
+        df.loc[(df[feature].isna()) | (df[feature] == 0), bucket_col] = 'Zero / Missing'
+        pos_values = df.loc[df[feature] > 0, feature]
+
+    try:
+        feat_bins = pd.qcut(pos_values, 5, retbins=True, duplicates='drop')[1]
+        feat_labels = format_bins_with_labels(feat_bins, label_prefixes[::-1])
+        df.loc[df[feature] > 0, bucket_col] = pd.cut(pos_values, bins=feat_bins, labels=feat_labels, include_lowest=True)
+    except Exception as e:
+        print(f"Error while bucketing {feature}: {e}")
+
+    return df, bucket_col
+
+# Create score_band (based on train cutoff)
+score_bins = pd.qcut(df_train['final_score'], 5, retbins=True, duplicates='drop')[1]
+score_labels = format_bins_with_labels(score_bins, ['E', 'D', 'C', 'B', 'A'][::-1])
+df_main['score_band'] = pd.cut(df_main['final_score'], bins=score_bins, labels=score_labels, include_lowest=True)
+
+# Generate bucket tables
+formatted_feature_tables = {}
+
+for feature in nan_zero_separate + nan_zero_same:
+    try:
+        separate = True if feature in nan_zero_separate else False
+        df_main, bucket_col = create_flexible_feature_buckets(df_main, feature, separate_nan_zero=separate)
+        table = df_main.groupby(['score_band', bucket_col]).size().reset_index(name='freq')
+        formatted_feature_tables[feature] = table
+    except Exception as e:
+        formatted_feature_tables[feature] = f"Error: {e}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def generate_full_gain_table(df, target_col='mevent'):
     total_events = df[target_col].sum()
     total_non_events = len(df) - total_events
