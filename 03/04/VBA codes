@@ -1,0 +1,39 @@
+Sub PasswordProtectAllFiles()
+
+    Dim folderPath As String
+    Dim fileName As String
+    Dim wb As Workbook
+    Dim password As String
+    
+    ' Set the folder path (with trailing backslash)
+    folderPath = "C:\Your\Folder\Path\"
+    
+    ' Set the password to apply
+    password = "hsbc123@"
+    
+    ' Loop through all Excel files in the folder
+    fileName = Dir(folderPath & "*.xls*")
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    Do While fileName <> ""
+        ' Open workbook
+        Set wb = Workbooks.Open(folderPath & fileName)
+        
+        ' Save with password protection
+        wb.SaveAs _
+            Filename:=folderPath & fileName, _
+            FileFormat:=xlOpenXMLWorkbook, _
+            Password:=password
+        
+        wb.Close SaveChanges:=False
+        fileName = Dir
+    Loop
+
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+
+    MsgBox "All files password-protected successfully.", vbInformation
+
+End Sub
