@@ -1,3 +1,43 @@
+/* Step 1: Get Max LAST_TRN_DATE per Customer */
+proc sql;
+    create table cust_last_trn as
+    select 
+        cust_id,
+        max(input(put(last_trn_date, 8.), yymmdd8.)) as max_trn_dt format=date9.
+    from your_dataset
+    where last_trn_date ne .
+    group by cust_id;
+quit;
+
+/* Step 2: Merge back and create flag while preserving all original fields */
+data with_flag;
+    /* Step 2a: Sort both tables by cust_id for merge */
+    proc sort data=your_dataset; by cust_id; run;
+    proc sort data=cust_last_trn; by cust_id; run;
+
+    /* Step 2b: Merge and retain all fields */
+    merge your_dataset (in=a) 
+          cust_last_trn (in=b);
+    by cust_id;
+
+    /* Convert account open date to SAS format */
+    acct_opn_dt_sas = input(put(acct_opn_dt, 8.), yymmdd8.);
+
+    /* Calculate months between open date and customer's last transaction date */
+    active_months = intck('month', acct_opn_dt_sas, max_trn_dt);
+
+    /* Create activity bucket flag */
+    if active_months < 1 then act_flag = '<1M';
+    else if active_months < 3 then act_flag = '<3M';
+    else if active_months < 6 then act_flag = '<6M';
+    else act_flag = '>=6M';
+run;
+
+
+
+
+
+
 Sub PasswordProtectAllFiles()
 
     Dim folderPath As String
