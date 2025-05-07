@@ -1,3 +1,29 @@
+proc sort data=your_dataset; 
+    by cust_id; 
+run;
+
+data updated_data;
+    set your_dataset;
+    by cust_id;
+
+    /* Keep card_count only in first record */
+    if first.cust_id then card_count_new = card_count;
+    else card_count_new = .;
+
+    drop card_count;
+    rename card_count_new = card_count;
+run;
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Get max LAST_TRN_DATE and max MONTH_KEY per customer */
 proc sql;
     create table cust_summary as
