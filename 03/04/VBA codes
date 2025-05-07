@@ -1,3 +1,53 @@
+/* Step 1: Get max LAST_TRN_DATE and max MONTH_KEY per customer */
+proc sql;
+    create table cust_summary as
+    select 
+        cust_id,
+        max(input(put(last_trn_date, 8.), yymmdd8.)) as max_trn_dt format=date9.,
+        max(month_key) as max_month_key
+    from your_dataset
+    group by cust_id;
+quit;
+
+/* Step 2: Sort both tables for merging */
+proc sort data=your_dataset; by cust_id; run;
+proc sort data=cust_summary; by cust_id; run;
+
+/* Step 3: Merge and create all 3 flags */
+data final_flagged_data;
+    merge your_dataset (in=a)
+          cust_summary (in=b);
+    by cust_id;
+
+    /* Convert ACCT_OPN_DT to SAS date */
+    acct_opn_dt_sas = input(put(acct_opn_dt, 8.), yymmdd8.);
+
+    /* ------------------ FLAG 1: ACTIVITY DURATION FLAG ------------------ */
+    active_months = intck('month', acct_opn_dt_sas, max_trn_dt);
+    if active_months < 1 then act_flag = '<1M';
+    else if active_months < 3 then act_flag = '<3M';
+    else if active_months < 6 then act_flag = '<6M';
+    else act_flag = '>=6M';
+
+    /* ------------------ FLAG 2: NEW ACQUISITION ------------------ */
+    if '01APR2025'd <= acct_opn_dt_sas <= '30APR2025'd then new_acq_flag = 'YES';
+    else new_acq_flag = 'NO';
+
+    /* ------------------ FLAG 3: ACCOUNT CLOSED ------------------ */
+    if max_trn_dt < '01MAR2025'd and max_month_key < 202503 then acct_closed_flag = 'YES';
+    else acct_closed_flag = 'NO';
+
+run;
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Get Max LAST_TRN_DATE per Customer */
 proc sql;
     create table cust_last_trn as
