@@ -1,3 +1,25 @@
+We’ve built this Sales MI Dashboard in Power BI to track branch-level sales at an RM level, including key performance metrics such as product sales, trigger achievements, and more. This is designed to be a one-stop solution for the front line, offering complete visibility at a daily level.
+
+This initiative integrates 8 different MIS reports into a single interactive dashboard, eliminating the need to access and track multiple Excel files manually.
+
+Previously, teams had to rely on disparate Excel sheets which were time-consuming to open, analyze, and interpret on a daily basis. Based on continuous feedback from the front line, we developed this unified view to save time, reduce manual effort, and directly enhance productivity.
+
+⸻
+
+Next Steps (for Sharon)
+Sharon, we would need the final set of inputs to complete the view. Once received, we’d be happy to schedule a detailed walkthrough of the dashboard to demonstrate its functionality and how it supports daily RM performance monitoring.
+
+
+
+
+
+
+
+
+
+
+
+
 The mapping for the campaign dashboard was completed on time. However, the refresh for April 15th has not been done this month. This delay is due to unresolved issues with GupShup, specifically because SAS automated mails cannot be sent to external recipients, as confirmed by Raj.
 
 To address this, we’ve implemented a workaround where the SAS-generated mail is received internally and then auto-forwarded to GupShup using Outlook rules. I hope this approach works smoothly and that GupShup receives the files on time without any manual intervention.
