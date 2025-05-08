@@ -1,3 +1,33 @@
+proc sql noprint;
+    select max(month_key) into :latest_month from your_table;
+quit;
+
+data final;
+    set your_table;
+    
+    /* Convert month_key like 202411 to a proper SAS date using yymmdd8. */
+    this_month = input(cats(month_key, '01'), yymmdd8.);
+    latest_month = input(cats("&latest_month.", '01'), yymmdd8.);
+    
+    month_diff = intck('month', this_month, latest_month);
+
+    /* Flags based on difference from latest month */
+    flag_lt_1m = (month_diff < 1);
+    flag_lt_3m = (month_diff < 3);
+    flag_lt_6m = (month_diff < 6);
+run;
+
+
+
+
+
+
+
+
+
+
+
+
 /* Convert YYYYMM to SAS date (first day of month) */
 data month_flags;
   set month_data;
