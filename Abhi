@@ -1,3 +1,39 @@
+/* Step 1: Find the latest month_key for each customer */
+proc sql;
+    create table cust_max_month as
+    select Cust_ID, max(month_key) as max_month_key
+    from your_table
+    group by Cust_ID;
+quit;
+
+/* Step 2: Join back and compute relative month age */
+data final;
+    merge your_table(in=a) cust_max_month;
+    by Cust_ID;
+    if a;
+
+    /* Convert both to SAS dates using day = 01 */
+    this_month = input(cats(month_key, '01'), yymmdd8.);
+    latest_month = input(cats(max_month_key, '01'), yymmdd8.);
+
+    month_diff = intck('month', this_month, latest_month);
+
+    /* Assign bucket */
+    length Active_Bucket $5;
+    if month_diff < 1 then Active_Bucket = '<1M';
+    else if month_diff < 3 then Active_Bucket = '<3M';
+    else if month_diff < 6 then Active_Bucket = '<6M';
+    else Active_Bucket = '>=6M';
+run;
+
+
+
+
+
+
+
+
+
 proc sql noprint;
     select max(month_key) into :latest_month from your_table;
 quit;
