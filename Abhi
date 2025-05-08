@@ -1,3 +1,38 @@
+/* Convert YYYYMM to SAS date (first day of month) */
+data month_flags;
+  set month_data;
+  date = input(put(month_key, 6.) || '01', yymmdd8.);
+  format date date9.;
+  
+  /* Calculate months difference from current date */
+  months_diff = intck('month', date, today());
+  
+  /* Create flags */
+  active_1M = (months_diff <= 0);
+  active_3M = (months_diff <= 2);
+  active_6M = (months_diff <= 5);
+  
+  /* Alternative: If comparing to latest month in data instead of today() */
+  proc sql noprint;
+    select max(date) into :max_date from month_flags;
+  quit;
+  
+  months_diff_from_max = intck('month', date, &max_date);
+  active_1M_vs_max = (months_diff_from_max <= 0);
+  active_3M_vs_max = (months_diff_from_max <= 2);
+  active_6M_vs_max = (months_diff_from_max <= 5);
+  
+  drop months_diff months_diff_from_max;
+run;
+
+proc print data=month_flags;
+  format month_key yymmn6.;
+run;
+
+
+
+
+
 
 The Revolver at Risk Propensity model helps identify credit card customers who are currently revolving but are likely to shift to transactor behavior in the near future. These customers are at risk of attrition from a high-interest income segment, directly impacting profitability. By predicting this behavioral shift early, the model enables proactive retention strategies through personalized offers, EMI conversions, or engagement campaigns. This ensures revenue preservation, improved customer lifecycle management, and more efficient campaign targeting. It also supports prioritization of high-value revolvers for focused interventions.
 
