@@ -1,0 +1,51 @@
+%macro PLOC(latest_mm);
+    %local i mm lib base_lib base_table join_list;
+
+    /* Define the months you want to join with base */
+    %let join_months = 1124 1224 0125 0225 0325;
+
+    /* Decide the LIBNAME for the base table (latest_mm) */
+    %if %substr(&latest_mm., 3, 2) < 25 %then %let base_lib = SRC2024;
+    %else %let base_lib = SRC2025;
+
+    %let base_table = &base_lib..DCACMSP_&latest_mm.;
+
+    /* Step 1: Create BASE table from latest month */
+    proc sql;
+        create table base_ploc as
+        select * 
+        from &base_table
+        where D1DCB = 67 and D1DCS = 137315;
+    quit;
+
+    /* Step 2: Loop through all join months */
+    %do i = 1 %to %sysfunc(countw(&join_months.));
+        %let mm = %scan(&join_months., &i.);
+
+        %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
+        %else %let lib = SRC2025;
+
+        /* Optional: Customize this join as per real fields and logic */
+        proc sql;
+            create table join_&mm. as
+            select a.*, 
+                   b.D1HOLM as MaxODLimit_&mm.  /* Example: Pull specific field */
+            from base_ploc a
+            left join &lib..DCACMSP_&mm. b
+            on compress(a.D1CTCD||a.D1FGMAB||put(a.D1FACB,z3.)||put(a.D1FACS,z6.)||put(a.D1FACX,z3.)) 
+               = compress(b.D1CTCD||b.D1FGMAB||put(b.D1FACB,z3.)||put(b.D1FACS,z6.)||put(b.D1FACX,z3.));
+        quit;
+
+        data base_ploc;
+            set join_&mm.;
+        run;
+    %end;
+
+    /* Final table */
+    data PLOC_&latest_mm.;
+        set base_ploc;
+    run;
+
+    %put NOTE: Macro PLOC completed for &latest_mm..;
+
+%mend;
