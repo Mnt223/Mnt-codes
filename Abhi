@@ -4,6 +4,33 @@ quit;
 
 data final;
     set your_table;
+
+    /* Convert to SAS date using day = 01 */
+    this_month = input(cats(month_key, '01'), yymmdd8.);
+    latest_month = input(cats("&latest_month.", '01'), yymmdd8.);
+
+    /* Calculate month difference */
+    month_diff = intck('month', this_month, latest_month);
+
+    /* Create bucket label */
+    length Active_Bucket $5;
+    if month_diff < 1 then Active_Bucket = '<1M';
+    else if month_diff < 3 then Active_Bucket = '<3M';
+    else if month_diff < 6 then Active_Bucket = '<6M';
+    else Active_Bucket = '>=6M';
+run;
+
+
+
+
+
+
+proc sql noprint;
+    select max(month_key) into :latest_month from your_table;
+quit;
+
+data final;
+    set your_table;
     
     /* Convert month_key like 202411 to a proper SAS date using yymmdd8. */
     this_month = input(cats(month_key, '01'), yymmdd8.);
