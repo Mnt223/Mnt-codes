@@ -1,3 +1,43 @@
+/* Step 1: Count how many unique months each customer is active in */
+proc sql;
+    create table cust_month_count as
+    select Cust_ID, count(distinct month_key) as active_months
+    from your_table
+    group by Cust_ID;
+quit;
+
+/* Step 2: Sort for clean merge if needed */
+proc sort data=your_table;
+    by Cust_ID month_key;
+run;
+
+proc sort data=cust_month_count;
+    by Cust_ID;
+run;
+
+/* Step 3: Merge and assign Active_Bucket based on total months */
+data final;
+    merge your_table(in=a) cust_month_count;
+    by Cust_ID;
+    if a;
+
+    length Active_Bucket $5;
+    if active_months < 1 then Active_Bucket = 'NA';
+    else if active_months < 2 then Active_Bucket = '<1M';
+    else if active_months < 3 then Active_Bucket = '<3M';
+    else if active_months < 6 then Active_Bucket = '<6M';
+    else Active_Bucket = '>=6M';
+run;
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Find the latest month_key for each customer */
 proc sql;
     create table cust_max_month as
