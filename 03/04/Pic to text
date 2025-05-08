@@ -1,3 +1,61 @@
+/* Step 1: Create month name in format like DEC24, JAN25 */
+data updated_data;
+    set your_data_table;
+    format MonthDate date9.;
+    MonthDate = input(put(MONTH_KEY, 6.) || '01', yymmdd8.);
+    format Calc_MMMYY $5.;
+    Calc_MMMYY = upcase(put(MonthDate, monyy5.));
+run;
+
+/* Step 2: Generate full summary */
+proc sql;
+    create table base_summary as
+    select 
+        MONTH_KEY,
+        count(distinct Cust_id) as Total_Customers,
+        count(distinct Accnt_no) as Total_Accounts,
+        sum(case when NEW_ACQ = Calc_MMMYY then 1 else 0 end) as New_Acq_Count,
+        sum(EOM_BAL) as EOM_BAL_Sum,
+        sum(BOM_BAL) as BOM_BAL_Sum,
+        sum(DEBIT_AMT) as DEBIT_AMT_Sum,
+        sum(CREDIT_AMT) as CREDIT_AMT_Sum,
+        sum(INTRST_AMT) as INTRST_AMT_Sum,
+        sum(USAGE_AMT) as USAGE_AMT_Sum,
+        sum(TOTAL_AMT) as TOTAL_AMT_Sum,
+        sum(case when Status = 1 then 1 else 0 end) as Active_Accounts,
+        sum(case when Status = 2 then 1 else 0 end) as Unclaimed_Accounts,
+        sum(case when Status = 3 then 1 else 0 end) as Dormant_Accounts
+    from updated_data
+    group by MONTH_KEY
+    order by MONTH_KEY;
+quit;
+
+/* Step 3: Transpose summary to get final crosstab */
+proc transpose data=base_summary out=final_crosstab prefix=Month_;
+    id MONTH_KEY;
+    var 
+        Total_Customers
+        Total_Accounts
+        New_Acq_Count
+        EOM_BAL_Sum
+        BOM_BAL_Sum
+        DEBIT_AMT_Sum
+        CREDIT_AMT_Sum
+        INTRST_AMT_Sum
+        USAGE_AMT_Sum
+        TOTAL_AMT_Sum
+        Active_Accounts
+        Unclaimed_Accounts
+        Dormant_Accounts;
+run;
+
+
+
+
+
+
+
+
 Color Coding Information
 Delivered Rate:
 	•	🟢 Green: Higher than 80%
