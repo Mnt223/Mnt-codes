@@ -1,3 +1,31 @@
+/* Step 1: Transpose only the EOM_ columns */
+proc transpose data=your_input_dataset out=eom_long(rename=(col1=EOM_BAL)) name=month_var;
+    by cust_id MAX_LIMIT DELQ_DATE; /* Add here all non-EOM variables */
+    var EOM_:; /* Only transpose the EOM_ variables */
+run;
+
+/* Step 2: Extract month_key (YYYYMM) from the variable name */
+data final;
+    set eom_long;
+    length month_key $6;
+
+    /* Extract MMYY from EOM_XXXX and convert to YYYYMM */
+    mm = substr(month_var, 5, 2);
+    yy = substr(month_var, 7, 2);
+    year_full = put(2000 + input(yy, 2.), 4.);
+    month_key = cats(year_full, mm);
+
+    drop mm yy year_full;
+run;
+
+
+
+
+
+
+
+
+
 %macro PLOC(mm);
     %local lib;
 
