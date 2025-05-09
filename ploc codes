@@ -1,4 +1,67 @@
 %macro PLOC(latest_mm);
+    %local i mm lib base_lib;
+
+    /* Define past 5 months to join with */
+    %let join_months = 1124 1224 0125 0225 0325;
+
+    /* Identify LIBNAME for base */
+    %if %substr(&latest_mm., 3, 2) < 25 %then %let base_lib = SRC2024;
+    %else %let base_lib = SRC2025;
+
+    /* Step 1: Use latest month table as base */
+    proc sql;
+        create table base_ploc as
+        select *
+        from &base_lib..DCACMSP_&latest_mm.
+        where D1DCB = 67 and D1DCS = 137315;
+    quit;
+
+    /* Step 2: Loop through previous months */
+    %do i = 1 %to %sysfunc(countw(&join_months.));
+        %let mm = %scan(&join_months., &i.);
+
+        %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
+        %else %let lib = SRC2025;
+
+        proc sql;
+            create table base_ploc as
+            select 
+                a.*, 
+                b.D1HOLM * 0.01 as MaxODLimit_&mm.
+            from base_ploc a
+            left join &lib..DCACMSP_&mm. b
+            on 
+                compress(a.D1CTCD || a.D1FGMAB || put(a.D1FACB,z3.) || put(a.D1FACS,z6.) || put(a.D1FACX,z3.)) = 
+                compress(b.D1CTCD || b.D1FGMAB || put(b.D1FACB,z3.) || put(b.D1FACS,z6.) || put(b.D1FACX,z3.))
+            ;
+        quit;
+    %end;
+
+    /* Output final combined table */
+    data PLOC_&latest_mm.;
+        set base_ploc;
+    run;
+
+    %put NOTE: Macro PLOC completed successfully for &latest_mm..;
+
+%mend;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%macro PLOC(latest_mm);
     %local i mm lib base_lib base_table join_list;
 
     /* Define the months you want to join with base */
