@@ -1,191 +1,61 @@
-%macro PLOC(latest_mm);
-    %local i mm lib base_lib;
+%macro PLOC(mm);
+    %local lib;
 
-    /* Define past months to enrich from */
-    %let join_months = 1124 1224 0125 0225 0325;
-
-    /* Determine base LIBNAME for latest month */
-    %if %substr(&latest_mm., 3, 2) < 25 %then %let base_lib = SRC2024;
-    %else %let base_lib = SRC2025;
+    /* Set LIBNAME based on month year */
+    %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
+    %else %let lib = SRC2025;
 
     proc sql;
-        create table base_ploc as
-        select
-            (DFCTCD||DFGMAB||put(DFACB,z3.)||put(DFACS,z6.)||put(DFACX,z3.)) as Accnt_no,
-            (DFDEBC||put(DFDCS,z3.)||put(DFDCS,z6.)) as Cust_id,
-            DFSTUS as Accnt_STATUS,
-            DFDTAO  as ACCNT_OPN_DT,
-            DFRLBL  as LEDGER_BAL,
-            DFVELB  as VALUE_BAL,
-            DFTTHD  as TOTAL_HOLDS,
-            DFBLLME as LAST_MNTH_BAL,
-            DFDLIN  as LAST_TRN_DATE,
+        create table final_ploc_&mm. as
+        select 
+            (DFCTCD || DFGMAB || put(DFACB, z3.) || put(DFACS, z6.) || put(DFACX, z3.)) as Accnt_no,
+            (DFDEBC || put(DFDCS, z3.) || put(DFDCS, z6.)) as Cust_id,
+            DFSTUS     as Accnt_STATUS,
+            DFDTAO     as ACCNT_OPN_DT,
+            DFBLLME    as LAST_MNTH_BAL,
+            DFRLBL     as LEDGER_BAL,
+            DFVELB     as VALUE_BAL,
+            DFTTHD     as TOTAL_HOLDS,
+            DFDLIN     as LAST_TRN_DATE,
             DUOHT0 * 0.01 as OOD_LIMIT,
+
             D1HOLM * 0.01 as MAX_LIMIT,
             D1LOLM * 0.01 as LOW_LIMIT,
-            G3FROD  as FIRST_DELINQUENCY
+            ZZCRSC     as CRED_SEGMENT,
+            ZZSBSC     as BEHAV_SEGMENT,
+            SSADD1     as ADDRESS_LINE1,
+            SSADD2     as ADDRESS_LINE2,
+            SSNAME     as CUSTOMER_NAME,
+            SSSTTS     as STATUS,
+            SSBRCN     as BRANCH_NAME
 
-            %do i = 1 %to %sysfunc(countw(&join_months.));
-                %let mm = %scan(&join_months., &i.);
-                %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
-                %else %let lib = SRC2025;
+        from &lib..DDACMSP_&mm.
 
-                , b&mm..DFBLME as LastMnthBal_&mm.
-                , b&mm..D1HOLM * 0.01 as MaxLimit_&mm.
-            %end;
+        left join &lib..DCACMSP_&mm.
+        on compress(DFCTCD || DFGMAB || put(DFACB, z3.) || put(DFACS, z6.) || put(DFACX, z3.)) =
+           compress(DFCTCD || DFGMAB || put(DFACB, z3.) || put(DFACS, z6.) || put(DFACX, z3.))
 
-        from &base_lib..DCACMSP_&latest_mm.
+        left join &lib..DCCRMNP_&mm.
+        on compress(DFCTCD || DFGMAB || put(DFACB, z3.) || put(DFACS, z6.) || put(DFACX, z3.)) =
+           compress(DFCTCD || DFGMAB || put(DFACB, z3.) || put(DFACS, z6.) || put(DFACX, z3.))
 
-            %do i = 1 %to %sysfunc(countw(&join_months.));
-                %let mm = %scan(&join_months., &i.);
-                %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
-                %else %let lib = SRC2025;
+        left join &lib..SSADDRP_PLB_&mm.
+        on compress(DFDEBC || put(DFDCS, z3.) || put(DFDCS, z6.)) =
+           compress(SSCUNO || put(SSCSCD, z3.) || put(SSCSID, z6.))
 
-                left join &lib..DCACMSP_&mm. b&mm.
-                on compress(DFCTCD||DFGMAB||put(DFACB,z3.)||put(DFACS,z6.)||put(DFACX,z3.)) =
-                   compress(b&mm..DFCTCD||b&mm..DFGMAB||put(b&mm..DFACB,z3.)||put(b&mm..DFACS,z6.)||put(b&mm..DFACX,z3.))
-            %end;
+        left join &lib..SSCUSTP_PLB_&mm.
+        on compress(DFDEBC || put(DFDCS, z3.) || put(DFDCS, z6.)) =
+           compress(SSCUNO || put(SSCSCD, z3.) || put(SSCSID, z6.))
 
-        where 
-            DFAPTY in ('PCN','PCI') and
-            DFSTUS in ('1','2','3') and
-            DFPMDEL ne 'S' and
-            ZBABID = 'P1'
-    ;
+        left join &lib..SSSTTPP_&mm.
+        on compress(DFDEBC || put(DFDCS, z3.) || put(DFDCS, z6.)) =
+           compress(SSCUNO || put(SSCSCD, z3.) || put(SSCSID, z6.))
+
+        where DFAPTY in ('PCN','PCI')
+          and DFSTUS in ('1','2','3')
+          and DFPMDEL ne 'S'
+          and ZBABID = 'P1';
     quit;
 
-    /* Final Output Dataset */
-    data PLOC_&latest_mm.;
-        set base_ploc;
-    run;
-
-    %put NOTE: Macro PLOC completed successfully for &latest_mm..;
-%mend;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-%macro PLOC(latest_mm);
-    %local i mm lib base_lib;
-
-    /* Define past 5 months to join with */
-    %let join_months = 1124 1224 0125 0225 0325;
-
-    /* Identify LIBNAME for base */
-    %if %substr(&latest_mm., 3, 2) < 25 %then %let base_lib = SRC2024;
-    %else %let base_lib = SRC2025;
-
-    /* Step 1: Use latest month table as base */
-    proc sql;
-        create table base_ploc as
-        select *
-        from &base_lib..DCACMSP_&latest_mm.
-        where D1DCB = 67 and D1DCS = 137315;
-    quit;
-
-    /* Step 2: Loop through previous months */
-    %do i = 1 %to %sysfunc(countw(&join_months.));
-        %let mm = %scan(&join_months., &i.);
-
-        %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
-        %else %let lib = SRC2025;
-
-        proc sql;
-            create table base_ploc as
-            select 
-                a.*, 
-                b.D1HOLM * 0.01 as MaxODLimit_&mm.
-            from base_ploc a
-            left join &lib..DCACMSP_&mm. b
-            on 
-                compress(a.D1CTCD || a.D1FGMAB || put(a.D1FACB,z3.) || put(a.D1FACS,z6.) || put(a.D1FACX,z3.)) = 
-                compress(b.D1CTCD || b.D1FGMAB || put(b.D1FACB,z3.) || put(b.D1FACS,z6.) || put(b.D1FACX,z3.))
-            ;
-        quit;
-    %end;
-
-    /* Output final combined table */
-    data PLOC_&latest_mm.;
-        set base_ploc;
-    run;
-
-    %put NOTE: Macro PLOC completed successfully for &latest_mm..;
-
-%mend;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-%macro PLOC(latest_mm);
-    %local i mm lib base_lib base_table join_list;
-
-    /* Define the months you want to join with base */
-    %let join_months = 1124 1224 0125 0225 0325;
-
-    /* Decide the LIBNAME for the base table (latest_mm) */
-    %if %substr(&latest_mm., 3, 2) < 25 %then %let base_lib = SRC2024;
-    %else %let base_lib = SRC2025;
-
-    %let base_table = &base_lib..DCACMSP_&latest_mm.;
-
-    /* Step 1: Create BASE table from latest month */
-    proc sql;
-        create table base_ploc as
-        select * 
-        from &base_table
-        where D1DCB = 67 and D1DCS = 137315;
-    quit;
-
-    /* Step 2: Loop through all join months */
-    %do i = 1 %to %sysfunc(countw(&join_months.));
-        %let mm = %scan(&join_months., &i.);
-
-        %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
-        %else %let lib = SRC2025;
-
-        /* Optional: Customize this join as per real fields and logic */
-        proc sql;
-            create table join_&mm. as
-            select a.*, 
-                   b.D1HOLM as MaxODLimit_&mm.  /* Example: Pull specific field */
-            from base_ploc a
-            left join &lib..DCACMSP_&mm. b
-            on compress(a.D1CTCD||a.D1FGMAB||put(a.D1FACB,z3.)||put(a.D1FACS,z6.)||put(a.D1FACX,z3.)) 
-               = compress(b.D1CTCD||b.D1FGMAB||put(b.D1FACB,z3.)||put(b.D1FACS,z6.)||put(b.D1FACX,z3.));
-        quit;
-
-        data base_ploc;
-            set join_&mm.;
-        run;
-    %end;
-
-    /* Final table */
-    data PLOC_&latest_mm.;
-        set base_ploc;
-    run;
-
-    %put NOTE: Macro PLOC completed for &latest_mm..;
-
+    %put NOTE: final_ploc_&mm. created without aliases using %upcase(&lib.) tables.;
 %mend;
