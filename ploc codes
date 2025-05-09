@@ -1,6 +1,83 @@
 %macro PLOC(latest_mm);
     %local i mm lib base_lib;
 
+    /* Define past months to enrich from */
+    %let join_months = 1124 1224 0125 0225 0325;
+
+    /* Determine base LIBNAME for latest month */
+    %if %substr(&latest_mm., 3, 2) < 25 %then %let base_lib = SRC2024;
+    %else %let base_lib = SRC2025;
+
+    proc sql;
+        create table base_ploc as
+        select
+            (DFCTCD||DFGMAB||put(DFACB,z3.)||put(DFACS,z6.)||put(DFACX,z3.)) as Accnt_no,
+            (DFDEBC||put(DFDCS,z3.)||put(DFDCS,z6.)) as Cust_id,
+            DFSTUS as Accnt_STATUS,
+            DFDTAO  as ACCNT_OPN_DT,
+            DFRLBL  as LEDGER_BAL,
+            DFVELB  as VALUE_BAL,
+            DFTTHD  as TOTAL_HOLDS,
+            DFBLLME as LAST_MNTH_BAL,
+            DFDLIN  as LAST_TRN_DATE,
+            DUOHT0 * 0.01 as OOD_LIMIT,
+            D1HOLM * 0.01 as MAX_LIMIT,
+            D1LOLM * 0.01 as LOW_LIMIT,
+            G3FROD  as FIRST_DELINQUENCY
+
+            %do i = 1 %to %sysfunc(countw(&join_months.));
+                %let mm = %scan(&join_months., &i.);
+                %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
+                %else %let lib = SRC2025;
+
+                , b&mm..DFBLME as LastMnthBal_&mm.
+                , b&mm..D1HOLM * 0.01 as MaxLimit_&mm.
+            %end;
+
+        from &base_lib..DCACMSP_&latest_mm.
+
+            %do i = 1 %to %sysfunc(countw(&join_months.));
+                %let mm = %scan(&join_months., &i.);
+                %if %substr(&mm., 3, 2) < 25 %then %let lib = SRC2024;
+                %else %let lib = SRC2025;
+
+                left join &lib..DCACMSP_&mm. b&mm.
+                on compress(DFCTCD||DFGMAB||put(DFACB,z3.)||put(DFACS,z6.)||put(DFACX,z3.)) =
+                   compress(b&mm..DFCTCD||b&mm..DFGMAB||put(b&mm..DFACB,z3.)||put(b&mm..DFACS,z6.)||put(b&mm..DFACX,z3.))
+            %end;
+
+        where 
+            DFAPTY in ('PCN','PCI') and
+            DFSTUS in ('1','2','3') and
+            DFPMDEL ne 'S' and
+            ZBABID = 'P1'
+    ;
+    quit;
+
+    /* Final Output Dataset */
+    data PLOC_&latest_mm.;
+        set base_ploc;
+    run;
+
+    %put NOTE: Macro PLOC completed successfully for &latest_mm..;
+%mend;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%macro PLOC(latest_mm);
+    %local i mm lib base_lib;
+
     /* Define past 5 months to join with */
     %let join_months = 1124 1224 0125 0225 0325;
 
