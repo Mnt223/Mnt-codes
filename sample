@@ -1,3 +1,28 @@
+if [Month Name] = "JAN" then 1
+else if [Month Name] = "FEB" then 2
+else if [Month Name] = "MAR" then 3
+else if [Month Name] = "APR" then 4
+else if [Month Name] = "MAY" then 5
+else if [Month Name] = "JUN" then 6
+else if [Month Name] = "JUL" then 7
+else if [Month Name] = "AUG" then 8
+else if [Month Name] = "SEP" then 9
+else if [Month Name] = "OCT" then 10
+else if [Month Name] = "NOV" then 11
+else if [Month Name] = "DEC" then 12
+else null
+
+
+
+
+
+
+
+
+
+
+
+
 We’ve built this Sales MI Dashboard in Power BI to track branch-level sales at an RM level, including key performance metrics such as product sales, trigger achievements, and more. This is designed to be a one-stop solution for the front line, offering complete visibility at a daily level.
 
 This initiative integrates 8 different MIS reports into a single interactive dashboard, eliminating the need to access and track multiple Excel files manually.
