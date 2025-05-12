@@ -1,3 +1,22 @@
+Salary_Bucket = 
+SWITCH(
+    TRUE(),
+    'Table'[Salary] = 0, "0",
+    'Table'[Salary] <= 500000, "0 - 5L",
+    'Table'[Salary] <= 1500000, "5L - 15L",
+    'Table'[Salary] <= 2500000, "15L - 25L",
+    'Table'[Salary] <= 3500000, "25L - 35L",
+    'Table'[Salary] <= 4000000, "35L - 40L",
+    'Table'[Salary] > 4000000, "40L+",
+    BLANK()
+)
+
+
+
+
+
+
+
 let
     StartDate = #date(2024, 1, 1),
     EndDate = Date.EndOfMonth(DateTime.Date(DateTime.LocalNow())),
