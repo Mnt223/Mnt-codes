@@ -1,3 +1,19 @@
+proc sql;
+  create table hml_trb_comparison as
+  select 
+    trb_segment,
+    count(distinct CUSID) as num_customers,
+    sum(RELN_TRB_MAX_FINAL_0325) as total_trb format=comma20.0,
+    mean(RELN_TRB_MAX_FINAL_0325) as avg_trb format=comma20.2
+  from HML_QUALIFIED
+  where HML_Qualified_flag = 1 /* restrict to only HML qualified */
+  group by trb_segment;
+quit;
+
+
+
+
+
 /* Step 1: Filter HML customers */
 data hml_customers;
   set your_dataset;
