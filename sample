@@ -1,3 +1,63 @@
+
+/* Step 1: Filter salary-mapped customers */
+proc sql;
+  create table salary_customers as
+  select *
+  from your_dataset
+  where salary_flag = 1;
+quit;
+
+/* Step 2: Group by TRB qualification */
+proc sql;
+  create table salary_summary as
+  select 
+    trb_qualified_flag,
+    count(distinct customer_id) as num_customers,
+    sum(trb_amount) as total_trb format=comma20.0,
+    sum(revenue) as total_revenue format=comma20.0,
+    mean(trb_amount) as avg_trb format=comma20.2,
+    mean(revenue) as avg_revenue format=comma20.2
+  from salary_customers
+  group by trb_qualified_flag;
+quit;
+
+/* Step 3: Calculate uplift */
+data salary_uplift;
+  set salary_summary;
+  retain base_trb base_rev;
+  if trb_qualified_flag = 0 then do;
+    base_trb = avg_trb;
+    base_rev = avg_revenue;
+  end;
+  if trb_qualified_flag = 1 then do;
+    uplift_trb_pct = round(((avg_trb - base_trb) / base_trb) * 100, 0.1);
+    uplift_rev_pct = round(((avg_revenue - base_rev) / base_rev) * 100, 0.1);
+  end;
+run;
+
+/* Step 4: Output */
+proc print data=salary_uplift noobs label;
+  var trb_qualified_flag num_customers total_trb total_revenue avg_trb avg_revenue uplift_trb_pct uplift_rev_pct;
+  label
+    trb_qualified_flag = "TRB Qualified"
+    num_customers = "Customer Count"
+    total_trb = "Total TRB"
+    total_revenue = "Total Revenue"
+    avg_trb = "Avg TRB"
+    avg_revenue = "Avg Revenue"
+    uplift_trb_pct = "% Uplift in TRB"
+    uplift_rev_pct = "% Uplift in Revenue";
+run;
+
+
+
+
+
+
+
+
+
+
 Salary_Bucket = 
 SWITCH(
     TRUE(),
