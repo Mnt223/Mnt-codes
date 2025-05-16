@@ -1,3 +1,58 @@
+/* Step 1: Filter HML customers */
+data hml_customers;
+  set your_dataset;
+  if mortgage_flag = 1; /* Replace with your HML logic if different */
+run;
+
+/* Step 2: Create TRB Relationship Segment from Flag */
+data hml_flag_segment;
+  set hml_customers;
+
+  length trb_segment $10;
+
+  if TRUE_PRM_MAX_TRB_FLAG = 'TRUE PREMIER BASIS LAST MONTH TRB >=40 LACS' then trb_segment = '40L+';
+  else trb_segment = '<40L';
+run;
+
+/* Step 3: Summarize each group */
+proc sql;
+  create table hml_flag_summary as
+  select 
+    trb_segment,
+    count(distinct CUSID) as num_customers,
+    sum(RELN_TRB_MAX_FINAL_0325) as total_trb format=comma20.0,
+    mean(RELN_TRB_MAX_FINAL_0325) as avg_trb format=comma20.2
+  from hml_flag_segment
+  group by trb_segment;
+quit;
+
+/* Step 4: Calculate Uplift */
+data hml_flag_uplift;
+  set hml_flag_summary;
+  retain base_trb;
+  if trb_segment = '<40L' then base_trb = avg_trb;
+  if trb_segment = '40L+' then uplift_pct = round(((avg_trb - base_trb)/base_trb)*100, 0.1);
+run;
+
+/* Step 5: Show Final Comparison */
+proc print data=hml_flag_uplift noobs label;
+  var trb_segment num_customers total_trb avg_trb uplift_pct;
+  label
+    trb_segment = "TRB Band (from Flag)"
+    num_customers = "Customer Count"
+    total_trb = "Total TRB"
+    avg_trb = "Avg TRB"
+    uplift_pct = "Uplift vs <40L (%)";
+run;
+
+
+
+
+
+
+
+
+
 /* Step 1: Filter mortgage customers with TRB ≥ 40L */
 proc sql;
   create table mortgage_40L as
