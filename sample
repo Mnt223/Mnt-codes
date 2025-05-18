@@ -1,3 +1,20 @@
+Just to update you — I received the product mapping on Friday and refreshed the base for the CRM database that night. The database was further updated on Saturday.
+
+Over the weekend, the HK server was unstable, and several jobs failed due to patch refreshes in the SAS environment.
+
+While reviewing the catalog, I noticed some mismatches across both PEGA and non-PEGA product sources. I have spent significant time aligning the product mapping, updating the CRM Product 14 flag logic, and resolving inconsistencies within the catalog.
+
+Based on my understanding, I’ve made the necessary corrections at my end. It would be great if you could also recheck the catalog once and let me know in case any product mismatches still remain.
+
+Now that the base is ready, I’ll proceed with preparing the CRM summary on Monday.
+
+
+
+
+
+
+
+
 proc sql;
   create table hml_trb_comparison as
   select 
