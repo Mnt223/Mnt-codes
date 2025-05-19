@@ -1,3 +1,31 @@
+proc sql;
+    create table want as
+    select *,
+        /* Break into parts */
+        scan(sentdate, 2, ' ') as mon,
+        scan(sentdate, 3, ' ') as day,
+        scan(sentdate, 4, ' ') as timepart,
+        scan(sentdate, 6, ' ') as year,
+
+        /* Create valid datetime string: e.g., '09APR2025 18:23:33' */
+        catx(' ', scan(sentdate, 3, ' ') || scan(sentdate, 2, ' ') || scan(sentdate, 6, ' '), scan(sentdate, 4, ' ')) as dt_string,
+
+        /* Convert to SAS datetime */
+        input(catx(' ', scan(sentdate, 3, ' ') || scan(sentdate, 2, ' ') || scan(sentdate, 6, ' '), scan(sentdate, 4, ' ')), datetime20.) as sent_datetime format=datetime20.,
+
+        /* Extract date and time */
+        datepart(input(catx(' ', scan(sentdate, 3, ' ') || scan(sentdate, 2, ' ') || scan(sentdate, 6, ' '), scan(sentdate, 4, ' ')), datetime20.)) as sent_date format=date9.,
+        timepart(input(catx(' ', scan(sentdate, 3, ' ') || scan(sentdate, 2, ' ') || scan(sentdate, 6, ' '), scan(sentdate, 4, ' ')), datetime20.)) as sent_time format=time8.
+
+    from your_dataset;
+quit;
+
+
+
+
+
+
+
 Just to update you — I received the product mapping on Friday and refreshed the base for the CRM database that night. The database was further updated on Saturday.
 
 Over the weekend, the HK server was unstable, and several jobs failed due to patch refreshes in the SAS environment.
