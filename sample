@@ -1,3 +1,23 @@
+There is a fully automated code that is intended to run daily. Currently, I’m triggering it manually, but this should ideally be scheduled through Control-M.
+
+To initiate this, I first reached out to Smriti regarding the campaign flow. She mentioned that it should be handled by the BI team as they manage Control-M jobs, but she wasn’t aware of the exact owner.
+
+I then connected with Anu, who informed me that there are campaign-related Control-M jobs and suggested I reach out to Vandita or Kevin. Accordingly, I drafted and sent a mail requesting Control-M scheduling, but haven’t received any response yet.
+
+Additionally, I would also like to understand whom to reach out to for Control-M scheduling of segmentation MIS jobs.
+
+Would really appreciate it if you could guide me to the right contact(s) for both these use cases so the processes can be streamlined.
+
+
+
+
+
+
+
+
+
+
+
 proc sql;
     create table want as
     select *,
