@@ -1,3 +1,18 @@
+Last year, while working on campaign activities, I had automated the Diap Drop-off to Response Conversion Mail Summary, which is currently running as part of the daily automated code.
+
+There’s been an adhoc request raised by Nidhi regarding this, and Kevin has redirected the query to me.
+
+Could you please confirm if I should take this up, or if it falls under the scope of campaign adhoc requests that need to be handled separately?
+
+Looking forward to your guidance.
+
+
+
+
+
+
+
+
 There is a fully automated code that is intended to run daily. Currently, I’m triggering it manually, but this should ideally be scheduled through Control-M.
 
 To initiate this, I first reached out to Smriti regarding the campaign flow. She mentioned that it should be handled by the BI team as they manage Control-M jobs, but she wasn’t aware of the exact owner.
