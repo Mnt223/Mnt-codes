@@ -1,3 +1,19 @@
+# Step 1: Ensure mobile_no is treated as string (to preserve leading zeros if any)
+df['mobile_no'] = df['mobile_no'].astype(str)
+
+# Step 2: Remove first 2 digits (country code) and keep the remaining 10 digits
+# No stripping of 0s here; we want to preserve them if present in 10-digit number
+df['final_mobile'] = df['mobile_no'].str[2:]
+
+# Step 3: Sanity check (optional) - Make sure all are 10-digit after this
+df = df[df['final_mobile'].str.len() == 10]
+
+
+
+
+
+
+
 Sub SplitDataByRM_WithFoldersAndPassword()
 
     Dim ws As Worksheet
