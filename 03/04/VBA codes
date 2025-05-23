@@ -1,3 +1,39 @@
+Sub SaveWorkbookToAllSubfolders()
+    Dim fDialog As FileDialog
+    Dim basePath As String
+    Dim fso As Object, folder As Object, subfolder As Object
+    Dim saveFileName As String
+    
+    ' Prompt user for folder
+    Set fDialog = Application.FileDialog(msoFileDialogFolderPicker)
+    With fDialog
+        .Title = "Select Main Folder"
+        If .Show <> -1 Then
+            MsgBox "No folder selected. Exiting.", vbExclamation
+            Exit Sub
+        End If
+        basePath = .SelectedItems(1)
+    End With
+    
+    ' Use FileSystemObject to loop through subfolders
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set folder = fso.GetFolder(basePath)
+    
+    ' File name to save
+    saveFileName = "Template_Copy.xlsx" ' change as required
+    
+    For Each subfolder In folder.SubFolders
+        ' Save a copy in each subfolder
+        ThisWorkbook.SaveCopyAs subfolder.Path & "\" & saveFileName
+    Next subfolder
+
+    MsgBox "Workbook saved in all subfolders!", vbInformation
+End Sub
+
+
+
+
+
 With newWB.Sheets(1)
     .Activate
     .Range("E2").Select
