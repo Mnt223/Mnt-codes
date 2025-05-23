@@ -1,4 +1,34 @@
 With newWB.Sheets(1)
+    .Activate
+    .Range("E2").Select
+    ActiveWindow.FreezePanes = True
+    .Cells.Locked = False
+    .Range("A:Q").Locked = True
+    .EnableSelection = xlUnlockedCells
+
+    ' Hide specific columns (example: F to H)
+    .Columns("F:H").Hidden = True
+
+    ' Remove gridlines
+    .ActiveWindow.DisplayGridlines = False
+
+    ' Apply filter on header
+    .Range("A1:V1").AutoFilter
+
+    ' Protect the sheet (allow filter)
+    .Protect Password:="view123", UserInterfaceOnly:=True, _
+             AllowFiltering:=True, AllowSorting:=False, _
+             AllowUsingPivotTables:=False, AllowFormattingCells:=False
+End With
+
+
+
+
+
+
+
+
+With newWB.Sheets(1)
     ' Freeze Panes at column E (after D)
     .Activate
     .Range("E2").Select
