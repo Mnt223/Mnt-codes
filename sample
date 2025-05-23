@@ -1,3 +1,28 @@
+Hi NL,
+
+I wanted to share a quick update on the Branch Dashboard progress.
+
+To enable the UAT publishing, the following steps have already been initiated:
+	•	The JIRA ticket has been raised for the deployment.
+	•	The request for creating the 80 groups required for UAT access has also been submitted.
+
+This setup is expected to take approximately 4–5 working days. Once the 80-group configuration is completed, the Power BI team will help push the dashboard to UAT.
+
+In the meantime, there are a couple of key areas that require discussion and input for further updates on the dashboard:
+	1.	RM Numbers (RMB, BAS, Service RM):
+We need to validate and cross-check these numbers. Requesting your availability so we can set up a short discussion to ensure alignment.
+	2.	Advanced Wealth Penetration and Revenue Metrics:
+@Partho – we’ll need your support here to understand the required data points and how we can effectively incorporate them into the dashboard.
+
+Looking forward to your availability so we can move ahead on both fronts smoothly.
+
+
+
+
+
+
+
+
 Last year, while working on campaign activities, I had automated the Diap Drop-off to Response Conversion Mail Summary, which is currently running as part of the daily automated code.
 
 There’s been an adhoc request raised by Nidhi regarding this, and Kevin has redirected the query to me.
