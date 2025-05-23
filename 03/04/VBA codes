@@ -1,3 +1,119 @@
+Sub SplitDataByBranch_WithFreezeAndLock()
+
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim branchDict As Object
+    Dim branchName As Variant
+    Dim basePath As String
+    Dim headerRange As Range
+    Dim r As Long
+
+    Set ws = ThisWorkbook.Sheets(1)
+    lastRow = ws.Cells(ws.Rows.Count, "F").End(xlUp).Row
+    Set headerRange = ws.Range("A1:V1") ' Export columns A to V
+
+    Set branchDict = CreateObject("Scripting.Dictionary")
+
+    ' Collect unique Branch names from Column F
+    For r = 2 To lastRow
+        branchName = Trim(ws.Cells(r, 6).Value) ' Column F
+        If Len(branchName) > 0 Then
+            If Not branchDict.exists(branchName) Then
+                branchDict.Add branchName, Nothing
+            End If
+        End If
+    Next r
+
+    ' Ask user for base folder
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "Select Main Folder to Save Branch Folders"
+        If .Show <> -1 Then
+            MsgBox "No folder selected. Exiting.", vbExclamation
+            Exit Sub
+        End If
+        basePath = .SelectedItems(1) & "\"
+    End With
+
+    ' Loop through each Branch
+    For Each branchName In branchDict.Keys
+
+        ' Clean folder/file name
+        Dim cleanName As String
+        cleanName = Replace(branchName, "/", "_")
+        cleanName = Replace(cleanName, "\", "_")
+        cleanName = Replace(cleanName, "*", "_")
+        cleanName = Replace(cleanName, "?", "_")
+        cleanName = Replace(cleanName, ":", "_")
+        cleanName = Replace(cleanName, "[", "_")
+        cleanName = Replace(cleanName, "]", "_")
+
+        ' Create branch folder
+        Dim branchFolder As String
+        branchFolder = basePath & cleanName & "\"
+        If Dir(branchFolder, vbDirectory) = "" Then MkDir branchFolder
+
+        ' New workbook creation
+        Dim newWB As Workbook
+        Set newWB = Workbooks.Add
+
+        ' Copy header row
+        headerRange.Copy Destination:=newWB.Sheets(1).Range("A1")
+        Dim pasteRow As Long: pasteRow = 2
+
+        ' Copy branch-specific data rows
+        For r = 2 To lastRow
+            If Trim(ws.Cells(r, 6).Value) = branchName Then
+                ws.Range("A" & r & ":V" & r).Copy _
+                    Destination:=newWB.Sheets(1).Range("A" & pasteRow)
+                pasteRow = pasteRow + 1
+            End If
+        Next r
+
+        ' Freeze A to D, lock A to Q
+        With newWB.Sheets(1)
+            .Activate
+            .Range("E2").Select
+            ActiveWindow.FreezePanes = True
+
+            .Cells.Locked = False
+            .Range("A:Q").Locked = True
+
+            .Protect Password:="view123", UserInterfaceOnly:=True, AllowFiltering:=True
+        End With
+
+        ' Save file
+        Dim filePath As String
+        filePath = branchFolder & cleanName & "_Records.xlsx"
+
+        Application.DisplayAlerts = False
+        newWB.SaveAs fileName:=filePath, Password:="hsbc123@"
+        Application.DisplayAlerts = True
+
+        newWB.Close SaveChanges:=False
+
+    Next branchName
+
+    MsgBox "All branch files created successfully with password protection and locked structure.", vbInformation
+
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Sub SplitDataByRM_WithFoldersAndPassword()
 
     Dim ws As Worksheet
