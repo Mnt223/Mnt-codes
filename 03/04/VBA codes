@@ -1,3 +1,98 @@
+Sub SplitDataByRM_WithFoldersAndPassword()
+
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim rmDict As Object
+    Dim rmName As Variant
+    Dim basePath As String
+    Dim headerRange As Range
+    Dim r As Long
+
+    Set ws = ThisWorkbook.Sheets(1) ' Use your main sheet
+    lastRow = ws.Cells(ws.Rows.Count, "F").End(xlUp).Row
+    Set headerRange = ws.Range("C1:H1") ' Copy columns C to H
+
+    Set rmDict = CreateObject("Scripting.Dictionary")
+
+    ' Get all unique RM names
+    For r = 2 To lastRow
+        rmName = Trim(ws.Cells(r, 6).Value) ' Column F
+        If Len(rmName) > 0 Then
+            If Not rmDict.exists(rmName) Then
+                rmDict.Add rmName, Nothing
+            End If
+        End If
+    Next r
+
+    ' Ask where to save the main folder
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "Select Main Folder to Save RM Folders"
+        If .Show <> -1 Then
+            MsgBox "No folder selected. Exiting.", vbExclamation
+            Exit Sub
+        End If
+        basePath = .SelectedItems(1) & "\"
+    End With
+
+    ' Loop through RMs
+    For Each rmName In rmDict.Keys
+
+        ' Clean RM name
+        Dim cleanName As String
+        cleanName = Replace(rmName, "/", "_")
+        cleanName = Replace(cleanName, "\", "_")
+        cleanName = Replace(cleanName, "*", "_")
+        cleanName = Replace(cleanName, "?", "_")
+        cleanName = Replace(cleanName, ":", "_")
+        cleanName = Replace(cleanName, "[", "_")
+        cleanName = Replace(cleanName, "]", "_")
+
+        ' Create folder for this RM
+        Dim rmFolder As String
+        rmFolder = basePath & cleanName & "\"
+        If Dir(rmFolder, vbDirectory) = "" Then MkDir rmFolder
+
+        ' Create new workbook
+        Dim newWB As Workbook
+        Set newWB = Workbooks.Add
+
+        ' Copy header
+        headerRange.Copy Destination:=newWB.Sheets(1).Range("A1")
+        Dim pasteRow As Long: pasteRow = 2
+
+        ' Copy data
+        For r = 2 To lastRow
+            If Trim(ws.Cells(r, 6).Value) = rmName Then
+                ws.Range("C" & r & ":H" & r).Copy _
+                    Destination:=newWB.Sheets(1).Range("A" & pasteRow)
+                pasteRow = pasteRow + 1
+            End If
+        Next r
+
+        ' Save file inside RM's folder
+        Dim filePath As String
+        filePath = rmFolder & cleanName & "_Records.xlsx"
+
+        Application.DisplayAlerts = False
+        newWB.SaveAs fileName:=filePath, Password:="hsbc123@"
+        Application.DisplayAlerts = True
+
+        newWB.Close SaveChanges:=False
+
+    Next rmName
+
+    MsgBox "All files created in separate folders with password: hsbc123@", vbInformation
+
+End Sub
+
+
+
+
+
+
+
+
+
 proc sort data=your_dataset; 
     by cust_id; 
 run;
