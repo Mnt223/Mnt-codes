@@ -1,3 +1,27 @@
+A quick update on the Branch Dashboard:
+	•	JIRA ticket has been raised.
+	•	Request for 80 UAT groups submitted – expected completion in 4–5 working days.
+	•	Once done, the Power BI team will publish the dashboard in UAT.
+
+As discussed in the last call, Phase 1 launch will be without RLS. So, the UAT version will be shared with RMs without RLS applied.
+
+Pending items for discussion:
+	1.	RM Numbers (RMB, BAS, Service RM):
+Need to validate and include cross-checker numbers.
+Also, align the planar files.
+	2.	Advanced Wealth & Revenue Metrics:
+@Partho – need your support with data integration for these metrics.
+
+
+
+
+
+
+
+
+
+
+
 Hi NL,
 
 I wanted to share a quick update on the Branch Dashboard progress.
