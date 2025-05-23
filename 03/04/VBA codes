@@ -1,3 +1,30 @@
+With newWB.Sheets(1)
+    ' Freeze Panes at column E (after D)
+    .Activate
+    .Range("E2").Select
+    ActiveWindow.FreezePanes = True
+
+    ' Unlock everything first
+    .Cells.Locked = False
+
+    ' Lock A to Q
+    .Range("A:Q").Locked = True
+
+    ' Allow only unlocked cells to be selected (disables copy/select on A:Q)
+    .EnableSelection = xlUnlockedCells
+
+    ' Protect sheet to enforce lock
+    .Protect Password:="view123", UserInterfaceOnly:=True, _
+             AllowFiltering:=True, AllowSorting:=False, _
+             AllowUsingPivotTables:=False, AllowFormattingCells:=False
+End With
+
+
+
+
+
+
+
 Sub SplitDataByBranch_WithFreezeAndLock()
 
     Dim ws As Worksheet
