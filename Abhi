@@ -1,3 +1,59 @@
+view: transaction_data {
+  sql_table_name: `project.dataset.transaction_table` ;;  # Replace with your actual project, dataset, and table name
+
+  dimension: mt_ref_nbr {
+    type: string
+    sql: ${TABLE}.MT_REF_NBR ;;
+  }
+
+  dimension: mt_posting_date {
+    type: date
+    sql: ${TABLE}.MT_POSTING_DATE ;;
+  }
+
+  dimension: mcc_code {
+    type: string
+    sql: ${TABLE}.MCC_CODE ;;
+  }
+
+  dimension: mt_desc {
+    type: string
+    sql: ${TABLE}.MT_DESC ;;
+  }
+
+  dimension: brand {
+    type: string
+    sql: ${TABLE}.Brand ;;
+  }
+
+  dimension: final_category {
+    type: string
+    sql: ${TABLE}.final_category ;;
+  }
+
+  dimension: category_general_desc {
+    type: string
+    sql: ${TABLE}.category_general_DESC ;;
+  }
+
+  dimension: category_desc {
+    type: string
+    sql: ${TABLE}.category_DESC ;;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Count how many unique months each customer is active in */
 proc sql;
     create table cust_month_count as
