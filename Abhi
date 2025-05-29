@@ -1,3 +1,28 @@
+explore: Spend_Combined {
+  label: "Spend View1 + View3 Combined"
+  required_access_grants: [ihub_inm_core_without_user, ihub_inm_service_cardportfolio]
+  from: Spend_view1
+
+  join: Spend_view3 {
+    type: left_outer
+    sql_on: ${Spend_view1.mt_ref_nbr} = ${Spend_view3.mt_ref_nbr} ;;
+    relationship: many_to_one # or one_to_one if unique, adjust based on your data
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 view: transaction_data {
   sql_table_name: `project.dataset.transaction_table` ;;  # Replace with your actual project, dataset, and table name
 
