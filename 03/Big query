@@ -1,3 +1,268 @@
+view: spend_view_new {
+  sql_table_name: `your_project.your_dataset.SPEND_VIEW_*` ;;
+
+  # ------------------- DIMENSIONS -------------------
+
+  dimension: mt_posting_date {
+    type: date
+    label: "Posting Date"
+    sql: ${TABLE}.MT_POSTING_DATE ;;
+  }
+
+  dimension: mcc_code {
+    type: string
+    label: "MCC Code"
+    sql: CAST(${TABLE}.MCC_CODE AS STRING) ;;
+  }
+
+  dimension: merchant_details {
+    type: string
+    label: "Merchant Details"
+    sql: ${TABLE}.Merchant_Details ;;
+  }
+
+  dimension: description {
+    type: string
+    label: "Description"
+    sql: ${TABLE}.Description ;;
+  }
+
+  dimension: org {
+    type: number
+    label: "ORG"
+    sql: ${TABLE}.ORG ;;
+  }
+
+  dimension: transaction_type {
+    type: string
+    label: "Transaction Type"
+    sql: ${TABLE}.TRANSACTION_TYPE ;;
+    description: "Type of transaction: POS, Ecommerce, Cash, etc."
+  }
+
+  dimension: spend_type {
+    type: string
+    label: "Spend Type"
+    sql: ${TABLE}.SPEND_TYPE ;;
+    description: "Debit/Credit, EMI, etc."
+  }
+
+  dimension: segment_name {
+    type: string
+    label: "Segment Name"
+    sql: ${TABLE}.Segment_Name ;;
+  }
+
+  dimension: acct {
+    type: string
+    label: "Account Number"
+    sql: ${TABLE}.acct ;;
+  }
+
+  dimension: mt_type {
+    type: string
+    label: "MT Type"
+    sql: ${TABLE}.mt_type ;;
+    description: "Card type (if available)"
+  }
+
+  dimension: spend_place {
+    type: string
+    label: "Spend Place"
+    sql: ${TABLE}.Spend_Place ;;
+    description: "DOM = Domestic, FR = International"
+  }
+
+  dimension: product {
+    type: string
+    label: "Product"
+    sql: ${TABLE}.Product ;;
+    description: "Card/Account product"
+  }
+
+  dimension: spend_amount {
+    type: number
+    label: "Spend Amount"
+    sql: ${TABLE}.Spend_Amount ;;
+  }
+
+  dimension: reversal_amount {
+    type: number
+    label: "Reversal Amount"
+    sql: ${TABLE}.Reversal_Amount ;;
+  }
+
+  dimension: net_transaction {
+    type: number
+    label: "Net Transaction"
+    sql: ${TABLE}.Net_Transaction ;;
+  }
+
+  dimension: spend_amount_cmb {
+    type: number
+    label: "Spend Amount CMB"
+    sql: ${TABLE}.SPEND_AMOUNT_CMB ;;
+  }
+
+  dimension: spend_amount_rbmw {
+    type: number
+    label: "Spend Amount RBMW"
+    sql: ${TABLE}.SPEND_AMOUNT_RBMW ;;
+  }
+
+  dimension: mt_ref_nbr {
+    type: string
+    label: "MT Reference Number"
+    sql: ${TABLE}.MT_REF_NBR ;;
+    description: "Unique transaction reference"
+    primary_key: yes
+  }
+
+  dimension: brand {
+    type: string
+    label: "Brand"
+    sql: ${TABLE}.BRAND ;;
+  }
+
+  dimension: final_category {
+    type: string
+    label: "Final Category"
+    sql: ${TABLE}.FINAL_CATEGORY ;;
+  }
+
+  dimension: category_general_desc {
+    type: string
+    label: "Category General Description"
+    sql: ${TABLE}.CATEGORY_GENERAL_DESC ;;
+  }
+
+  dimension: category_desc {
+    type: string
+    label: "Category Description"
+    sql: ${TABLE}.CATEGORY_DESC ;;
+  }
+
+  # ------------------- MEASURES -------------------
+
+  # Total spend amount (Gross)
+  measure: total_gross_spend {
+    type: sum
+    label: "Total Gross Spend"
+    sql: ${spend_amount} ;;
+    value_format_name: "decimal_2"
+    description: "Sum of spend amount"
+  }
+
+  # Total net spend (after reversal)
+  measure: total_net_spend {
+    type: sum
+    label: "Total Net Spend"
+    sql: ${net_transaction} ;;
+    value_format_name: "decimal_2"
+    description: "Sum of net transaction"
+  }
+
+  measure: total_reversal_amount {
+    type: sum
+    label: "Total Reversal Amount"
+    sql: ${reversal_amount} ;;
+    value_format_name: "decimal_2"
+  }
+
+  measure: unique_accts_cnt {
+    type: count_distinct
+    label: "Unique Accounts Count"
+    sql: ${acct} ;;
+    description: "Number of unique accounts"
+  }
+
+  measure: unique_customers_cnt {
+    type: count_distinct
+    label: "Unique Customer Count"
+    sql: ${TABLE}.Customer_ID ;; # Replace with correct field if you have Customer_ID, otherwise remove
+    description: "Number of unique customers"
+  }
+
+  # Spend by brand (filtered measure: example for dashboarding)
+  measure: spend_by_brand {
+    type: sum
+    label: "Spend by Brand"
+    sql: CASE WHEN ${brand} IS NOT NULL THEN ${spend_amount} ELSE 0 END ;;
+    value_format_name: "decimal_2"
+    description: "Total spend for each brand"
+  }
+
+  # Count of transactions by brand
+  measure: txn_count_by_brand {
+    type: count
+    label: "Txn Count by Brand"
+    filters: [brand: "-null"]
+    sql: ${mt_ref_nbr} ;;
+  }
+
+  # Spend by transaction type (POS, ECOM, CASH, etc.)
+  measure: spend_by_txn_type {
+    type: sum
+    label: "Spend by Transaction Type"
+    sql: CASE WHEN ${transaction_type} IS NOT NULL THEN ${spend_amount} ELSE 0 END ;;
+    value_format_name: "decimal_2"
+    description: "Total spend by transaction type"
+  }
+
+  # Spend by geography (Domestic/International)
+  measure: spend_domestic {
+    type: sum
+    label: "Domestic Spend"
+    sql: CASE WHEN UPPER(${spend_place}) = 'DOM' THEN ${spend_amount} ELSE 0 END ;;
+    value_format_name: "decimal_2"
+    description: "Domestic spends only"
+  }
+
+  measure: spend_international {
+    type: sum
+    label: "International Spend"
+    sql: CASE WHEN UPPER(${spend_place}) = 'FR' THEN ${spend_amount} ELSE 0 END ;;
+    value_format_name: "decimal_2"
+    description: "International spends only"
+  }
+
+  # Average spend per account
+  measure: avg_spend_per_account {
+    type: number
+    label: "Average Spend per Account"
+    sql: CASE WHEN ${unique_accts_cnt} > 0 THEN ${total_gross_spend} / ${unique_accts_cnt} ELSE NULL END ;;
+    value_format_name: "decimal_2"
+  }
+
+  # Transaction count
+  measure: total_transactions {
+    type: count_distinct
+    label: "Unique Transactions"
+    sql: ${mt_ref_nbr} ;;
+    description: "Number of unique transactions"
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 view: spend_view2 {
   sql_table_name: `your_project.your_dataset.SPEND_VIEW_2` ;;
 
