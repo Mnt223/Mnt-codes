@@ -1,0 +1,181 @@
+view: spend_view2 {
+  sql_table_name: `your_project.your_dataset.SPEND_VIEW_2` ;;
+
+  # --- Dimensions ---
+
+  dimension: mt_posting_date {
+    type: date
+    label: "Posting Date"
+    sql: ${TABLE}.MT_POSTING_DATE ;;
+  }
+
+  dimension: mcc_code {
+    type: number
+    label: "MCC Code"
+    sql: ${TABLE}.MCC_CODE ;;
+  }
+
+  dimension: merchant_details {
+    type: string
+    label: "Merchant Details"
+    sql: ${TABLE}.Merchant_Details ;;
+  }
+
+  dimension: description {
+    type: string
+    label: "Description"
+    sql: ${TABLE}.Description ;;
+  }
+
+  dimension: org {
+    type: number
+    label: "ORG"
+    sql: ${TABLE}.ORG ;;
+  }
+
+  dimension: transaction_type {
+    type: string
+    label: "Transaction Type"
+    sql: ${TABLE}.TRANSACTION_TYPE ;;
+  }
+
+  dimension: spend_type {
+    type: string
+    label: "Spend Type"
+    sql: ${TABLE}.SPEND_TYPE ;;
+  }
+
+  dimension: segment_name {
+    type: string
+    label: "Segment Name"
+    sql: ${TABLE}.Segment_Name ;;
+  }
+
+  dimension: acct {
+    type: string
+    label: "Account Number"
+    sql: ${TABLE}.acct ;;
+  }
+
+  dimension: mt_type {
+    type: string
+    label: "MT Type"
+    sql: ${TABLE}.mt_type ;;
+  }
+
+  dimension: spend_place {
+    type: string
+    label: "Spend Place"
+    sql: ${TABLE}.Spend_Place ;;
+  }
+
+  dimension: product {
+    type: string
+    label: "Product"
+    sql: ${TABLE}.Product ;;
+  }
+
+  dimension: mt_ref_nbr {
+    type: string
+    label: "MT Reference Number"
+    sql: ${TABLE}.MT_REF_NBR ;;
+    primary_key: yes
+  }
+
+  dimension: brand {
+    type: string
+    label: "Brand"
+    sql: ${TABLE}.BRAND ;;
+  }
+
+  dimension: final_category {
+    type: string
+    label: "Final Category"
+    sql: ${TABLE}.FINAL_CATEGORY ;;
+  }
+
+  dimension: category_general_desc {
+    type: string
+    label: "Category General Description"
+    sql: ${TABLE}.CATEGORY_GENERAL_DESC ;;
+  }
+
+  dimension: category_desc {
+    type: string
+    label: "Category Description"
+    sql: ${TABLE}.CATEGORY_DESC ;;
+  }
+
+  # --- Measures: Spend Analytics ---
+
+  measure: total_gross_spend {
+    type: sum
+    sql: ${TABLE}.Spend_Amount ;;
+    label: "Total Gross Spend"
+    value_format_name: "decimal_2"
+    description: "Sum of Spend_Amount (Gross Spend)"
+  }
+
+  measure: total_reversal_amount {
+    type: sum
+    sql: ${TABLE}.Reversal_Amount ;;
+    label: "Total Reversal Amount"
+    value_format_name: "decimal_2"
+    description: "Sum of Reversal_Amount"
+  }
+
+  measure: net_spend {
+    type: number
+    sql: ${total_gross_spend} - ${total_reversal_amount} ;;
+    label: "Net Spend"
+    value_format_name: "decimal_2"
+    description: "Gross Spend minus Reversal Amount"
+  }
+
+  measure: avg_gross_spend {
+    type: average
+    sql: ${TABLE}.Spend_Amount ;;
+    label: "Average Gross Spend"
+    value_format_name: "decimal_2"
+    description: "Average gross spend per transaction"
+  }
+
+  measure: avg_net_spend {
+    type: number
+    sql: CASE WHEN COUNT(${mt_ref_nbr}) > 0 THEN (${net_spend}) / COUNT(${mt_ref_nbr}) ELSE NULL END ;;
+    label: "Average Net Spend"
+    value_format_name: "decimal_2"
+    description: "Net Spend divided by count of transactions"
+  }
+
+  measure: count_transactions {
+    type: count_distinct
+    sql: ${TABLE}.MT_REF_NBR ;;
+    label: "Transaction Count"
+    description: "Distinct number of transactions"
+  }
+
+  measure: total_net_transaction {
+    type: sum
+    sql: ${TABLE}.Net_Transaction ;;
+    label: "Net Transaction (DB column)"
+    value_format_name: "decimal_2"
+    description: "Sum of Net_Transaction column"
+  }
+
+  measure: total_spend_amount_cmb {
+    type: sum
+    sql: ${TABLE}.SPEND_AMOUNT_CMB ;;
+    label: "Spend Amount CMB"
+    value_format_name: "decimal_2"
+    description: "Sum of SPEND_AMOUNT_CMB"
+  }
+
+  measure: total_spend_amount_rbmw {
+    type: sum
+    sql: ${TABLE}.SPEND_AMOUNT_RBMW ;;
+    label: "Spend Amount RBMW"
+    value_format_name: "decimal_2"
+    description: "Sum of SPEND_AMOUNT_RBMW"
+  }
+}
