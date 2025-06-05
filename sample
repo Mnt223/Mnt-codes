@@ -1,3 +1,33 @@
+I would like to highlight the issue we encountered with the recent contact center NPS file.
+
+Background:
+The intent was to include only customer interactions from 2nd June onward. However, due to an oversight, the input file mistakenly included interactions from 2nd May to 3rd June. As a result, the sample size increased significantly, and surveys were sent to customers who had interacted in May as well.
+
+Root Cause:
+This issue occurred due to a manual error in the code logic. The date filter was not correctly applied, and the necessary adjustments were missed during implementation.
+
+Impact Assessment:
+We have reviewed the situation with the Global CX and Medallia teams. Based on their inputs:
+	•	The impact is minimal.
+	•	No sensitive or written customer data was captured in the survey.
+	•	Surveys were sent only to customers who had interacted with us, although from a broader timeframe.
+	•	There is no major risk or compliance breach identified.
+
+Corrective Action:
+As this is a newly implemented process, we are introducing a maker-checker validation mechanism to strengthen quality control. This additional review layer is currently in progress and will be fully integrated into all future survey runs to prevent recurrence.
+
+
+
+
+
+
+
+
+
+
+
+
+
 As part of the ongoing review, please find below the detailed update on the INPS CC survey file issue, structured under key headings for clarity:
 
 ⸻
