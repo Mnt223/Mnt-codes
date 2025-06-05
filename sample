@@ -1,3 +1,36 @@
+I would like to highlight the issue we encountered with the recent contact center file.
+
+Background:
+The intention was to include only customer interactions from 2nd June onward. However, due to an oversight, the input file included data from 2nd May to 3rd June. As a result, the sample size became significantly larger, and surveys were sent to customers who had interacted in May as well.
+
+Root Cause:
+This occurred due to a human error in the code logic. The date filter was not correctly applied, and the necessary adjustments were missed during code implementation.
+
+Impact Assessment:
+We have reviewed the situation with the global team and confirmed that the impact is minimal. The survey responses do not capture any sensitive or written customer data, and the surveys were still sent only to customers who had interacted with us, albeit from a slightly extended period. Therefore, no major risk or compliance breach has been identified.
+
+Corrective Action:
+We are currently implementing a maker-checker validation process for this workflow, given that it is still relatively new. This additional layer of review is in progress and will be fully integrated to prevent such issues going forward.
+
+Please let us know if any further clarification is required.
+
+Best regards,
+[Your Name]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Please find below my planned work items for today:
 	1.	PegaData Sharing: Start with sharing the required PegaData for the Global Team.
 	2.	Business Analytics Training: Attend the scheduled training session.
