@@ -1,3 +1,23 @@
+As a follow-up to our earlier communication regarding the INPS CC survey file issue, I’d like to share a quick update.
+
+We have identified that the root cause was a manual error in the date filter logic, which led to the inclusion of records from 2nd May to 3rd June, instead of only from 2nd June onwards. This resulted in surveys being sent to a larger sample size, including customers who interacted in May.
+
+Key Points:
+	•	We have confirmed with the Group CX and Medallia teams that there is no major impact and no need to send any corrective communication to customers.
+	•	The only overlap observed was for customers who had already received a survey on 2nd or 3rd May, which could potentially violate the 30-day exclusion policy.
+	•	Customers who interacted between 4th May and 1st June were rightly picked up in June, as they were not surveyed earlier.
+
+Next Steps:
+	•	We are formalizing a maker-checker process to strengthen control, given this is a newly implemented process.
+	•	Final impact validation and code correction are in progress. We will ensure that this is addressed in all future runs.
+
+
+
+
+
+
+
+
 I would like to highlight the issue we encountered with the recent contact center file.
 
 Background:
