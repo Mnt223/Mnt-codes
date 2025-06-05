@@ -1,3 +1,313 @@
+import pandas as pd
+import re
+from fuzzywuzzy import fuzz
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
+import joblib
+import os
+import logging
+
+# === CONFIGURE LOGGING ===
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger(__name__)
+
+# === MERCHANT DICTIONARY LOADER ===
+def load_merchant_dictionary(path: str = "merchant_dictionary.csv"):
+    """Load merchant dictionary from CSV (pipe-separated keywords)."""
+    try:
+        abs_path = os.path.abspath(path)
+        df = pd.read_csv(abs_path, dtype=str, encoding="utf-8").fillna("")
+        data = []
+        for _, row in df.iterrows():
+            entry = {
+                "brand_keywords": [x.strip().lower() for x in row['brand_keywords'].split('|') if x.strip()],
+                "merchant_name_keywords": [x.strip().lower() for x in row['merchant_name_keywords'].split('|') if x.strip()],
+                "official_merchant_name": row.get('official_merchant_name', ''),
+                "official_brand_name": row.get('official_brand_name', ''),
+                "sector": row.get('sector', ''),
+                "city": row.get('city', ''),
+                "mcc": row.get('mcc', '')
+            }
+            if entry["brand_keywords"] or entry["merchant_name_keywords"]:
+                data.append(entry)
+        logger.info(f"Processed {len(data)} valid merchant dictionary entries.")
+        return data
+    except Exception as e:
+        logger.error(f"Error loading merchant dictionary: {e}")
+        return []
+
+# === TEXT PREPROCESSOR & HEURISTICS ===
+def preprocess(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    text = text.lower()
+    text = re.sub(r'http\S+|www\.\S+', '', text)
+    text = re.sub(r'\S*@\S*\s?', '', text)
+    text = re.sub(r'[^a-z0-9\s]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def extract_entity_guess(raw_desc: str) -> str:
+    if not raw_desc:
+        return "Unknown Merchant"
+    tokens = [w for w in raw_desc.split() if len(w) > 2 and any(c.isalpha() for c in w)]
+    capitalized_phrases, curr = [], []
+    for token in tokens:
+        if token[0].isupper() or token.isupper():
+            curr.append(token)
+        elif curr:
+            capitalized_phrases.append(' '.join(curr))
+            curr = []
+    if curr:
+        capitalized_phrases.append(' '.join(curr))
+    if capitalized_phrases:
+        return max(capitalized_phrases, key=len)
+    if len(tokens) >= 2:
+        bigrams = [f'{tokens[i]} {tokens[i+1]}' for i in range(len(tokens)-1)]
+        return max(bigrams, key=len) if bigrams else tokens[0]
+    return tokens[0] if tokens else "Unknown Merchant"
+
+# === DICTIONARY MATCHER ===
+class DictionaryMatcher:
+    def __init__(self, merchant_data, fuzzy_threshold=80):
+        self.merchant_data = merchant_data
+        self.fuzzy_threshold = fuzzy_threshold
+        self.keyword_index = self._build_keyword_index()
+
+    def _build_keyword_index(self):
+        index = {}
+        for entry in self.merchant_data:
+            all_keywords = entry['brand_keywords'] + entry['merchant_name_keywords']
+            for keyword in all_keywords:
+                if keyword not in index:
+                    index[keyword] = []
+                index[keyword].append(entry)
+        return index
+
+    def find_match(self, processed_desc: str):
+        if not processed_desc:
+            return None
+        best_match, best_score, match_type = None, 0, None
+        for keyword, entries in self.keyword_index.items():
+            if keyword in processed_desc:
+                for entry in entries:
+                    score = 99
+                    if score > best_score:
+                        best_score = score
+                        best_match = entry
+                        match_type = 'substring'
+                        if best_score >= 98:
+                            break
+            if best_score >= 98:
+                break
+        if best_score < self.fuzzy_threshold:
+            for entry in self.merchant_data:
+                for keyword in entry['brand_keywords'] + entry['merchant_name_keywords']:
+                    if not keyword:
+                        continue
+                    score_token = fuzz.token_set_ratio(processed_desc, keyword)
+                    score_partial = fuzz.partial_ratio(processed_desc, keyword)
+                    score = max(score_token, score_partial)
+                    if score > best_score:
+                        best_score = score
+                        best_match = entry
+                        match_type = 'token_set' if score == score_token else 'partial'
+                    if best_score >= 98:
+                        break
+                if best_score >= 98:
+                    break
+        if best_match and best_score >= self.fuzzy_threshold:
+            return {
+                "brand": best_match["official_brand_name"],
+                "merchant": best_match["official_merchant_name"],
+                "sector": best_match["sector"],
+                "confidence": "high" if best_score >= 90 else "medium"
+            }
+        return None
+
+# === NLP SECTOR CLASSIFIER ===
+class NLPSectorClassifier:
+    def __init__(self, model_path="nlp_sector_model.joblib"):
+        self.model_path = model_path
+        self.pipeline = None
+
+    def get_default_training_data(self):
+        data = {
+            'description': [
+                "payment for groceries at local mart", "online order big general store", 
+                "food delivery from quick bites", "monthly electricity bill payment",
+                "cab ride with city movers", "ecom purchase fashion apparel",
+                "swiggy bundl technologies", "amazon seller services online", 
+                "zomato media pvt ltd", "tata cliq luxury shopping",
+                "movie tickets pvr cinemas", "internet broadband connection act fibernet",
+                "recharge mobile plan jio", "premium subscription netflix", 
+                "dinner at urban restaurant", "flight booking indigo airlines",
+                "pharmacy bill apollo pharmacy", "investment mutual fund groww",
+                "utility gas bill payment adani gas", "transport metro card recharge",
+                "retail clothing store westside", "education course fee udemy",
+                "health checkup lal pathlabs", "donation to charity foundation",
+                "upi transfer to friend", "atm withdrawal any bank",
+                "interest credited savings account", "loan emi payment hdfc bank",
+                "insurance premium lic india", "software purchase adobe creative",
+                "payment to ABC solutions", "random tech services pvt ltd",
+                "local kirana store purchase", "petrol pump fuel payment",
+                "hospital medical treatment", "school fees payment",
+                "gym membership renewal", "beauty salon services",
+                "car repair garage", "book store purchase"
+            ],
+            'sector': [
+                "Retail", "Retail", "Food Delivery", "Utilities", "Transport", "E-Commerce",
+                "Food Delivery", "E-Commerce", "Food Delivery", "E-Commerce", "Entertainment", "Utilities",
+                "Telecom", "Entertainment", "Dining", "Transport", "Healthcare", "Finance",
+                "Utilities", "Transport", "Retail", "Education", "Healthcare", "Others",
+                "Payments", "Banking", "Banking", "Finance", "Finance", "Software",
+                "Services", "Technology", "Retail", "Fuel", "Healthcare", "Education",
+                "Fitness", "Beauty", "Automotive", "Retail"
+            ]
+        }
+        return pd.DataFrame(data)
+
+    def train_model(self, training_data):
+        training_data = training_data.copy()
+        training_data['processed_desc'] = training_data['description'].apply(preprocess)
+        training_data = training_data[training_data['processed_desc'].str.len() > 0]
+        if len(training_data) == 0:
+            raise ValueError("No valid training data after preprocessing")
+        X = training_data['processed_desc']
+        y = training_data['sector']
+        self.pipeline = Pipeline([
+            ('tfidf', TfidfVectorizer(
+                stop_words='english', ngram_range=(1, 2), max_df=0.95, min_df=2, max_features=5000)),
+            ('clf', MultinomialNB(alpha=0.1))
+        ])
+        self.pipeline.fit(X, y)
+        logger.info("NLP sector classifier trained (local)")
+
+    def save_model(self):
+        if self.pipeline and self.model_path:
+            joblib.dump(self.pipeline, self.model_path)
+            logger.info(f"NLP model saved to {self.model_path}")
+
+    def load_model(self):
+        try:
+            if os.path.exists(self.model_path):
+                self.pipeline = joblib.load(self.model_path)
+                logger.info(f"NLP model loaded from {self.model_path}")
+                return True
+        except Exception as e:
+            logger.error(f"Error loading NLP model: {e}")
+        return False
+
+    def predict_sector(self, processed_desc: str):
+        if not self.pipeline or not processed_desc:
+            return "Other"
+        try:
+            prediction = self.pipeline.predict([processed_desc])[0]
+            return prediction
+        except Exception as e:
+            logger.error(f"NLP prediction error: {e}")
+            return "Other"
+
+# === MERCHANT EXTRACTOR (MAIN) ===
+class MerchantExtractor:
+    def __init__(self, merchant_data, model_path="nlp_sector_model.joblib",
+                 retrain_nlp=False, new_nlp_data=None, fuzzy_threshold=80):
+        self.merchant_data = merchant_data
+        self.fuzzy_threshold = fuzzy_threshold
+        self.dictionary_matcher = DictionaryMatcher(merchant_data, fuzzy_threshold)
+        self.nlp_classifier = NLPSectorClassifier(model_path)
+        self._initialize_nlp_model(retrain_nlp, new_nlp_data)
+
+    def _initialize_nlp_model(self, retrain, training_data):
+        if retrain and training_data is not None:
+            logger.info("Retraining local NLP sector model...")
+            self.nlp_classifier.train_model(training_data)
+            self.nlp_classifier.save_model()
+        elif self.nlp_classifier.load_model():
+            logger.info("Loaded existing local NLP model.")
+        else:
+            logger.info("Training new NLP model with default sample data...")
+            default_data = self.nlp_classifier.get_default_training_data()
+            self.nlp_classifier.train_model(default_data)
+            self.nlp_classifier.save_model()
+
+    def extract(self, raw_description):
+        if not isinstance(raw_description, str) or not raw_description.strip():
+            return {
+                "description": raw_description or "",
+                "brand": "Invalid",
+                "merchant": "Invalid",
+                "sector": "Invalid",
+                "confidence": "none"
+            }
+        processed_desc = preprocess(raw_description)
+        dict_match = self.dictionary_matcher.find_match(processed_desc)
+        if dict_match:
+            return {
+                "description": raw_description,
+                "brand": dict_match["brand"],
+                "merchant": dict_match["merchant"],
+                "sector": dict_match["sector"],
+                "confidence": dict_match["confidence"]
+            }
+        # NLP fallback
+        predicted_sector = self.nlp_classifier.predict_sector(processed_desc)
+        guessed_name = extract_entity_guess(raw_description)
+        return {
+            "description": raw_description,
+            "brand": guessed_name,
+            "merchant": guessed_name,
+            "sector": predicted_sector,
+            "confidence": "low"
+        }
+
+    def extract_batch(self, descriptions):
+        return [self.extract(desc) for desc in descriptions]
+
+# === RUN AS SCRIPT ===
+if __name__ == '__main__':
+    merchant_data = load_merchant_dictionary("merchant_dictionary.csv")
+    if not merchant_data:
+        logger.warning("No merchant data loaded, using minimal in-memory example")
+        merchant_data = [{
+            "brand_keywords": ["swiggy", "bundl"],
+            "merchant_name_keywords": ["swiggy bundl technologies"],
+            "official_merchant_name": "Bundl Technologies Pvt Ltd",
+            "official_brand_name": "Swiggy",
+            "sector": "Food Delivery",
+            "city": "Bangalore",
+            "mcc": "5812"
+        }]
+    extractor = MerchantExtractor(merchant_data, fuzzy_threshold=80)
+
+    # Input descriptions
+    descriptions = [
+        "POS 987654321 SWIGGY BUNDL TECHNOLOGY BANGALORE IN",
+        "ONLINE PAYMENT AMAZON PAY INDIA",
+        "UPI 1234567890 KUMAR STATIONERY MART PUNE",
+        "POS 1111 BIG BZR FUTURE RETAIL MUMBAI MH IN",
+        "PAYMENT TO SRIRAM SWEETS AND BAKERY KOLKATA",
+        "Random Cafe Shop Payment",
+        "Strange merchant abcXyZ123"
+    ]
+
+    # Batch extraction and DataFrame/table output
+    results = extractor.extract_batch(descriptions)
+    df = pd.DataFrame(results, columns=["description", "brand", "merchant", "sector", "confidence"])
+    print(df)
+
+    # To save as CSV or Excel:
+    # df.to_csv("merchant_extraction_output.csv", index=False)
+    # df.to_excel("merchant_extraction_output.xlsx", index=False)
+
+
+
+
+
+
+
 view: spend_view2 {
   sql_table_name: `your_project.your_dataset.SPEND_VIEW_2` ;;
 
