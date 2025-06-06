@@ -1,3 +1,34 @@
+Hi Pavneet,
+
+On 4th June, we sent the Contact Center Invitation file containing a total of 11,681 customers, out of which:
+	•	4,215 customers belonged to the eligible base.
+	•	7,466 customers had interacted with us, but unfortunately, the communication was sent to them mistakenly and should not have been shared.
+
+As we now need to share the Survey IDs for the non-eligible base (7,466 customers), the TO team has provided us with their base file including the survey IDs.
+
+However, we noticed a discrepancy in the total counts:
+	•	Our file had 11,681 customers in total.
+	•	The TO-provided file contains only 11,063 customers, indicating a shortfall of 618 customers.
+
+Upon checking with the TO, it was confirmed that:
+	•	608 customers were discarded due to incorrect Unit IDs, and hence no survey was triggered for them in the system.
+
+Within the non-eligible base of 7,466 customers, we also found:
+	•	501 customers who do not have Survey IDs, which means their records were discarded from the Medallia system, and no survey was sent to them.
+
+Accordingly, I have filtered and prepared the final base of 6,965 customers for whom surveys were actually sent and Survey IDs are available.
+
+Pavneet, I have verified the base. Request you to please review it once and share the file with the TO team so they can proceed with the next steps.
+
+
+
+
+
+
+
+
+
+
 
 The input file for the survey trigger was supposed to include customer interactions from 2nd and 3rd June only. However, due to an oversight, the file mistakenly included records from 2nd May to 3rd June. As a result, the sample size became significantly larger, and surveys were sent to customers who had interacted in May as well
 
