@@ -1,4 +1,5 @@
 
+
 view: spend_view2 {
   sql_table_name: `your_project.your_dataset.SPEND_VIEW_2`
 
@@ -8,136 +9,136 @@ view: spend_view2 {
     timeframes: [raw, date, week, month, quarter, year]
     label: "Posting Date"
     group_label: "Transaction Dates"
-    sql: ${TABLE}.MT_POSTING_DATE
+    sql: ${TABLE}.MT_POSTING_DATE ;;
   }
 
-  # === CORE DIMENSIONS ===
+  # === BASE DIMENSIONS ===
   dimension: acct {
     type: string
     label: "Account Number"
     group_label: "Account Info"
-    sql: ${TABLE}.acct
+    sql: ${TABLE}.acct ;;
   }
   dimension: mcc_code {
     type: string
     label: "MCC Code"
     group_label: "Merchant Info"
-    sql: CAST(${TABLE}.MCC_CODE AS STRING)
+    sql: CAST(${TABLE}.MCC_CODE AS STRING) ;;
   }
   dimension: description {
     type: string
     label: "MCC Description"
     group_label: "Merchant Info"
-    sql: ${TABLE}.Description
+    sql: ${TABLE}.Description ;;
   }
   dimension: merchant_details {
     type: string
     label: "Merchant Details"
     group_label: "Merchant Info"
-    sql: ${TABLE}.Merchant_Details
+    sql: ${TABLE}.Merchant_Details ;;
   }
   dimension: org {
     type: number
     label: "Org ID"
     group_label: "Product Info"
-    sql: ${TABLE}.ORG
+    sql: ${TABLE}.ORG ;;
   }
   dimension: transaction_type {
     type: string
     label: "Transaction Type"
     group_label: "Txn Details"
-    sql: ${TABLE}.TRANSACTION_TYPE
+    sql: ${TABLE}.TRANSACTION_TYPE ;;
   }
   dimension: spend_type {
     type: string
     label: "Spend Type"
     group_label: "Txn Details"
-    sql: ${TABLE}.SPEND_TYPE
+    sql: ${TABLE}.SPEND_TYPE ;;
   }
   dimension: segment_name {
     type: string
     label: "Segment Name"
     group_label: "Merchant Info"
-    sql: ${TABLE}.Segment_Name
+    sql: ${TABLE}.Segment_Name ;;
   }
   dimension: mt_type {
     type: string
     label: "MT Type"
     group_label: "Product Info"
-    sql: ${TABLE}.mt_type
+    sql: ${TABLE}.mt_type ;;
   }
   dimension: spend_place {
     type: string
     label: "Txn Geography"
     group_label: "Txn Details"
-    sql: ${TABLE}.Spend_Place
+    sql: ${TABLE}.Spend_Place ;;
   }
   dimension: product {
     type: string
     label: "Product"
     group_label: "Product Info"
-    sql: ${TABLE}.Product
+    sql: ${TABLE}.Product ;;
   }
   dimension: spend_amount {
     type: number
     label: "Spend Amount"
     group_label: "Txn Amounts"
-    sql: ${TABLE}.Spend_Amount
+    sql: ${TABLE}.Spend_Amount ;;
   }
   dimension: reversal_amount {
     type: number
     label: "Reversal Amount"
     group_label: "Txn Amounts"
-    sql: ${TABLE}.Reversal_Amount
+    sql: ${TABLE}.Reversal_Amount ;;
   }
   dimension: net_transaction {
     type: number
     label: "Net Transaction"
     group_label: "Txn Amounts"
-    sql: ${TABLE}.Net_Transaction
+    sql: ${TABLE}.Net_Transaction ;;
   }
   dimension: spend_amount_cmb {
     type: number
     label: "Spend Amount CMB"
     group_label: "Txn Amounts"
-    sql: ${TABLE}.SPEND_AMOUNT_CMB
+    sql: ${TABLE}.SPEND_AMOUNT_CMB ;;
   }
   dimension: spend_amount_rbmw {
     type: number
     label: "Spend Amount RBMW"
     group_label: "Txn Amounts"
-    sql: ${TABLE}.SPEND_AMOUNT_RBMW
+    sql: ${TABLE}.SPEND_AMOUNT_RBMW ;;
   }
   dimension: mt_ref_nbr {
     type: string
     label: "Txn Reference No."
     group_label: "Txn Info"
     primary_key: yes
-    sql: ${TABLE}.MT_REF_NBR
+    sql: ${TABLE}.MT_REF_NBR ;;
   }
   dimension: brand {
     type: string
     label: "Brand"
     group_label: "Merchant Info"
-    sql: ${TABLE}.BRAND
+    sql: ${TABLE}.BRAND ;;
   }
   dimension: final_category {
     type: string
     label: "Final Category"
     group_label: "Merchant Info"
-    sql: ${TABLE}.FINAL_CATEGORY
+    sql: ${TABLE}.FINAL_CATEGORY ;;
   }
   dimension: category_general_desc {
     type: string
     label: "Category General Desc"
     group_label: "Merchant Info"
-    sql: ${TABLE}.CATEGORY_GENERAL_DESC
+    sql: ${TABLE}.CATEGORY_GENERAL_DESC ;;
   }
   dimension: category_desc {
     type: string
     label: "Category Desc"
     group_label: "Merchant Info"
-    sql: ${TABLE}.CATEGORY_DESC
+    sql: ${TABLE}.CATEGORY_DESC ;;
   }
 
   # === DERIVED DIMENSIONS ===
@@ -145,25 +146,25 @@ view: spend_view2 {
     type: string
     label: "Merchant Name"
     group_label: "Merchant Info"
-    sql: SUBSTRING(${TABLE}.Merchant_Details, 1, 24)
+    sql: SUBSTRING(${TABLE}.Merchant_Details, 1, 24) ;;
   }
   dimension: merchant_city {
     type: string
     label: "Merchant City"
     group_label: "Merchant Info"
-    sql: REPLACE(SUBSTRING(${TABLE}.Merchant_Details, 24, 14), " ", "")
+    sql: REPLACE(SUBSTRING(${TABLE}.Merchant_Details, 24, 14), " ", "") ;;
   }
   dimension: merchant_country {
     type: string
     label: "Merchant Country"
     group_label: "Merchant Info"
-    sql: SUBSTRING(${TABLE}.Merchant_Details, 38, 2)
+    sql: SUBSTRING(${TABLE}.Merchant_Details, 38, 2) ;;
   }
   dimension: mcc_combo {
     type: string
     label: "MCC Combo"
     group_label: "Merchant Info"
-    sql: CONCAT(${mcc_code}, " - ", ${description})
+    sql: CONCAT(${mcc_code}, " - ", ${description}) ;;
   }
 
   # === DATE UTILITIES ===
@@ -171,46 +172,46 @@ view: spend_view2 {
     type: date
     label: "Today's Date"
     group_label: "Date Utilities"
-    sql: current_date()
+    sql: current_date() ;;
   }
   dimension: day {
     type: number
     label: "Current Day"
     group_label: "Date Utilities"
-    sql: CAST(FORMAT_DATE('%e', current_date()) AS INT64)
+    sql: CAST(FORMAT_DATE('%e', current_date()) AS INT64) ;;
   }
   dimension: mon {
     type: number
     label: "Current Month"
     group_label: "Date Utilities"
-    sql: CAST(FORMAT_DATE('%m', current_date()) AS INT64)
+    sql: CAST(FORMAT_DATE('%m', current_date()) AS INT64) ;;
   }
   dimension: yr {
     type: number
     label: "Current Year"
     group_label: "Date Utilities"
-    sql: CAST(FORMAT_DATE('%Y', current_date()) AS INT64)
+    sql: CAST(FORMAT_DATE('%Y', current_date()) AS INT64) ;;
   }
   dimension: mt_day {
     type: number
     label: "Txn Day"
     group_label: "Date Utilities"
-    sql: CAST(FORMAT_DATE('%e', ${mt_posting_date_date}) AS INT64)
+    sql: CAST(FORMAT_DATE('%e', ${mt_posting_date_date}) AS INT64) ;;
   }
   dimension: mt_mon {
     type: number
     label: "Txn Month"
     group_label: "Date Utilities"
-    sql: CAST(FORMAT_DATE('%m', ${mt_posting_date_date}) AS INT64)
+    sql: CAST(FORMAT_DATE('%m', ${mt_posting_date_date}) AS INT64) ;;
   }
   dimension: mt_yr {
     type: number
     label: "Txn Year"
     group_label: "Date Utilities"
-    sql: CAST(FORMAT_DATE('%Y', ${mt_posting_date_date}) AS INT64)
+    sql: CAST(FORMAT_DATE('%Y', ${mt_posting_date_date}) AS INT64) ;;
   }
 
-  # === PARAMETERS & SWITCHED MEASURES ===
+  # === PARAMETERS & DYNAMIC MEASURES ===
   parameter: metric_selector {
     label: "Metric Selector"
     group_label: "Switches"
@@ -222,12 +223,12 @@ view: spend_view2 {
     label: "Monthly Trend Metric"
     group_label: "Switches"
     description: "Net or Gross Spends in Cr as per selector"
-    sql:
+    sql: 
       CASE
         WHEN {% parameter metric_selector %} = 'net' THEN ${total_net_transaction}
         WHEN {% parameter metric_selector %} = 'gross' THEN ${total_spend}
         ELSE NULL
-      END
+      END ;;
   }
   parameter: wordcloud_metric_selector {
     label: "Word Cloud Metric"
@@ -239,48 +240,48 @@ view: spend_view2 {
     type: number
     label: "Word Cloud Metric"
     group_label: "Switches"
-    sql:
+    sql: 
       CASE
         WHEN {% parameter wordcloud_metric_selector %} = 'net' THEN ${total_net_transaction}
         WHEN {% parameter wordcloud_metric_selector %} = 'gross' THEN ${total_spend}
         ELSE NULL
-      END
+      END ;;
   }
 
-  # === MEASURES ===
+  # === CORE MEASURES ===
   measure: total_spend {
     type: sum
     group_label: "Core Spend"
     label: "Gross Spends in Cr"
-    sql: ${spend_amount}/10000000
+    sql: ${spend_amount}/10000000 ;;
     value_format: "#,##0.00"
   }
   measure: total_reversal {
     type: sum
     group_label: "Core Spend"
     label: "Reversals in Cr"
-    sql: ${reversal_amount}/10000000
+    sql: ${reversal_amount}/10000000 ;;
     value_format: "#,##0.00"
   }
   measure: total_net_transaction {
     type: sum
     group_label: "Core Spend"
     label: "Net Spends in Cr"
-    sql: ${net_transaction}/10000000
+    sql: ${net_transaction}/10000000 ;;
     value_format: "#,##0.00"
   }
   measure: average_spend {
     type: average
     group_label: "Core Spend"
     label: "Avg Gross Spend/Txn"
-    sql: ${spend_amount}
+    sql: ${spend_amount} ;;
     value_format: "#,##0.00"
   }
   measure: average_net_transaction {
     type: average
     group_label: "Core Spend"
     label: "Avg Net Spend/Txn"
-    sql: ${net_transaction}
+    sql: ${net_transaction} ;;
     value_format: "#,##0.00"
   }
   measure: transaction_count {
@@ -292,7 +293,7 @@ view: spend_view2 {
     type: count_distinct
     group_label: "Core Spend"
     label: "Unique Accounts"
-    sql: ${acct}
+    sql: ${acct} ;;
   }
 
   # --- MTD MEASURES ---
@@ -300,28 +301,28 @@ view: spend_view2 {
     type: sum
     group_label: "MTD"
     label: "MTD Net Spends in Cr"
-    sql: CASE WHEN ${mt_day} <= ${day}-1 THEN ${net_transaction}/10000000 ELSE NULL END
+    sql: CASE WHEN ${mt_day} <= ${day}-1 THEN ${net_transaction}/10000000 ELSE NULL END ;;
     value_format: "#,##0.00"
   }
   measure: total_spends_mtd {
     type: sum
     group_label: "MTD"
     label: "MTD Gross Spends in Cr"
-    sql: CASE WHEN ${mt_day} <= ${day}-1 THEN ${spend_amount}/10000000 ELSE NULL END
+    sql: CASE WHEN ${mt_day} <= ${day}-1 THEN ${spend_amount}/10000000 ELSE NULL END ;;
     value_format: "#,##0.00"
   }
   measure: total_reversal_mtd {
     type: sum
     group_label: "MTD"
     label: "MTD Reversals in Cr"
-    sql: CASE WHEN ${mt_day} <= ${day}-1 THEN ${reversal_amount}/10000000 ELSE NULL END
+    sql: CASE WHEN ${mt_day} <= ${day}-1 THEN ${reversal_amount}/10000000 ELSE NULL END ;;
     value_format: "#,##0.00"
   }
   measure: avg_net_transactions_mtd {
     type: average
     group_label: "MTD"
     label: "MTD Avg Net Spend/Txn"
-    sql: CASE WHEN ${mt_day} <= ${day}-1 THEN ${net_transaction} ELSE NULL END
+    sql: CASE WHEN ${mt_day} <= ${day}-1 THEN ${net_transaction} ELSE NULL END ;;
     value_format: "#,##0.00"
   }
 
@@ -330,28 +331,28 @@ view: spend_view2 {
     type: sum
     group_label: "Business"
     label: "Total Gross Spend"
-    sql: ${spend_amount}
+    sql: ${spend_amount} ;;
     value_format: "#,##0.00"
   }
   measure: total_net_spend {
     type: sum
     group_label: "Business"
     label: "Total Net Spend"
-    sql: ${net_transaction}
+    sql: ${net_transaction} ;;
     value_format: "#,##0.00"
   }
   measure: total_reversal_amount {
     type: sum
     group_label: "Business"
     label: "Total Reversal Amount"
-    sql: ${reversal_amount}
+    sql: ${reversal_amount} ;;
     value_format: "#,##0.00"
   }
   measure: spend_by_brand {
     type: sum
     group_label: "Business"
     label: "Spend by Brand"
-    sql: CASE WHEN ${brand} IS NOT NULL THEN ${spend_amount} ELSE 0 END
+    sql: CASE WHEN ${brand} IS NOT NULL THEN ${spend_amount} ELSE 0 END ;;
     value_format: "#,##0.00"
   }
   measure: txn_count_by_brand {
@@ -359,50 +360,43 @@ view: spend_view2 {
     group_label: "Business"
     label: "Txn Count by Brand"
     filters: [brand: "-null"]
-    sql: ${mt_ref_nbr}
+    sql: ${mt_ref_nbr} ;;
   }
   measure: spend_by_txn_type {
     type: sum
     group_label: "Business"
     label: "Spend by Txn Type"
-    sql: CASE WHEN ${transaction_type} IS NOT NULL THEN ${spend_amount} ELSE 0 END
+    sql: CASE WHEN ${transaction_type} IS NOT NULL THEN ${spend_amount} ELSE 0 END ;;
     value_format: "#,##0.00"
   }
   measure: spend_domestic {
     type: sum
     group_label: "Business"
     label: "Domestic Spend"
-    sql: CASE WHEN UPPER(${spend_place}) = 'DOM' THEN ${spend_amount} ELSE 0 END
+    sql: CASE WHEN UPPER(${spend_place}) = 'DOM' THEN ${spend_amount} ELSE 0 END ;;
     value_format: "#,##0.00"
   }
   measure: spend_international {
     type: sum
     group_label: "Business"
     label: "International Spend"
-    sql: CASE WHEN UPPER(${spend_place}) = 'FR' THEN ${spend_amount} ELSE 0 END
+    sql: CASE WHEN UPPER(${spend_place}) = 'FR' THEN ${spend_amount} ELSE 0 END ;;
     value_format: "#,##0.00"
   }
   measure: avg_spend_per_account {
     type: number
     group_label: "Business"
     label: "Avg Spend per Account"
-    sql: CASE WHEN ${unique_accts_cnt} > 0 THEN ${total_gross_spend} / ${unique_accts_cnt} ELSE NULL END
+    sql: CASE WHEN ${unique_accts_cnt} > 0 THEN ${total_gross_spend} / ${unique_accts_cnt} ELSE NULL END ;;
     value_format: "#,##0.00"
   }
   measure: total_transactions {
     type: count_distinct
     group_label: "Business"
     label: "Unique Transactions"
-    sql: ${mt_ref_nbr}
+    sql: ${mt_ref_nbr} ;;
   }
 }
-
-
-
-
-
-
-
 
 
 
