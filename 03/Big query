@@ -1,3 +1,33 @@
+import zipfile
+import os
+
+def zip_with_basic_password(csv_file_path, zip_file_path, password):
+    if not os.path.exists(csv_file_path):
+        raise FileNotFoundError(f"{csv_file_path} does not exist.")
+
+    with zipfile.ZipFile(zip_file_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        # Write file and apply password
+        zf.setpassword(password.encode())
+        zf.write(csv_file_path, arcname=os.path.basename(csv_file_path))
+
+    print(f"✅ Basic password-protected ZIP created: {zip_file_path}")
+
+# === USAGE ===
+csv_file = 'sample.csv'
+zip_file = 'sample_protected.zip'
+password = 'Basic123'
+
+zip_with_basic_password(csv_file, zip_file, password)
+
+
+
+
+
+
+
+
+
+
 /*********************************************************************
 *  SAS Automated Workflow with Dual-Key Deduplication                *
 *  - Direct SFTP folder access                                       *
