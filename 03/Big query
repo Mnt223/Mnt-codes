@@ -1,3 +1,160 @@
+/*********************************************************************
+*  SAS Automated Workflow with Dual-Key Deduplication                *
+*  - Direct SFTP folder access                                       *
+*  - Master log tracks both mobile_number and cusid                  *
+**********************************************************************/
+
+/* --- PARAMETERS --- */
+%let today = %sysfunc(today(), yymmddn8.);
+%let yyyymmdd = %sysfunc(putn(&today, yymmddn8.));
+%let local_zip = /sftp/inbox/daily_&yyyymmdd..zip;
+%let extract_dir = /sas/data/extract/&yyyymmdd.;
+%let extract_file = &extract_dir./inputfile.xlsx;
+%let output_dir = /sas/data/output/&yyyymmdd.;
+%let output_xlsx = &output_dir./matched_customers.xlsx;
+%let output_zip = &output_dir./matched_customers.zip;
+%let pwd = YourPassword123;
+%let eligible_base = /sas/data/base/eligible_base.sas7bdat;
+%let log_file = /sas/data/logs/mobile_master_log.sas7bdat;
+%let process_log = /sas/data/logs/master_process_log.sas7bdat;
+%let email_to = receiver@email.com;
+
+/* --- 1. Create output/extract dirs if not exist --- */
+options noxwait;
+x "mkdir -p &extract_dir";
+x "mkdir -p &output_dir";
+
+/* --- 2. Unzip file --- */
+x "unzip -o &local_zip -d &extract_dir";
+
+/* --- 3. Import Excel --- */
+proc import datafile="&extract_file"
+  out=raw_data dbms=xlsx replace;
+  getnames=yes;
+run;
+
+/* --- 4. Filter: OTP=YES and T&C=YES --- */
+data filtered;
+  set raw_data;
+  where upcase(otp)='YES' and upcase(terms_and_conditions)='YES';
+run;
+
+/* --- 5. Ensure master log exists --- */
+%if %sysfunc(exist(mobile_master_log))=0 %then %do;
+  data mobile_master_log;
+    length mobile_number $20 cusid $20;
+    stop;
+  run;
+%end;
+
+/* --- 6. Join to eligible base for cusid --- */
+proc sql;
+  create table matched_base as
+  select a.*, b.cusid
+  from filtered a
+  inner join eligible_base b
+    on a.mobile_number=b.mobile_number and a.dob=b.dob;
+quit;
+
+/* --- 7. Remove already-processed (dedupe by mobile or cusid) --- */
+proc sql;
+  create table new_customers as
+  select *
+  from matched_base
+  where not exists (
+    select 1 from mobile_master_log
+    where matched_base.mobile_number = mobile_master_log.mobile_number
+       or matched_base.cusid = mobile_master_log.cusid
+  );
+quit;
+
+/* --- 8. Append both keys to the master log --- */
+data to_append;
+  set new_customers(keep=mobile_number cusid);
+run;
+
+proc append base=mobile_master_log data=to_append force;
+run;
+
+/* --- 9. Export final output --- */
+proc export data=new_customers
+  outfile="&output_xlsx"
+  dbms=xlsx replace;
+run;
+
+/* --- 10. Password-protect and Zip --- */
+x "zip -j -P &pwd &output_zip &output_xlsx";
+
+/* --- 11. Collect Stats for Summary --- */
+proc sql noprint;
+  select count(*) into :rec_infile from raw_data;
+  select count(*) into :filtered_infile from filtered;
+  select count(*) into :matched_count from matched_base;
+  select count(*) into :final_count from new_customers;
+quit;
+
+%let dedup_count = %eval(&matched_count - &final_count);
+
+/* --- 12. Email With Attachment --- */
+filename mymail email
+  to=("&email_to")
+  subject="Daily Eligible Customer File: &yyyymmdd"
+  attach=("&output_zip");
+
+data _null_;
+  file mymail;
+  put "Summary for &yyyymmdd:";
+  put "Total customers in file: &rec_infile";
+  put "OTP=YES & T&C=YES: &filtered_infile";
+  put "After mobile & DOB match: &matched_count";
+  put "Duplicates removed (by mobile or cusid): &dedup_count";
+  put "Final unique eligible: &final_count";
+run;
+
+/* --- 13. Log the Process --- */
+data log_today;
+  length file_name $100 status $10;
+  format date date9.;
+  date = today();
+  file_name = "daily_&yyyymmdd..zip";
+  total_received = &rec_infile;
+  filtered_valid = &filtered_infile;
+  matched_base = &matched_count;
+  duplicates = &dedup_count;
+  final_unique = &final_count;
+  status = "SUCCESS";
+run;
+
+%if %sysfunc(exist(master_process_log))=0 %then %do;
+  data master_process_log;
+    length file_name $100 status $10;
+    format date date9.;
+    stop;
+  run;
+%end;
+
+proc append base=master_process_log data=log_today force;
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 view: spend_view2 {
