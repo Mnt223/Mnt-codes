@@ -1,3 +1,31 @@
+import py7zr
+import os
+
+def zip_csv_with_py7zr(csv_file_path, zip_file_path, password):
+    if not os.path.exists(csv_file_path):
+        raise FileNotFoundError(f"{csv_file_path} does not exist.")
+
+    with py7zr.SevenZipFile(zip_file_path, 'w', password=password) as archive:
+        archive.write(csv_file_path, arcname=os.path.basename(csv_file_path))
+
+    print(f"✅ AES-encrypted 7z file created: {os.path.abspath(zip_file_path)}")
+
+# === USAGE ===
+csv_file = 'sample.csv'
+zip_file = 'secure_sample.7z'
+password = 'StrongAES123'
+
+zip_csv_with_py7zr(csv_file, zip_file, password)
+
+
+
+
+
+
+
+
+
+
 import zipfile
 import os
 
