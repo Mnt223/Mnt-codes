@@ -1,3 +1,28 @@
+I would like to bring to your attention two performance issues observed today:
+	1.	INPS MSF Invitation File:
+This file is usually triggered and completed within 1 hour. However:
+	•	Last Monday, it took around 2 hours 30 minutes to complete.
+	•	Today, I triggered it at 1:16 PM, and as of 3:35 PM, it is still running.
+	2.	S-E-G-E-O-P Code:
+This code typically runs through CTRL-M and completes within 2 to 5 minutes.
+	•	Today, it did not trigger via CTRL-M, so I executed it manually at 3:12 PM.
+	•	As of 3:44 PM, the code is still running, which is significantly longer than usual.
+
+Both processes are experiencing abnormal delays, which may indicate performance or resource-related issues.
+
+Requesting your support to investigate the root cause and help resolve these delays at the earliest.
+
+
+
+
+
+
+
+
+
+
+
+
 Hi Pavneet,
 
 On 4th June, we sent the Contact Center Invitation file containing a total of 11,681 customers, out of which:
