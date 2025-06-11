@@ -1,3 +1,44 @@
+/* Step 1: Filter Card Only customers from Dec 2023 */
+proc sql;
+    create table dec23_card_only as
+    select cusid, final_cus_seg as seg_dec23
+    from dec23_data
+    where final_cus_seg = "Card Only";
+quit;
+
+/* Step 2: Filter active customers from Dec 2024 */
+proc sql;
+    create table dec24_active as
+    select cusid, final_cus_seg as seg_dec24
+    from dec24_data
+    where active_dec24 = 1;
+quit;
+
+/* Step 3: Join and build transition labels */
+proc sql;
+    create table card_only_transitions as
+    select 
+        a.cusid,
+        a.seg_dec23,
+        coalesce(b.seg_dec24, "Dropped") as seg_dec24,
+        cats(a.seg_dec23, " → ", coalesce(b.seg_dec24, "Dropped")) as segment_transition
+    from dec23_card_only a
+    left join dec24_active b
+    on a.cusid = b.cusid;
+quit;
+
+/* Step 4: Summary counts by transition */
+proc freq data=card_only_transitions;
+    tables segment_transition / nocum nopercent;
+run;
+
+
+
+
+
+
+
+
 proc sql noprint;
     select max(tran_date) into :last_date from trans_data;
 quit;
