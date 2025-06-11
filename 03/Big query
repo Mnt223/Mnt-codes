@@ -1,3 +1,38 @@
+proc sql noprint;
+    select max(tran_date) into :last_date from trans_data;
+quit;
+
+/* Step 2: Compute activity summary using last_date as anchor */
+proc sql;
+    create table cust_activity_summary as
+    select 
+        cust_id,
+        count(distinct intnx('month', tran_date, 0, 'b')) as active_months,
+
+        case 
+            when max(intnx('month', tran_date, 0, 'b')) >= intnx('month', &last_date, -3, 'b') 
+                then "3M Active"
+            when max(intnx('month', tran_date, 0, 'b')) >= intnx('month', &last_date, -6, 'b') 
+                then "6M Active"
+            when max(intnx('month', tran_date, 0, 'b')) >= intnx('month', &last_date, -9, 'b') 
+                then "9M Active"
+            else "Inactive"
+        end as recent_activity_label
+    from trans_data
+    group by cust_id;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
 import py7zr
 import os
 
