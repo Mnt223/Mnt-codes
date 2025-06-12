@@ -1,3 +1,24 @@
+proc rank data=your_dataset out=ranked_dataset groups=10;
+    var propensity_score;
+    ranks decile;
+run;
+
+data ranked_dataset;
+    set ranked_dataset;
+    decile = decile + 1; /* To make deciles 1 to 10 instead of 0 to 9 */
+run;
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Filter Card Only customers from Dec 2023 */
 proc sql;
     create table dec23_card_only as
