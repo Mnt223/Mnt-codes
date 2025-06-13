@@ -1,3 +1,40 @@
+/* Step 1: Setup options and define remote controller */
+options nomprint nosymbolgen NETENCRYPTALGORITHM=TRIPLEDES noconnectmetaconnection;
+
+%let control = aspsas2-cnt-eng.hk.hsbc 7551;
+options remote=control;
+
+/* Step 2: Safely terminate and re-establish a clean remote connection */
+signoff control;
+signon control user="your_user_id" password="your_password";   /* Replace with secure credentials or metadata binding */
+
+/* Step 3: RSUBMIT block to handle binary file transfer */
+rsubmit;
+
+/* Define source ZIP file on HK SAS server (do NOT use encoding with binary files) */
+filename rfile "/sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/landing/inbound/hsbc_premier_23rdto26thApril2025";
+
+/* Define destination ZIP file on INM SAS server */
+filename lfile "/appvol/mix_nas/inm/INMDNA/IMCE/sandbox/Shikhar/WA_auto/hsbc_premier_23rdto26thApril2025.zip";
+
+/* Perform secure binary download */
+proc download infile=rfile outfile=lfile binary;
+run;
+
+endrsubmit;
+
+/* Step 4: Close the session */
+signoff control;
+
+
+
+
+
+
+
+
+
+
 /* Step 1: General Options */
 options nomprint nosymbolgen NETENCRYPTALGORITHM=TRIPLEDES noconnectmetaconnection;
 
