@@ -1,3 +1,38 @@
+/* Step 1: General Options */
+options nomprint nosymbolgen NETENCRYPTALGORITHM=TRIPLEDES noconnectmetaconnection;
+
+/* Step 2: Define remote server and port */
+%let control = aspsas2-cnt-eng.hk.hsbc 7551;
+options remote=control;
+
+/* Step 3: Safely sign off any existing session and sign on with credentials */
+signoff control;
+signon control user="your_user_id" password="your_password";  /* 🔒 Use secure method in production */
+
+/* Step 4: Begin RSUBMIT to HK Grid */
+rsubmit;
+
+/* Define source file path on HK SAS server */
+filename rfile "/sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/landing/inbound/hsbc_premier_23rdto26thApril2025";
+
+/* Define destination path on INM SAS server */
+filename lfile "/appvol/mix_nas/inm/INMDNA/IMCE/sandbox/Shikhar/WA_auto/hsbc_premier_23rdto26thApril2025.zip";
+
+/* Download the file from remote to local in binary mode */
+proc download infile=rfile outfile=lfile binary;
+run;
+
+endrsubmit;
+
+/* Step 5: Close the remote connection */
+signoff control;
+
+
+
+
+
+
+
 %macro transfer_file(remote_path=, local_path=, user=, password=);
     options nomprint nosymbolgen NETENCRYPTALGORITHM=TRIPLEDES;
 
