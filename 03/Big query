@@ -1,3 +1,43 @@
+%macro transfer_file(remote_path=, local_path=, user=, password=);
+    options nomprint nosymbolgen NETENCRYPTALGORITHM=TRIPLEDES;
+
+    %let control=aspsas2-cnt-eng.hk.hsbc 7551;
+    options remote=control;
+
+    signoff control;
+    signon control user="&user" password="&password";
+
+    rsubmit;
+        filename rfile "&remote_path";
+        filename lfile "&local_path";
+        proc download infile=rfile outfile=lfile binary;
+        run;
+    endrsubmit;
+
+    signoff control;
+%mend;
+
+%transfer_file(
+    remote_path=/sasdata/hsbc/dil/INM/IMCE/external_data_transfer/GupShup/landing/inbound/hsbc_premier_23rdto26thApril2025,
+    local_path=/appvol/mix_nas/inm/INMDNA/IMCE/sandbox/Shikhar/WA_auto/hsbc_premier_23rdto26thApril2025.zip,
+    user=your_user,
+    password=your_password
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Sub MultiFileLookupAllDirections()
     Dim wsConfig As Worksheet, wsMaster As Worksheet
     Dim lookupKey As String, variablesToExtract() As String
