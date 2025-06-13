@@ -1,3 +1,148 @@
+Sub MultiFileLookupAllDirections()
+    Dim wsConfig As Worksheet, wsMaster As Worksheet
+    Dim lookupKey As String, variablesToExtract() As String
+    Dim fDialog As FileDialog, folderPath As String
+    Dim fileName As String, wbSource As Workbook, wsSource As Worksheet
+    Dim headerDict As Object, resultDict As Object, tempDict As Object
+    Dim keyVal As Variant, varName As Variant
+    Dim masterKeyColLetter As String, masterKeyCol As Long
+    Dim lastRow As Long, i As Long, j As Long, outputColStart As Long
+    Dim srcLastRow As Long, srcLastCol As Long
+    Dim rowArr As Variant, headers As Variant
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Application.EnableEvents = False
+
+    ' Setup sheets
+    Set wsConfig = ThisWorkbook.Sheets("Config")
+    Set wsMaster = ThisWorkbook.Sheets("MasterList")
+
+    ' Read config
+    lookupKey = Trim(wsConfig.Range("B1").Value)
+    variablesToExtract = Split(wsConfig.Range("B2").Value, ",")
+    For i = 0 To UBound(variablesToExtract)
+        variablesToExtract(i) = Trim(variablesToExtract(i))
+    Next i
+
+    ' Prompt for folder
+    Set fDialog = Application.FileDialog(msoFileDialogFolderPicker)
+    With fDialog
+        .Title = "Select Folder Containing Excel Files"
+        If .Show <> -1 Then
+            MsgBox "No folder selected. Exiting.", vbExclamation
+            Exit Sub
+        End If
+        folderPath = .SelectedItems(1) & "\"
+    End With
+
+    ' Prompt for master column
+    masterKeyColLetter = InputBox("Enter the column letter (A-Z) in 'MasterList' that contains the lookup key:", "Select Lookup Column", "A")
+    If masterKeyColLetter = "" Then Exit Sub
+    masterKeyCol = Range(masterKeyColLetter & "1").Column
+
+    ' Collect lookup values
+    Dim lookupDict As Object
+    Set lookupDict = CreateObject("Scripting.Dictionary")
+    lastRow = wsMaster.Cells(wsMaster.Rows.Count, masterKeyCol).End(xlUp).Row
+    For i = 2 To lastRow
+        keyVal = Trim(wsMaster.Cells(i, masterKeyCol).Value)
+        If keyVal <> "" Then
+            lookupDict(CStr(keyVal)) = i ' store row number
+        End If
+    Next i
+
+    ' Prepare result dictionary
+    Set resultDict = CreateObject("Scripting.Dictionary")
+
+    ' Loop files
+    fileName = Dir(folderPath & "*.xls*")
+    Do While fileName <> ""
+        Set wbSource = Workbooks.Open(folderPath & fileName, False, True)
+
+        For Each wsSource In wbSource.Sheets
+            srcLastRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).Row
+            srcLastCol = wsSource.Cells(1, wsSource.Columns.Count).End(xlToLeft).Column
+            headers = wsSource.Range(wsSource.Cells(1, 1), wsSource.Cells(1, srcLastCol)).Value
+
+            ' Build header dictionary
+            Set headerDict = CreateObject("Scripting.Dictionary")
+            For j = 1 To srcLastCol
+                If Trim(headers(1, j)) <> "" Then
+                    headerDict(Trim(headers(1, j))) = j
+                End If
+            Next j
+
+            ' Continue only if lookupKey column exists
+            If headerDict.exists(lookupKey) Then
+                Dim keyCol As Long: keyCol = headerDict(lookupKey)
+
+                For i = 2 To srcLastRow
+                    rowArr = wsSource.Range(wsSource.Cells(i, 1), wsSource.Cells(i, srcLastCol)).Value
+                    keyVal = rowArr(1, keyCol)
+                    If lookupDict.exists(CStr(keyVal)) Then
+                        If Not resultDict.exists(CStr(keyVal)) Then
+                            Set tempDict = CreateObject("Scripting.Dictionary")
+                            For Each varName In variablesToExtract
+                                If headerDict.exists(varName) Then
+                                    tempDict(varName) = rowArr(1, headerDict(varName))
+                                End If
+                            Next varName
+                            resultDict(CStr(keyVal)) = tempDict
+                        End If
+                    End If
+                Next i
+            End If
+        Next wsSource
+
+        wbSource.Close SaveChanges:=False
+        fileName = Dir
+    Loop
+
+    ' Output to MasterList
+    outputColStart = masterKeyCol + 1
+    For j = 0 To UBound(variablesToExtract)
+        wsMaster.Cells(1, outputColStart + j).Value = variablesToExtract(j)
+    Next j
+
+    For Each keyVal In resultDict.Keys
+        i = lookupDict(keyVal)
+        Set tempDict = resultDict(keyVal)
+        For j = 0 To UBound(variablesToExtract)
+            varName = variablesToExtract(j)
+            If tempDict.exists(varName) Then
+                wsMaster.Cells(i, outputColStart + j).Value = tempDict(varName)
+            End If
+        Next j
+    Next keyVal
+
+    MsgBox "Lookup complete. Data written to 'MasterList'.", vbInformation
+
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.EnableEvents = True
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 proc univariate data=your_dataset noprint;
     var propensity_score;
     output out=percentile_cutoffs
