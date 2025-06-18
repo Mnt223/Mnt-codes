@@ -1,3 +1,22 @@
+def generate_hot_encoding(df, sectors):
+    df = df[['ACT', 'Sector']].dropna()
+    df['Sector'] = df['Sector'].astype(str).str.strip()
+
+    hot_encoded = pd.get_dummies(df, columns=['Sector'], prefix='', prefix_sep='_') \
+                     .groupby('ACT').max()
+
+    # Align with master sector list
+    for sector in sectors:
+        if sector not in hot_encoded.columns:
+            hot_encoded[sector] = 0
+
+    # Ensure column order
+    return hot_encoded[sorted(sectors)]
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
