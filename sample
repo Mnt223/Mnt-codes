@@ -1,5 +1,57 @@
 Hi everyone,
 
+This is to request immediate action to clear space on the IAM server by zipping or deleting files that are no longer required.
+
+@Shouvik @Kinari – Over the past few weeks, we’ve observed a significant degradation in SAS performance, primarily because our daily BAUs are taking more than double their usual runtime. This is causing delays, and several critical BAUs are not running within their scheduled timelines.
+
+Additionally, we are now frequently encountering space issues on the server. SAS jobs are failing due to insufficient space, forcing us to rerun them, which increases system load, consumes unnecessary bandwidth, and disrupts daily timelines.
+
+Kindly treat this as a high priority and initiate cleanup of unused or outdated files on the IAM server to help restore performance stability.
+
+Please confirm once the cleanup is completed or flag if any support is needed.
+
+
+
+
+
+
+
+Hi everyone,
+
+This is to request immediate action to clear space on the IAM server by zipping or deleting files that are no longer needed.
+
+@Shouvik @Kinari – Over the past few weeks, we’ve observed a significant drop in sales performance, primarily due to daily BAUs taking more than double their usual runtime. These delays are directly affecting the execution timelines, and many critical BAUs are not running on time.
+
+In addition, we’re frequently hitting space limitations on the server, leading to code failures during execution. These failures are forcing reruns, which are not only time-consuming but also consuming substantial bandwidth and further disrupting daily operations.
+
+Kindly prioritize this cleanup and free up space on the IAM server at the earliest to ensure smoother processing and timely execution of daily activities.
+
+Please confirm once this is completed or flag any issues that need support.
+
+Best regards,
+[Your Name]
+
+⸻
+
+Let me know if you’d like to add escalation lines or a specific action deadline.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Hi everyone,
+
 Please find below the key updates regarding the Power BI Dashboard for Frontline Opportunity:
 	1.	I have successfully created the Power BI dashboard, where leads have been shared with the respective RMs based on their assignments.
 	2.	I have also created the SharePoint link and connected the Power BI dashboard to the data source accordingly. In addition, ED groups for production access have been raised. As advised by the Power BI team, we are required to first proceed with UAT (User Acceptance Testing). We will be sharing the entitlement group names with the Power BI team, which they will incorporate during the UAT phase before we move to production.
