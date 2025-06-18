@@ -1,3 +1,38 @@
+Hi everyone,
+
+Please find below the key updates regarding the Power BI Dashboard for Frontline Opportunity:
+	1.	I have successfully created the Power BI dashboard, where leads have been shared with the respective RMs based on their assignments.
+	2.	I have also created the SharePoint link and connected the Power BI dashboard to the data source accordingly. In addition, ED groups for production access have been raised. As advised by the Power BI team, we are required to first proceed with UAT (User Acceptance Testing). We will be sharing the entitlement group names with the Power BI team, which they will incorporate during the UAT phase before we move to production.
+	3.	I have verified that Power BI provides the option to restrict data export. The “Export Data” feature can be disabled, ensuring that users are unable to download any data. They will only be able to view the dashboard data as per their RLS (Row-Level Security) assignments. We will connect with the Power BI team tomorrow to confirm and finalize this configuration.
+
+Please feel free to reach out if you have any questions or need further clarification.
+
+
+
+
+
+
+
+
+Hi everyone,
+
+Please find below the key updates regarding the Power BI Dashboard for Frontline Opportunity:
+	1.	The Power BI dashboard has been successfully created where leads have been assigned and shared with respective RMs.
+	2.	A SharePoint link has also been created and is now connected to the dashboard. Additionally, ED groups for production access have been raised. However, as per the Power BI team’s guidance, we are required to complete the UAT (User Acceptance Testing) first. We will be sharing the entitlement group names with the Power BI team so they can incorporate these during the UAT phase before we proceed to production deployment.
+	3.	I have checked that within Power BI, we can restrict data export functionality. The “Export Data” option can be blocked, ensuring that no user can download the data from the dashboard. Users will only be able to view the report as per their RLS (Row-Level Security) assignments. We will be connecting with the Power BI team tomorrow to confirm this setup and finalize the configuration.
+
+Please let me know in case of any questions
+
+
+
+
+
+
+
+
+
+
+
 Source = SharePoint.Files("https://yourdomain.sharepoint.com/sites/YourSite", [ApiVersion = 15]),
 Filtered = Table.SelectRows(Source, each [Extension] = ".xlsx")
 
