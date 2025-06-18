@@ -1,3 +1,146 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+# ----------------------
+# Load and Preprocess
+# ----------------------
+def load_and_preprocess_data(filepath):
+    df = pd.read_csv(filepath)
+    df['MT_EFF_DATE'] = pd.to_datetime(df['MT_EFF_DATE'], errors='coerce')
+    df.dropna(subset=['MT_EFF_DATE'], inplace=True)
+    return df
+
+# ----------------------
+# Interaction Matrix
+# ----------------------
+def generate_interaction_matrix(df, sectors, metric='amount'):
+    if metric == 'amount':
+        matrix = df.groupby(['ACT', 'Sector'])['TRAN_AMT'].sum().unstack(fill_value=0)
+    elif metric == 'frequency':
+        matrix = df.groupby(['ACT', 'Sector']).size().unstack(fill_value=0)
+    else:
+        raise ValueError("Metric must be 'amount' or 'frequency'")
+    
+    for sector in sectors:
+        if sector not in matrix.columns:
+            matrix[sector] = 0
+    return matrix[sorted(sectors)].astype(np.float32)
+
+# ----------------------
+# Normalize Matrix
+# ----------------------
+def scale_matrix(matrix):
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(matrix)
+    return pd.DataFrame(scaled, index=matrix.index, columns=matrix.columns)
+
+# ----------------------
+# One-hot Encoding
+# ----------------------
+def generate_hot_encoding(df, sectors):
+    hot_encoded = pd.get_dummies(df[['ACT', 'Sector']], columns=['Sector'], prefix='', prefix_sep='_') \
+                    .groupby('ACT').max()
+    for sector in sectors:
+        if sector not in hot_encoded.columns:
+            hot_encoded[sector] = 0
+    return hot_encoded[sorted(sectors)]
+
+# ----------------------
+# Combine Cosine Similarities
+# ----------------------
+def combine_similarity(amount_matrix, frequency_matrix, weight_amount=0.6):
+    sim_amt = cosine_similarity(amount_matrix.T)
+    sim_freq = cosine_similarity(frequency_matrix.T)
+    return weight_amount * sim_amt + (1 - weight_amount) * sim_freq
+
+# ----------------------
+# Rank Recommendations
+# ----------------------
+def get_recommendation_ranks(test_matrix, sector_similarity):
+    scores = np.dot(test_matrix, sector_similarity)
+    ranks = (-scores).argsort(axis=1).argsort(axis=1) + 1
+    return pd.DataFrame(ranks, index=test_matrix.index, columns=test_matrix.columns)
+
+# ----------------------
+# Rank Actual Transaction
+# ----------------------
+def generate_transaction_ranks(df, sectors):
+    matrix = generate_interaction_matrix(df, sectors, metric='amount')
+    return matrix.rank(axis=1, method='max', ascending=False).astype(int)
+
+# ----------------------
+# Main Execution
+# ----------------------
+def run_dual_matrix_recommender(filepath, split_date_str, output_prefix):
+    # Load & prep
+    df = load_and_preprocess_data(filepath)
+    split_date = pd.to_datetime(split_date_str)
+    sectors = sorted(df['Sector'].dropna().unique())
+
+    # Split train/test
+    train_df = df[df['MT_EFF_DATE'] < split_date]
+    test_df = df[df['MT_EFF_DATE'] >= split_date]
+
+    # Matrices
+    train_amt_matrix = generate_interaction_matrix(train_df, sectors, metric='amount')
+    train_freq_matrix = generate_interaction_matrix(train_df, sectors, metric='frequency')
+    test_amt_matrix = generate_interaction_matrix(test_df, sectors, metric='amount')
+
+    # Normalize
+    train_amt_scaled = scale_matrix(train_amt_matrix)
+    train_freq_scaled = scale_matrix(train_freq_matrix)
+    test_amt_scaled = scale_matrix(test_amt_matrix)
+
+    # Combined similarity
+    sector_similarity = combine_similarity(train_amt_scaled, train_freq_scaled, weight_amount=0.6)
+
+    # Hot encodings
+    train_hot_encoding = generate_hot_encoding(train_df, sectors)
+    test_hot_encoding = generate_hot_encoding(test_df, sectors)
+
+    # Ranks
+    test_recommendations = get_recommendation_ranks(test_amt_scaled, sector_similarity)
+    test_transaction_ranks = generate_transaction_ranks(test_df, sectors)
+
+    # Export
+    test_recommendations.to_csv(f'{output_prefix}_recommendations.csv')
+
+    with pd.ExcelWriter(f'{output_prefix}_full_output.xlsx', engine='openpyxl') as writer:
+        train_hot_encoding.to_excel(writer, sheet_name='Train Hot Encoding')
+        test_hot_encoding.to_excel(writer, sheet_name='Test Hot Encoding')
+        test_recommendations.to_excel(writer, sheet_name='Recommendations')
+        test_transaction_ranks.to_excel(writer, sheet_name='Actual Transaction Ranks')
+
+    print(f"✅ Recommendation engine completed using both amount & frequency (weight 60/40).")
+    print(f"📁 Files saved to: {output_prefix}_recommendations.csv and {output_prefix}_full_output.xlsx")
+
+# Example run
+run_dual_matrix_recommender(
+    filepath='Z:/WORK/Persona Data/CSAT_LV_SPEND1.csv',
+    split_date_str='2024-12-31',
+    output_prefix='Z:/WORK/Persona Data/FinalRecommender_June18'
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Step 1: Setup options and define remote controller */
 options nomprint nosymbolgen NETENCRYPTALGORITHM=TRIPLEDES noconnectmetaconnection;
 
