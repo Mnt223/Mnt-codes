@@ -1,3 +1,10 @@
+Source = SharePoint.Files("https://yourdomain.sharepoint.com/sites/YourSite", [ApiVersion = 15]),
+Filtered = Table.SelectRows(Source, each [Extension] = ".xlsx")
+
+
+
+
+
 Hi Everyone,
 
 Please note that today’s batch for the Call Center will be delayed due to some ongoing system issues we are currently experiencing.
