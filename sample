@@ -1,4 +1,13 @@
-
+RM Level Triggers = 
+CONCATENATEX(
+    FILTER(
+        CustomerTriggers,
+        CustomerTriggers[RM Name] = MAX(CustomerTriggers[RM Name]) &&
+        CustomerTriggers[Customer Name] = MAX(CustomerTriggers[Customer Name])
+    ),
+    CustomerTriggers[Message Name],
+    " | "
+)
 
 
 
