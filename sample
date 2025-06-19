@@ -1,3 +1,19 @@
+proc sql;
+    create table monthly_summary as
+    select
+        month,
+        count(distinct case when is_targeted = 1 then customer_id end) as targeted_customers,
+        count(distinct case when is_respondent = 1 then customer_id end) as respondents
+    from campaign_flags
+    group by month
+    order by month;
+quit;
+
+
+
+
+
+
 data campaign_flags;
     set campaign_data;
     format month date9.;
