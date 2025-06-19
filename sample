@@ -1,3 +1,19 @@
+compute before _page_ / style=[just=left font_size=10pt];
+   line "NOTE:";
+   line "In this global data:";
+   line "- Targeted Customers: Total number of customers targeted/shared for the Regain CEO campaign.";
+   line "- Respondents: Defined based on channel activity:";
+   line "    > In-App – Clicked on 'Accepted'";
+   line "    > Email – Clicked on 'Impression' or 'Click'";
+   line "    > SMS – Where message was 'Delivered' or 'Opened'";
+   line "- Approved: Customers who have opted in and approved in the respective channel.";
+endcomp;
+
+
+
+
+
+
 
 proc sql;
     create table monthly_summary as
