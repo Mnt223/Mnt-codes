@@ -1,3 +1,21 @@
+data campaign_flags;
+    set campaign_data;
+    format month date9.;
+    month = intnx('month', event_date, 0, 'b');
+
+    /* Flags */
+    is_targeted = (upcase(outcome) ne "PENDING");
+
+    is_respondent = 0;
+    if (channel = 'Email' and outcome in ('Impression', 'Click')) or
+       (channel = 'Mobile In-App' and outcome = 'Accepted') or
+       (channel = 'SMS' and outcome = 'Delivered') then is_respondent = 1;
+run;
+
+
+
+
+
 RM Level Triggers = 
 CONCATENATEX(
     FILTER(
