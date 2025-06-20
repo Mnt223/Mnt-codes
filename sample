@@ -1,3 +1,41 @@
+/* 1. Table with Top Header Inside PROC REPORT */
+proc report data=monthly_summary nowd 
+    style(report)={borderwidth=1 bordercolor=black cellspacing=3 cellpadding=4 rules=all frame=void}
+    style(header)={background=darkred foreground=white font_weight=bold};
+
+    column month targeted_customers respondents conversions;
+
+    define month / display "Month";
+    define targeted_customers / display "Target Base";
+    define respondents / display "Target Respondents";
+    define conversions / display "Approved" format=comma10.;
+
+    /* Centered Header in the Report Before Table Starts */
+    compute before _page_ / style={just=center font_weight=bold foreground=dark red font_size=12pt};
+        line "Regain Daily Submission";
+    endcomp;
+
+run;
+
+/* 2. Bottom Mail-Like Notes (Outside Table) */
+ods text = "^S={just=left font_size=10pt}
+NOTE:
+- Regain Monthly Submission (Globally)
+- Targeted Customers: total number of distinct customers targeted/campaign shared for the Regain COE campaign.
+- Respondents: Defined based on channel activity:
+     > MobileInApp: 'Clicked' on 'Accepted'
+     > Email: 'Impression' or 'Clicked'
+     > SMS: 'Delivered' (considered 'Opened')
+- Approved: Customers who have opted in and approved in the respective month.";
+
+
+
+
+
+
+
+
+
 compute before _page_ / style=[just=left font_size=10pt];
    line "NOTE:";
    line "In this global data:";
