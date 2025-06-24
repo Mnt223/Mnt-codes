@@ -1,3 +1,31 @@
+
+
+I noticed that in the last response from GupShup, they only confirmed the repush of the SMS file. Could you please confirm the status of the Email and WhatsApp files as well?
+
+Also, it would be helpful if we could streamline this process so that we receive confirmation from GupShup within a day or two of sharing the files. This will help avoid delays and ensure that our processes run smoothly.
+
+As you’ll be on leave starting Friday, I wanted to check:
+	•	If I receive the data today (in the second half) and repush it today, would you be able to share the mapping for non-PegaSend within the next two days?
+	•	In your absence, kindly let me know who will be the alternate point of contact for the mapping.
+
+Additionally, I’ve raised a SNOW request for external email access. Hopefully, from the next cycle onward, I will be able to share the files directly with GupShup.
+
+For this cycle, I’m planning to refresh the dashboard for the period 15th May to 15th June.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* 1. Table with Top Header Inside PROC REPORT */
 proc report data=monthly_summary nowd 
     style(report)={borderwidth=1 bordercolor=black cellspacing=3 cellpadding=4 rules=all frame=void}
