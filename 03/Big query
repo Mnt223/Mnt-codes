@@ -1,3 +1,54 @@
+Sub WaterfallPivotWithExceptions()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Sheet1") ' Change if needed
+
+    Dim pvt As PivotTable
+    Set pvt = ws.PivotTables(1)
+
+    Dim pf As PivotField
+    Dim i As Long
+    Dim filterVal As String
+
+    For i = 1 To 61
+        Set pf = pvt.PageFields(i)
+
+        ' Set filter value based on conditions
+        Select Case i
+            Case 38
+                filterVal = "Not Part of"
+            Case 51 To 54
+                filterVal = "ELIGIBLE"
+            Case Else
+                filterVal = "0"
+        End Select
+
+        ' Try applying the filter (skip if value not found)
+        On Error Resume Next
+        pf.CurrentPage = filterVal
+        On Error GoTo 0
+
+        ' Refresh pivot after each change
+        pvt.RefreshTable
+
+        ' Copy sum cust and acct to columns E and F
+        ws.Cells(i, "E").Value = ws.Range("A64").Value
+        ws.Cells(i, "F").Value = ws.Range("B64").Value
+
+        ' Optional: log applied filter value in column D
+        ws.Cells(i, "D").Value = filterVal
+    Next i
+
+    MsgBox "Waterfall extraction complete.", vbInformation
+End Sub
+
+
+
+
+
+
+
+
+
 Sub WaterfallPivotFilterCopy()
     Dim ws As Worksheet
     Set ws = ThisWorkbook.Sheets("Sheet1") ' Update if needed
