@@ -1,3 +1,43 @@
+Sub WaterfallPivotFilterCopy()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Sheet1") ' Update if needed
+
+    Dim pvt As PivotTable
+    Set pvt = ws.PivotTables(1) ' Assuming one pivot table
+
+    Dim i As Long
+    Dim pf As PivotField
+
+    ' Loop through filters in A1 to A61
+    For i = 1 To 61
+        Set pf = pvt.PageFields(i) ' Gets the ith Page filter
+
+        ' Apply filter = "0"
+        On Error Resume Next
+        pf.CurrentPage = "0"
+        On Error GoTo 0
+
+        ' Refresh pivot after each filter update
+        pvt.RefreshTable
+
+        ' Copy A64 (cust) and B64 (acct) to E & F of current row
+        ws.Cells(i, "E").Value = ws.Range("A64").Value
+        ws.Cells(i, "F").Value = ws.Range("B64").Value
+    Next i
+
+    MsgBox "Waterfall copy completed for all filters set to 0", vbInformation
+End Sub
+
+
+
+
+
+
+
+
+
+
+
 @echo off
 echo [%DATE% %TIME%] === STEP 1: Running Python Web Scraping ===
 "C:\Python311\python.exe" "C:\Scripts\python_script_1.py"
