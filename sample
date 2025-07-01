@@ -1,3 +1,44 @@
+FinalMeasure = 
+VAR A = 
+    CALCULATE(
+        AVERAGE('MSD Trigger Conversion'[POST_2_MON_AVG_CASA]),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+    )
+    -
+    CALCULATE(
+        AVERAGE('MSD Trigger Conversion'[PRE_2_MON_AVG_CASA]),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+    )
+
+VAR B = 
+    CALCULATE(
+        AVERAGE('MSD Trigger Conversion'[POST_2_MON_AVG_CASA]),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1
+    )
+    -
+    CALCULATE(
+        AVERAGE('MSD Trigger Conversion'[PRE_2_MON_AVG_CASA]),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1
+    )
+
+VAR ContactedCount = 
+    CALCULATE(
+        DISTINCTCOUNT('MSD Trigger Conversion'[GA-CASID]),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+    )
+
+RETURN
+    IF(
+        ContactedCount <> 0,
+        (A - B) / ContactedCount,
+        BLANK()
+    )
+
+
+
+
+
+
 contactedgain = 
 AVERAGEX(
     FILTER(
