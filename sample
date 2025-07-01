@@ -1,4 +1,17 @@
-
+contactedgain_corrected =
+CALCULATE(
+    AVERAGE('MSD Trigger Conversion'[POST_2_MON_AVG_CASA]),
+    'MSD Trigger Conversion'[CONTACTED_FLAG]=1,
+    NOT(ISBLANK('MSD Trigger Conversion'[POST_2_MON_AVG_CASA])),
+    NOT(ISBLANK('MSD Trigger Conversion'[PRE_2_MON_AVG_CASA]))
+)
+-
+CALCULATE(
+    AVERAGE('MSD Trigger Conversion'[PRE_2_MON_AVG_CASA]),
+    'MSD Trigger Conversion'[CONTACTED_FLAG]=1,
+    NOT(ISBLANK('MSD Trigger Conversion'[POST_2_MON_AVG_CASA])),
+    NOT(ISBLANK('MSD Trigger Conversion'[PRE_2_MON_AVG_CASA]))
+)
 
 I noticed that in the last response from GupShup, they only confirmed the repush of the SMS file. Could you please confirm the status of the Email and WhatsApp files as well?
 
