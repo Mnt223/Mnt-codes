@@ -1,3 +1,170 @@
+# 1. Import Libraries
+import pandas as pd
+from mlxtend.preprocessing import TransactionEncoder
+from mlxtend.frequent_patterns import apriori, association_rules
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# 2. Load Data
+df = pd.read_csv('your_data.csv')  # Replace with your file path
+
+# 3. Convert 'date' column to datetime
+df['date'] = pd.to_datetime(df['date'])
+
+# 4. Filter Data for Desired Time Period
+# Example: Filter last 3 months from max date in dataset
+
+# Calculate max date
+max_date = df['date'].max()
+
+# Calculate start date for last 3 months
+start_date = max_date - pd.DateOffset(months=3)
+
+# Apply filter
+filtered_df = df[df['date'] >= start_date].copy()
+
+print(f"Using data from {start_date.date()} to {max_date.date()}")
+
+# ✔️ Alternatively, for custom period selection:
+# start_date = pd.to_datetime('2025-04-01')
+# end_date = pd.to_datetime('2025-06-30')
+# filtered_df = df[(df['date'] >= start_date) & (df['date'] <= end_date)]
+
+# 5. Create Basket ID
+filtered_df['basket_id'] = filtered_df['cusid'].astype(str) + "_" + filtered_df['date'].astype(str)
+
+# 6. Group into transaction lists
+basket_sector = filtered_df.groupby('basket_id')['sector'].apply(list).tolist()
+
+# 7. One-Hot Encoding
+te = TransactionEncoder()
+te_ary = te.fit(basket_sector).transform(basket_sector)
+basket_df = pd.DataFrame(te_ary, columns=te.columns_)
+
+# 8. Apply Apriori
+frequent_itemsets = apriori(basket_df, min_support=0.01, use_colnames=True)
+
+# 9. Generate Association Rules
+rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1)
+
+# 10. Filter Strong Rules: Lift > 1.2, Confidence > 0.6
+strong_rules = rules[(rules['lift'] > 1.2) & (rules['confidence'] > 0.6)]
+
+# Display Strong Rules
+print("Strong Association Rules:")
+print(strong_rules[['antecedents', 'consequents', 'support', 'confidence', 'lift']])
+
+# 11. Visualization using NetworkX
+G = nx.DiGraph()
+
+# Add edges with lift as edge attribute
+for _, row in strong_rules.iterrows():
+    for antecedent in row['antecedents']:
+        for consequent in row['consequents']:
+            G.add_edge(antecedent, consequent, weight=row['lift'], label=f"Conf: {row['confidence']:.2f}, Lift: {row['lift']:.2f}")
+
+# Draw Network Graph
+plt.figure(figsize=(12,8))
+pos = nx.spring_layout(G, k=0.5)
+
+nx.draw_networkx_nodes(G, pos, node_size=1500, node_color='skyblue')
+nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
+nx.draw_networkx_labels(G, pos, font_size=10, font_family="sans-serif")
+
+edge_labels = nx.get_edge_attributes(G, 'label')
+nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=9)
+
+plt.title("Market Basket Analysis Strong Rules Network Graph")
+plt.axis('off')
+plt.show()
+
+
+
+
+
+
+
+
+
+# 1. Import Libraries
+import pandas as pd
+from mlxtend.preprocessing import TransactionEncoder
+from mlxtend.frequent_patterns import apriori, association_rules
+import networkx as nx
+import matplotlib.pyplot as plt
+
+# 2. Load Data
+df = pd.read_csv('your_data.csv')  # Replace with your actual file
+
+# 3. Create Basket ID
+df['basket_id'] = df['cusid'].astype(str) + "_" + df['date'].astype(str)
+
+# 4. Group into transaction lists
+basket_sector = df.groupby('basket_id')['sector'].apply(list).tolist()
+
+# 5. One-Hot Encoding
+te = TransactionEncoder()
+te_ary = te.fit(basket_sector).transform(basket_sector)
+basket_df = pd.DataFrame(te_ary, columns=te.columns_)
+
+# 6. Apply Apriori
+frequent_itemsets = apriori(basket_df, min_support=0.01, use_colnames=True)
+
+# 7. Generate Association Rules
+rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1)
+
+# 8. Filter Strong Rules: Lift > 1.2, Confidence > 0.6
+strong_rules = rules[(rules['lift'] > 1.2) & (rules['confidence'] > 0.6)]
+
+# Display Strong Rules
+print("Strong Association Rules:")
+print(strong_rules[['antecedents', 'consequents', 'support', 'confidence', 'lift']])
+
+# 9. Visualization using NetworkX
+G = nx.DiGraph()
+
+# Add edges with lift as edge attribute
+for _, row in strong_rules.iterrows():
+    for antecedent in row['antecedents']:
+        for consequent in row['consequents']:
+            G.add_edge(antecedent, consequent, weight=row['lift'], label=f"Conf: {row['confidence']:.2f}, Lift: {row['lift']:.2f}")
+
+# Draw Network Graph
+plt.figure(figsize=(12,8))
+pos = nx.spring_layout(G, k=0.5)  # k controls distance between nodes
+
+# Draw nodes and edges
+nx.draw_networkx_nodes(G, pos, node_size=1500, node_color='skyblue')
+nx.draw_networkx_edges(G, pos, arrowstyle='->', arrowsize=20)
+nx.draw_networkx_labels(G, pos, font_size=10, font_family="sans-serif")
+
+# Draw edge labels
+edge_labels = nx.get_edge_attributes(G, 'label')
+nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=9)
+
+plt.title("Market Basket Analysis Strong Rules Network Graph")
+plt.axis('off')
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Sub WaterfallPivotWithUpdatedConditions()
     Dim ws As Worksheet
     Set ws = ThisWorkbook.Sheets("Sheet1") ' Change if needed
