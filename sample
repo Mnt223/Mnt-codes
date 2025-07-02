@@ -1,3 +1,51 @@
+Yesterday (1st July)
+	•	Due to bad weather conditions and power cut, logged in at 1:15 PM.
+	•	Most of the time yesterday went into NPS KT for Aishwarya:
+	•	Provided Knowledge Transfer on RN NPS process to her.
+	•	She is facing some errors/issues while executing, for which I provided clarifications and support.
+	•	Connected with multiple stakeholders for walkthrough of the Campaign Dashboard to align on their data requirements.
+	•	Worked on GupShub response table:
+	•	Identified data flow issues.
+	•	Tested the data and connected with the team to check for backup table availability or refresh requirements.
+	•	For BrandSalesMI Dashboard published in UID:
+	•	Raised access requests for all respective keyholders.
+	•	Faced issues with DB-MIM refresh for June:
+	•	Multiple datasets are not processed or prepared.
+	•	Encountering errors in DB-MIM setup codes.
+	•	Planner file for the specific month will only be available in mid-next month.
+	•	Action Required: Need to discuss how to proceed with daily refreshes in absence of updated planner files.
+	•	Activity MI:
+	•	Need to set up a call with Sakshi to understand feasibility of daily run and its conversion to MSD-MIS.
+	•	Worked with Pranil on MSD Conversion Dashboard till 10:15 PM:
+	•	Prepared multiple measures and key KPIs.
+	•	Approximately 30% work completed on MSD tracking conversion.
+	•	For CRM 2.0 Dashboard (in UAT):
+	•	Received queries on outlier numbers not showing correctly.
+	•	Action Required: Connect with Abhijeet to identify and resolve the issue.
+
+⸻
+
+Today (2nd July) – Planned Tasks
+	•	Continue working on:
+	•	Sales MIS Dashboard
+	•	Activity MI
+	•	Sales MI Dashboard
+	•	Focus on DBMI part, Activity MI, and Planner discussions.
+	•	Progress MSD Conversion Dashboard further from current 30% completion.
+	•	Campaign Dashboard refresh for all channels is scheduled today; to be completed by end of day.
+	•	Trigger LOR file creation process today.
+
+
+
+
+
+
+
+
+
+
+
+
 FinalMeasure = 
 VAR A = 
     CALCULATE(
