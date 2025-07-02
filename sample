@@ -1,3 +1,22 @@
+Hi Anu,
+
+I hope you are doing well.
+
+I wanted to check regarding Control-M monitoring. One of my reports is scheduled in Control-M, but sometimes it fails to run.
+
+Is there any way to track the report runs, such that:
+	•	If any report is in run or fails on any day, we receive an automatic reminder or notification for the failure.
+	•	This will help us maintain a daily track of Control-M reports, without the need for manual checks.
+
+Please let me know if any such tracking mechanism or alert setup is available, or if there is an alternative approach to implement this.
+
+
+
+
+
+
+
+
 Hi Pranil,
 
 As we are working on the MSU trigger conversion, I wanted to align on the process moving forward.
