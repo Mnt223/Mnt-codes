@@ -1,3 +1,32 @@
+
+Please find below the minutes of the meeting held today regarding the data issues observed in the Gupture response table and IH reporting table:
+	1.	IH Fact Reporting Table Data Issue
+	•	We have checked the data from May 25 onwards.
+	•	SMS: Sent data is available in IH; however, delivery data is missing for the same period, leading to incomplete SMS performance reporting.
+	2.	WhatsApp Data Issue in Gupture Response Table
+	•	For WhatsApp, the sent numbers in Gupture are less than the impression numbers, which is logically incorrect.
+	•	This indicates that some files may be missing during the delivery report loading process.
+	3.	HSBC ID Length Issue for WhatsApp Clicks
+	•	In the Gupture response table for WhatsApp clicks, the HSBC ID length is 16 instead of the standard 15.
+	•	Due to this, direct joining with our customer base fails, resulting in additional data processing steps to derive customer details.
+	4.	Historical Data Requirement in Gupture Response Table
+	•	Currently, the IH table does not capture treatment-level details such as subject lines (PZ Action ID or Treatment ID) for email and WhatsApp impressions/clicks.
+	•	As a result, we rely on the Gupture response table for historical data to retrieve subject lines for A-B testing analysis.
+	•	Until the IH reporting table issue is resolved, it is necessary to ensure historical data availability in Gupture response to support campaign analysis.
+	5.	Lag in Frequency of Data Updates
+	•	There is also an observed lag in the frequency of Gupture response data updates in the IH table, which needs to be investigated and resolved for timely reporting.
+
+Action Required:
+We request the respective teams to look into the above issues on priority and provide an update on resolution timelines to ensure smooth campaign performance reporting and analysis.
+
+
+
+
+
+
+
+
+
 Hi Prashant,
 
 No worries at all, and thanks for clarifying.
