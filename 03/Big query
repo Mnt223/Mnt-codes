@@ -1,3 +1,26 @@
+# After date filtering
+
+# Calculate transaction count per customer
+cust_txn_counts = filtered_df.groupby('cusid').size()
+
+# Filter customers with at least 5 transactions
+eligible_customers = cust_txn_counts[cust_txn_counts >= 5].index
+
+# Filter dataset
+filtered_df = filtered_df[filtered_df['cusid'].isin(eligible_customers)].copy()
+
+print(f"Using {len(eligible_customers)} customers with >=5 transactions for analysis")
+
+
+
+
+
+
+
+
+
+
+
 # 1. Import Libraries
 import pandas as pd
 from mlxtend.preprocessing import TransactionEncoder
