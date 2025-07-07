@@ -1,3 +1,140 @@
+# -------------------------------
+# 1. Import Required Libraries
+# -------------------------------
+import pandas as pd
+from mlxtend.preprocessing import TransactionEncoder
+from mlxtend.frequent_patterns import apriori, association_rules
+from pyvis.network import Network
+
+# -------------------------------
+# 2. Load Data
+# -------------------------------
+df = pd.read_csv('your_data.csv')  # Replace with your actual file path
+
+# -------------------------------
+# 3. Data Preprocessing
+# -------------------------------
+# Convert 'MT_EFF_DATE' to datetime
+df['MT_EFF_DATE'] = pd.to_datetime(df['MT_EFF_DATE'])
+
+# Filter data for last 3 months
+max_date = df['MT_EFF_DATE'].max()
+start_date = max_date - pd.DateOffset(months=3)
+filtered_df = df[df['MT_EFF_DATE'] >= start_date].copy()
+
+# Filter customers with at least 5 transactions
+cust_txn_counts = filtered_df.groupby('ACCT').size()
+eligible_customers = cust_txn_counts[cust_txn_counts >= 5].index
+filtered_df = filtered_df[filtered_df['ACCT'].isin(eligible_customers)].copy()
+
+# Define basket as customer-level
+filtered_df['basket_id'] = filtered_df['ACCT'].astype(str)
+
+# Group sectors per customer and deduplicate
+basket_sector = filtered_df.groupby('basket_id')['sector'].apply(lambda x: list(set(x))).tolist()
+
+# -------------------------------
+# 4. One-Hot Encoding
+# -------------------------------
+te = TransactionEncoder()
+te_ary = te.fit(basket_sector).transform(basket_sector)
+basket_df = pd.DataFrame(te_ary, columns=te.columns_)
+
+# -------------------------------
+# 5. Apriori Frequent Itemsets
+# -------------------------------
+frequent_itemsets = apriori(basket_df, min_support=0.01, use_colnames=True, max_len=4)
+
+# -------------------------------
+# 6. Generate Association Rules
+# -------------------------------
+rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1)
+
+# -------------------------------
+# 7. Filter Different Rule Levels
+# -------------------------------
+
+# A. If X ➔ Y
+rules_XY = rules[(rules['antecedents'].apply(len) == 1) &
+                 (rules['consequents'].apply(len) == 1)]
+
+# B. If X and Y ➔ Z
+rules_XY_Z = rules[(rules['antecedents'].apply(len) == 2) &
+                   (rules['consequents'].apply(len) == 1)]
+
+# C. If X and Y and Z ➔ A
+rules_XYZ_A = rules[(rules['antecedents'].apply(len) == 3) &
+                    (rules['consequents'].apply(len) == 1)]
+
+# -------------------------------
+# 8. Display Rule Outputs
+# -------------------------------
+print("✅ If X ➔ Y Rules")
+print(rules_XY[['antecedents','consequents','support','confidence','lift']])
+
+print("\n✅ If X and Y ➔ Z Rules")
+print(rules_XY_Z[['antecedents','consequents','support','confidence','lift']])
+
+print("\n✅ If X and Y and Z ➔ A Rules")
+print(rules_XYZ_A[['antecedents','consequents','support','confidence','lift']])
+
+# -------------------------------
+# 9. Interactive Graph Function Using PyVis
+# -------------------------------
+def interactive_rules_graph(rules_df, filename, title):
+    net = Network(height='600px', width='100%', notebook=True, directed=True)
+    net.force_atlas_2based()
+
+    # Add nodes and edges
+    for _, row in rules_df.iterrows():
+        for antecedent in row['antecedents']:
+            net.add_node(antecedent, label=antecedent)
+        for consequent in row['consequents']:
+            net.add_node(consequent, label=consequent)
+        for antecedent in row['antecedents']:
+            for consequent in row['consequents']:
+                net.add_edge(antecedent, consequent,
+                             title=f"Conf: {row['confidence']:.2f}, Lift: {row['lift']:.2f}",
+                             value=row['confidence'])
+
+    net.show_buttons()
+    net.show(filename)
+    print(f"✅ {title} graph saved as {filename}")
+
+# -------------------------------
+# 10. Generate Interactive Graphs for Each Rule Level
+# -------------------------------
+
+# If X ➔ Y
+interactive_rules_graph(rules_XY, 'rules_XY_graph.html', "If X ➔ Y")
+
+# If X and Y ➔ Z
+interactive_rules_graph(rules_XY_Z, 'rules_XY_Z_graph.html', "If X and Y ➔ Z")
+
+# If X and Y and Z ➔ A
+interactive_rules_graph(rules_XYZ_A, 'rules_XYZ_A_graph.html', "If X and Y and Z ➔ A")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # After date filtering
 
 # Calculate transaction count per customer
