@@ -1,21 +1,17 @@
-# ------------------------------------
-# 8. Function to Generate Sankey Diagram
+# 8. Enhanced Sankey Diagram Function
 # ------------------------------------
 def plot_sankey(rules_df, title):
     if rules_df.empty:
         print(f"No rules to display for {title}.")
         return
 
-    # Prepare nodes and links
-    nodes = []
-    for i in rules_df['antecedents']:
-        nodes.extend(list(i))
-    for i in rules_df['consequents']:
-        nodes.extend(list(i))
-    nodes = list(set(nodes))
+    # Prepare nodes: sorted for clean order
+    antecedent_nodes = sorted(set().union(*rules_df['antecedents']))
+    consequent_nodes = sorted(set().union(*rules_df['consequents']))
+    nodes = antecedent_nodes + [n for n in consequent_nodes if n not in antecedent_nodes]
 
     node_map = {k: v for v, k in enumerate(nodes)}
-    sources, targets, values = [], [], []
+    sources, targets, values, customdata = [], [], [], []
 
     for _, row in rules_df.iterrows():
         for antecedent in row['antecedents']:
@@ -23,26 +19,40 @@ def plot_sankey(rules_df, title):
                 sources.append(node_map[antecedent])
                 targets.append(node_map[consequent])
                 values.append(row['confidence'])
+                customdata.append(f"Lift: {row['lift']:.2f}, Support: {row['support']:.2f}")
+
+    # Assign colors: blue for antecedents, orange for consequents
+    colors = ['#1f77b4' if n in antecedent_nodes else '#ff7f0e' for n in nodes]
 
     fig = go.Figure(data=[go.Sankey(
         node=dict(
-            pad=15,
-            thickness=20,
+            pad=20,
+            thickness=25,
             line=dict(color="black", width=0.5),
-            label=nodes
+            label=nodes,
+            color=colors,
         ),
         link=dict(
             source=sources,
             target=targets,
             value=values,
-            hovertemplate='Confidence: %{value:.2f}<extra></extra>'
+            hovertemplate='Conf: %{value:.2f}<br>%{customdata}<extra></extra>',
+            customdata=customdata,
+            color="rgba(150,150,150,0.5)"
         ))])
 
-    fig.update_layout(title_text=title, font_size=10)
+    fig.update_layout(
+        title_text=title,
+        font_size=12,
+        height=700,
+        width=1200,
+        plot_bgcolor='white',
+        paper_bgcolor='white'
+    )
     fig.show()
 
 # ------------------------------------
-# 9. Generate Sankey Charts for Each Rule Level
+# 9. Filter and Display Each Rule Level
 # ------------------------------------
 
 # A. If X ➔ Y
@@ -65,9 +75,6 @@ rules_XYZ_A = rules[(rules['antecedents'].apply(len) == 3) &
 print("\n✅ If X and Y and Z ➔ A Rules")
 print(rules_XYZ_A[['antecedents','consequents','support','confidence','lift']])
 plot_sankey(rules_XYZ_A, "If X and Y and Z ➔ A Sankey Diagram")
-
-
-
 
 
 
