@@ -1,4 +1,82 @@
 # ------------------------------------
+# 8. Function to Generate Sankey Diagram
+# ------------------------------------
+def plot_sankey(rules_df, title):
+    if rules_df.empty:
+        print(f"No rules to display for {title}.")
+        return
+
+    # Prepare nodes and links
+    nodes = []
+    for i in rules_df['antecedents']:
+        nodes.extend(list(i))
+    for i in rules_df['consequents']:
+        nodes.extend(list(i))
+    nodes = list(set(nodes))
+
+    node_map = {k: v for v, k in enumerate(nodes)}
+    sources, targets, values = [], [], []
+
+    for _, row in rules_df.iterrows():
+        for antecedent in row['antecedents']:
+            for consequent in row['consequents']:
+                sources.append(node_map[antecedent])
+                targets.append(node_map[consequent])
+                values.append(row['confidence'])
+
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=nodes
+        ),
+        link=dict(
+            source=sources,
+            target=targets,
+            value=values,
+            hovertemplate='Confidence: %{value:.2f}<extra></extra>'
+        ))])
+
+    fig.update_layout(title_text=title, font_size=10)
+    fig.show()
+
+# ------------------------------------
+# 9. Generate Sankey Charts for Each Rule Level
+# ------------------------------------
+
+# A. If X ➔ Y
+rules_XY = rules[(rules['antecedents'].apply(len) == 1) &
+                 (rules['consequents'].apply(len) == 1)]
+print("✅ If X ➔ Y Rules")
+print(rules_XY[['antecedents','consequents','support','confidence','lift']])
+plot_sankey(rules_XY, "If X ➔ Y Sankey Diagram")
+
+# B. If X and Y ➔ Z
+rules_XY_Z = rules[(rules['antecedents'].apply(len) == 2) &
+                   (rules['consequents'].apply(len) == 1)]
+print("\n✅ If X and Y ➔ Z Rules")
+print(rules_XY_Z[['antecedents','consequents','support','confidence','lift']])
+plot_sankey(rules_XY_Z, "If X and Y ➔ Z Sankey Diagram")
+
+# C. If X and Y and Z ➔ A
+rules_XYZ_A = rules[(rules['antecedents'].apply(len) == 3) &
+                    (rules['consequents'].apply(len) == 1)]
+print("\n✅ If X and Y and Z ➔ A Rules")
+print(rules_XYZ_A[['antecedents','consequents','support','confidence','lift']])
+plot_sankey(rules_XYZ_A, "If X and Y and Z ➔ A Sankey Diagram")
+
+
+
+
+
+
+
+
+
+
+
+# ------------------------------------
 # 1. Import Required Libraries
 # ------------------------------------
 import pandas as pd
