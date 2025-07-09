@@ -1,3 +1,17 @@
+SelectedOrLatestMonth = 
+VAR SelectedMonth = SELECTEDVALUE('MSG Trigger Conversion'[Month_Year_Date])
+VAR LatestMonth = CALCULATE(MAX('MSG Trigger Conversion'[Month_Year_Date]), ALL('MSG Trigger Conversion'))
+RETURN
+IF(
+    ISBLANK(SelectedMonth),
+    LatestMonth,
+    SelectedMonth
+)
+
+
+
+
+
 LatestMonthFlag = 
 IF(
     'MSG Trigger Conversion'[Month_Year_Date] = 
