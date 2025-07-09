@@ -1,3 +1,17 @@
+Hi Team,
+
+As discussed in today’s meeting, please find the minutes:
+	•	Every Wednesday, we will share one automated email for each channel, resulting in a total of three emails covering Email, SMS, and WhatsApp.
+	•	Each email will include the file report for each day of the week.
+
+Additional points:
+	•	In case of any missing files or below threshold cases, the respective file needs to be reposted on the same day.
+	•	If there is a missing file or below threshold case due to no campaign being sent on that day, then a communication message must be shared stating that no communication was sent on that particular day.
+	•	This will help us track all missing files systematically, as per the agreed process.
+
+
+
+
 Inc_TRB_Lift =
 VAR DiffTable_Contacted =
     ADDCOLUMNS(
