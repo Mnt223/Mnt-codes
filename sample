@@ -1,3 +1,107 @@
+Inc TRB Lift = 
+
+-- Contacted Customers
+VAR ContactedTable =
+    FILTER (
+        ADDCOLUMNS (
+            'MSD Trigger Conversion',
+            "AvgTRB", 
+                ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] ) / 2
+        ),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+    )
+
+VAR ContactedTop5Pct =
+    PERCENTILEX.EXC (ContactedTable, [AvgTRB], 0.95)
+
+VAR ContactedBottom10Pct =
+    PERCENTILEX.EXC (ContactedTable, [AvgTRB], 0.10)
+
+VAR ContactedFiltered =
+    FILTER (
+        ContactedTable,
+        [AvgTRB] <= ContactedTop5Pct
+            && [AvgTRB] >= ContactedBottom10Pct
+    )
+
+VAR ContactedAvg_Post =
+    AVERAGEX (
+        ContactedFiltered,
+        'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]
+    )
+
+VAR ContactedAvg_Pre =
+    AVERAGEX (
+        ContactedFiltered,
+        'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]
+    )
+
+----------------------------------------------------------
+
+-- Non-Contacted Customers
+VAR NonContactedTable =
+    FILTER (
+        ADDCOLUMNS (
+            'MSD Trigger Conversion',
+            "AvgTRB", 
+                ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] ) / 2
+        ),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1
+    )
+
+VAR NonContactedTop5Pct =
+    PERCENTILEX.EXC (NonContactedTable, [AvgTRB], 0.95)
+
+VAR NonContactedBottom10Pct =
+    PERCENTILEX.EXC (NonContactedTable, [AvgTRB], 0.10)
+
+VAR NonContactedFiltered =
+    FILTER (
+        NonContactedTable,
+        [AvgTRB] <= NonContactedTop5Pct
+            && [AvgTRB] >= NonContactedBottom10Pct
+    )
+
+VAR NonContactedAvg_Post =
+    AVERAGEX (
+        NonContactedFiltered,
+        'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]
+    )
+
+VAR NonContactedAvg_Pre =
+    AVERAGEX (
+        NonContactedFiltered,
+        'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]
+    )
+
+----------------------------------------------------------
+
+VAR A = ContactedAvg_Post - ContactedAvg_Pre
+VAR B = NonContactedAvg_Post - NonContactedAvg_Pre
+
+VAR ContactedCount =
+    CALCULATE (
+        COUNT('MSD Trigger Conversion'[GA_CUST_ID]),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+    )
+
+RETURN
+IF(
+    ContactedCount <> 0,
+    "₹ " & FORMAT(
+        MAX(0, (A - B) * ContactedCount / 10000000),
+        "0.00"
+    ) & " Cr",
+    BLANK()
+)
+
+
+
+
+
+
+
+
 
 Inc TRB Lift = 
 VAR ContactedTable_Post =
