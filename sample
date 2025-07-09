@@ -1,3 +1,64 @@
+Inc_TRB_Lift =
+VAR DiffTable_Contacted =
+    ADDCOLUMNS(
+        FILTER(
+            'MSD Trigger Conversion',
+            'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 &&
+            NOT(ISBLANK('MSD Trigger Conversion'[POST_2_MON_AVG_TRB])) &&
+            NOT(ISBLANK('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]))
+        ),
+        "TRB_Diff", 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] - 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]
+    )
+VAR Perc10_Contacted = PERCENTILEX.INC(DiffTable_Contacted, [TRB_Diff], 0.10)
+VAR Perc95_Contacted = PERCENTILEX.INC(DiffTable_Contacted, [TRB_Diff], 0.95)
+VAR Trimmed_Contacted =
+    FILTER(
+        DiffTable_Contacted,
+        [TRB_Diff] >= Perc10_Contacted &&
+        [TRB_Diff] <= Perc95_Contacted
+    )
+VAR Avg_Contacted = AVERAGEX(Trimmed_Contacted, [TRB_Diff])
+VAR Count_Contacted = COUNTROWS(Trimmed_Contacted)
+
+VAR DiffTable_NonContacted =
+    ADDCOLUMNS(
+        FILTER(
+            'MSD Trigger Conversion',
+            'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1 &&
+            NOT(ISBLANK('MSD Trigger Conversion'[POST_2_MON_AVG_TRB])) &&
+            NOT(ISBLANK('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]))
+        ),
+        "TRB_Diff", 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] - 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]
+    )
+VAR Perc10_NonContacted = PERCENTILEX.INC(DiffTable_NonContacted, [TRB_Diff], 0.10)
+VAR Perc95_NonContacted = PERCENTILEX.INC(DiffTable_NonContacted, [TRB_Diff], 0.95)
+VAR Trimmed_NonContacted =
+    FILTER(
+        DiffTable_NonContacted,
+        [TRB_Diff] >= Perc10_NonContacted &&
+        [TRB_Diff] <= Perc95_NonContacted
+    )
+VAR Avg_NonContacted = AVERAGEX(Trimmed_NonContacted, [TRB_Diff])
+
+VAR Result = 
+    IF(
+        Count_Contacted <> 0,
+        "₹ " & FORMAT(
+            MAX(0, (Avg_Contacted - Avg_NonContacted) * Count_Contacted / 10000000),
+            "0.00"
+        ) & " Cr",
+        BLANK()
+    )
+RETURN
+    Result
+
+
+
+
+
+
+
+
 // 1. Calculated column in 'MSD Trigger Conversion'
 TRB_Diff = 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] - 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]
 
