@@ -1,6 +1,121 @@
 Inc TRB Lift = 
 
 -- Contacted Customers
+VAR ContactedTop5Pct = 
+    PERCENTILEX.EXC(
+        FILTER(
+            'MSD Trigger Conversion',
+            'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+        ),
+        ('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]) / 2,
+        0.95
+    )
+
+VAR ContactedBottom10Pct = 
+    PERCENTILEX.EXC(
+        FILTER(
+            'MSD Trigger Conversion',
+            'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+        ),
+        ('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]) / 2,
+        0.10
+    )
+
+VAR ContactedFiltered =
+    FILTER(
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+        && (('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]) / 2) <= ContactedTop5Pct
+        && (('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]) / 2) >= ContactedBottom10Pct
+    )
+
+VAR ContactedAvg_Post =
+    CALCULATE(
+        AVERAGE('MSD Trigger Conversion'[POST_2_MON_AVG_TRB]),
+        ContactedFiltered
+    )
+
+VAR ContactedAvg_Pre =
+    CALCULATE(
+        AVERAGE('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]),
+        ContactedFiltered
+    )
+
+VAR ContactedCount =
+    CALCULATE(
+        COUNT('MSD Trigger Conversion'[GA_CUST_ID]),
+        ContactedFiltered
+    )
+
+----------------------------------------------------------
+
+-- Non-Contacted Customers
+VAR NonContactedTop5Pct = 
+    PERCENTILEX.EXC(
+        FILTER(
+            'MSD Trigger Conversion',
+            'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1
+        ),
+        ('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]) / 2,
+        0.95
+    )
+
+VAR NonContactedBottom10Pct = 
+    PERCENTILEX.EXC(
+        FILTER(
+            'MSD Trigger Conversion',
+            'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1
+        ),
+        ('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]) / 2,
+        0.10
+    )
+
+VAR NonContactedFiltered =
+    FILTER(
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1
+        && (('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]) / 2) <= NonContactedTop5Pct
+        && (('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] + 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]) / 2) >= NonContactedBottom10Pct
+    )
+
+VAR NonContactedAvg_Post =
+    CALCULATE(
+        AVERAGE('MSD Trigger Conversion'[POST_2_MON_AVG_TRB]),
+        NonContactedFiltered
+    )
+
+VAR NonContactedAvg_Pre =
+    CALCULATE(
+        AVERAGE('MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]),
+        NonContactedFiltered
+    )
+
+----------------------------------------------------------
+
+VAR A = ContactedAvg_Post - ContactedAvg_Pre
+VAR B = NonContactedAvg_Post - NonContactedAvg_Pre
+
+RETURN
+IF(
+    ContactedCount <> 0,
+    "₹ " & FORMAT(
+        MAX(0, (A - B) * ContactedCount / 10000000),
+        "0.00"
+    ) & " Cr",
+    BLANK()
+)
+
+
+
+
+
+
+
+
+
+Inc TRB Lift = 
+
+-- Contacted Customers
 VAR ContactedTable =
     FILTER (
         ADDCOLUMNS (
