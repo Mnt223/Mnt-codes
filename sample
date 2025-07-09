@@ -1,3 +1,103 @@
+// 1. Calculated column in 'MSD Trigger Conversion'
+TRB_Diff = 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] - 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]
+
+// 2. Measures
+Avg_TRB_Diff_Contacted_No_Outlier =
+VAR Perc10 = PERCENTILEX.INC(
+    FILTER(
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 &&
+        NOT(ISBLANK('MSD Trigger Conversion'[TRB_Diff]))
+    ),
+    'MSD Trigger Conversion'[TRB_Diff], 0.10)
+VAR Perc95 = PERCENTILEX.INC(
+    FILTER(
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 &&
+        NOT(ISBLANK('MSD Trigger Conversion'[TRB_Diff]))
+    ),
+    'MSD Trigger Conversion'[TRB_Diff], 0.95)
+RETURN
+    AVERAGEX(
+        FILTER(
+            'MSD Trigger Conversion',
+            'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 &&
+            'MSD Trigger Conversion'[TRB_Diff] >= Perc10 &&
+            'MSD Trigger Conversion'[TRB_Diff] <= Perc95
+        ),
+        'MSD Trigger Conversion'[TRB_Diff]
+    )
+
+Avg_TRB_Diff_NonContacted_No_Outlier =
+VAR Perc10 = PERCENTILEX.INC(
+    FILTER(
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1 &&
+        NOT(ISBLANK('MSD Trigger Conversion'[TRB_Diff]))
+    ),
+    'MSD Trigger Conversion'[TRB_Diff], 0.10)
+VAR Perc95 = PERCENTILEX.INC(
+    FILTER(
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1 &&
+        NOT(ISBLANK('MSD Trigger Conversion'[TRB_Diff]))
+    ),
+    'MSD Trigger Conversion'[TRB_Diff], 0.95)
+RETURN
+    AVERAGEX(
+        FILTER(
+            'MSD Trigger Conversion',
+            'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1 &&
+            'MSD Trigger Conversion'[TRB_Diff] >= Perc10 &&
+            'MSD Trigger Conversion'[TRB_Diff] <= Perc95
+        ),
+        'MSD Trigger Conversion'[TRB_Diff]
+    )
+
+Count_Contacted_No_Outlier =
+VAR Perc10 = PERCENTILEX.INC(
+    FILTER(
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 &&
+        NOT(ISBLANK('MSD Trigger Conversion'[TRB_Diff]))
+    ),
+    'MSD Trigger Conversion'[TRB_Diff], 0.10)
+VAR Perc95 = PERCENTILEX.INC(
+    FILTER(
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 &&
+        NOT(ISBLANK('MSD Trigger Conversion'[TRB_Diff]))
+    ),
+    'MSD Trigger Conversion'[TRB_Diff], 0.95)
+RETURN
+    CALCULATE(
+        COUNT('MSD Trigger Conversion'[GA_CUST_ID]),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1,
+        'MSD Trigger Conversion'[TRB_Diff] >= Perc10,
+        'MSD Trigger Conversion'[TRB_Diff] <= Perc95
+    )
+
+Inc_TRB_Lift =
+VAR A = [Avg_TRB_Diff_Contacted_No_Outlier]
+VAR B = [Avg_TRB_Diff_NonContacted_No_Outlier]
+VAR ContactedCount = [Count_Contacted_No_Outlier]
+RETURN
+IF(
+    ContactedCount <> 0,
+    "₹ " & FORMAT(
+        MAX(0, (A - B) * ContactedCount / 10000000),
+        "0.00"
+    ) & " Cr",
+    BLANK()
+)
+
+
+
+
+
+
+
+
 Inc TRB Lift = 
 
 -- Contacted Customers
