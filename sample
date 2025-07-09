@@ -1,3 +1,12 @@
+LatestMonthFlag = 
+IF(
+    'YourTable'[Month_Year_Date] = CALCULATE(MAX('YourTable'[Month_Year_Date]), ALL('YourTable')),
+    1,
+    0
+)
+
+
+
 
 Month_Year_Date = 
 DATE(
