@@ -1,5 +1,18 @@
 LatestMonthFlag = 
 IF(
+    'MSG Trigger Conversion'[Month_Year_Date] = 
+        CALCULATE(MAX('MSG Trigger Conversion'[Month_Year_Date]), ALL('MSG Trigger Conversion')),
+    1,
+    0
+)
+
+
+
+
+
+
+LatestMonthFlag = 
+IF(
     'YourTable'[Month_Year_Date] = CALCULATE(MAX('YourTable'[Month_Year_Date]), ALL('YourTable')),
     1,
     0
