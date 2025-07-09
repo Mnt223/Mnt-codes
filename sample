@@ -1,3 +1,139 @@
+
+Inc TRB Lift = 
+VAR ContactedTable_Post =
+    FILTER (
+        ADDCOLUMNS (
+            'MSD Trigger Conversion',
+            "TRB", 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]
+        ),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+    )
+
+VAR ContactedTop5Pct_Post =
+    PERCENTILEX.EXC (ContactedTable_Post, [TRB], 0.95)
+
+VAR ContactedBottom10Pct_Post =
+    PERCENTILEX.EXC (ContactedTable_Post, [TRB], 0.10)
+
+VAR ContactedFiltered_Post =
+    FILTER (
+        ContactedTable_Post,
+        [TRB] <= ContactedTop5Pct_Post
+            && [TRB] >= ContactedBottom10Pct_Post
+    )
+
+VAR ContactedAvg_Post =
+    AVERAGEX (ContactedFiltered_Post, [TRB])
+
+----------------------------------------------------------
+
+VAR ContactedTable_Pre =
+    FILTER (
+        ADDCOLUMNS (
+            'MSD Trigger Conversion',
+            "TRB", 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]
+        ),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+    )
+
+VAR ContactedTop5Pct_Pre =
+    PERCENTILEX.EXC (ContactedTable_Pre, [TRB], 0.95)
+
+VAR ContactedBottom10Pct_Pre =
+    PERCENTILEX.EXC (ContactedTable_Pre, [TRB], 0.10)
+
+VAR ContactedFiltered_Pre =
+    FILTER (
+        ContactedTable_Pre,
+        [TRB] <= ContactedTop5Pct_Pre
+            && [TRB] >= ContactedBottom10Pct_Pre
+    )
+
+VAR ContactedAvg_Pre =
+    AVERAGEX (ContactedFiltered_Pre, [TRB])
+
+----------------------------------------------------------
+
+VAR NonContactedTable_Post =
+    FILTER (
+        ADDCOLUMNS (
+            'MSD Trigger Conversion',
+            "TRB", 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB]
+        ),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1
+    )
+
+VAR NonContactedTop5Pct_Post =
+    PERCENTILEX.EXC (NonContactedTable_Post, [TRB], 0.95)
+
+VAR NonContactedBottom10Pct_Post =
+    PERCENTILEX.EXC (NonContactedTable_Post, [TRB], 0.10)
+
+VAR NonContactedFiltered_Post =
+    FILTER (
+        NonContactedTable_Post,
+        [TRB] <= NonContactedTop5Pct_Post
+            && [TRB] >= NonContactedBottom10Pct_Post
+    )
+
+VAR NonContactedAvg_Post =
+    AVERAGEX (NonContactedFiltered_Post, [TRB])
+
+----------------------------------------------------------
+
+VAR NonContactedTable_Pre =
+    FILTER (
+        ADDCOLUMNS (
+            'MSD Trigger Conversion',
+            "TRB", 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB]
+        ),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] <> 1
+    )
+
+VAR NonContactedTop5Pct_Pre =
+    PERCENTILEX.EXC (NonContactedTable_Pre, [TRB], 0.95)
+
+VAR NonContactedBottom10Pct_Pre =
+    PERCENTILEX.EXC (NonContactedTable_Pre, [TRB], 0.10)
+
+VAR NonContactedFiltered_Pre =
+    FILTER (
+        NonContactedTable_Pre,
+        [TRB] <= NonContactedTop5Pct_Pre
+            && [TRB] >= NonContactedBottom10Pct_Pre
+    )
+
+VAR NonContactedAvg_Pre =
+    AVERAGEX (NonContactedFiltered_Pre, [TRB])
+
+----------------------------------------------------------
+
+VAR A = ContactedAvg_Post - ContactedAvg_Pre
+VAR B = NonContactedAvg_Post - NonContactedAvg_Pre
+
+VAR ContactedCount =
+    CALCULATE (
+        COUNT('MSD Trigger Conversion'[GA_CUST_ID]),
+        'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+    )
+
+RETURN
+IF(
+    ContactedCount <> 0,
+    "₹ " & FORMAT(
+        MAX(0, (A - B) * ContactedCount / 10000000),
+        "0.00"
+    ) & " Cr",
+    BLANK()
+)
+
+
+
+
+
+
+
+
 Please find below my updates for last week and the plan for this week:
 
 Last Week Updates:
