@@ -1,3 +1,32 @@
+PROC SQL;
+    CREATE TABLE MSF_ORG1 AS
+    SELECT a.*,
+
+           /* Area Head mapping */
+           PROPCASE(b.Planner_Name) AS Lead_Name,
+           b.People_Soft_ID AS Lead_ID,
+           LOWCASE(b.Planner_Ext_Email_ID) AS Lead_Email,
+
+           /* Level 3 mapping based on cluster */
+           PROPCASE(c.Planner_Name) AS Level3_Name,
+           c.People_Soft_ID AS Level3_ID
+
+    FROM MSF1 a
+
+    /* Join for Area Head info */
+    LEFT JOIN MSF1_AH b
+        ON UPCASE(a.AREA) = UPCASE(b.AREA)
+
+    /* Join for Level 3 info based on cluster */
+    LEFT JOIN MSF1_AH c
+        ON UPCASE(a.CLUSTER) = UPCASE(c.CLUSTER);
+QUIT;
+
+
+
+
+
+
 /* Step 1: Ensure MSF1_AH (Area Head table) is sorted by AREA */
 PROC SORT DATA=MSF1_AH;
     BY AREA;
