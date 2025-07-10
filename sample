@@ -1,3 +1,36 @@
+/* Step 1: Ensure MSF1_AH (Area Head table) is sorted by AREA */
+PROC SORT DATA=MSF1_AH;
+    BY AREA;
+RUN;
+
+/* Step 2: Sort MSF1 (main planner dataset) by AREA */
+PROC SORT DATA=MSF1;
+    BY AREA;
+RUN;
+
+/* Step 3: Merge Area Head info into MSF1 based on AREA */
+DATA MSF_ORG1;
+    MERGE MSF1 (IN=a)
+          MSF1_AH (IN=b RENAME=(
+              People_Soft_ID=Lead_ID
+              Planner_Name=Lead_Name
+              Planner_Ext_Email_ID=Lead_Email
+          ));
+    BY AREA;
+
+    IF a; /* keep only records from MSF1 */
+
+    /* Formatting for Lead Name and Email */
+    Lead_Name = PROPCASE(Lead_Name);
+    Lead_Email = LOWCASE(Lead_Email);
+
+RUN;
+
+
+
+
+
+
 Selected Metric Value = 
 SWITCH(
     [Selected Metric],
