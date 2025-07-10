@@ -1,3 +1,19 @@
+Selected Metric Value = 
+SWITCH(
+    [Selected Metric],
+    "Contact%", [Contact Rate],
+    "Appointment%", [Appointment Rate],
+    "Conversion%", [Conversion %],
+    "Inc Casa Lift", [Inc Casa Lift NUM1],
+    "Inc TRB Lift", [Inc TRB Lift NUM1],
+    BLANK()
+)
+
+
+
+
+
+
 SelectedOrLatestMonth = 
 VAR SelectedMonth = SELECTEDVALUE('MSG Trigger Conversion'[Month_Year_Date])
 VAR LatestMonth = CALCULATE(MAX('MSG Trigger Conversion'[Month_Year_Date]), ALL('MSG Trigger Conversion'))
