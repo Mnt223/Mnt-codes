@@ -1,3 +1,27 @@
+This Week Updates
+	•	NPS:
+	•	Continued working on NPS-related SAS query support due to multiple ongoing issues.
+	•	MSF:
+	•	Developed the MSF ORG file creation code from base, as MSF is now considered a separate channel.
+	•	Integrated customer data support to Permit campaigns.
+	•	RNPS:
+	•	Provided data support for RNPS activities and validation.
+	•	Campaigns:
+	•	Supported non-PEGA data issues, connected with Gupshup team to set up the process for data repush.
+	•	Established a weekly process for data repush; currently awaiting Pega team’s response on backend data issues.
+	•	Worked on campaign add-ons including wealth penetration, renewal credit card communications, etc.
+	•	Parallelly working on Campaign Dashboard Enhancements, including the addition of Content ID to the dashboard.
+	•	Sales Revenue:
+	•	Provided NDB and ETB data to the global team for sales revenue reporting.
+	•	CSMIS Dashboard:
+	•	Completed modifications for the DBMIA metrics page on the dashboard.
+	•	MSD:
+	•	Worked on MSD trigger conversion code and the trigger conversion dashboard page, which is part of the MSD conversion project.
+	•	Approximately 35% of the MSD dashboard work has been completed.
+
+
+
+
 IF ROLE = 'CEB' 
    AND STRIP(PEOPLE_SOFT_ID) NE '' 
    AND STRIP(PEOPLE_SOFT_ID) NE '.' THEN DO;
