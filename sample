@@ -1,3 +1,16 @@
+filename lastdate "&base_path/last_run_date.txt";
+
+data _null_;
+    infile lastdate;
+    input last_run_date : yymmdd8.;
+    call symputx('last_run_dt', put(last_run_date, yymmdd10.));
+run;
+
+
+
+
+
+
 This Week Updates
 	•	NPS:
 	•	Continued working on NPS-related SAS query support due to multiple ongoing issues.
