@@ -1,3 +1,11 @@
+%let today = %sysfunc(today());
+%let last_run_num = %sysfunc(inputn(&last_run_dt, yymmdd10.));
+%let days_back = %eval(&today - &last_run_num);
+
+
+
+
+
 filename lastdate "&base_path/last_run_date.txt";
 
 data _null_;
