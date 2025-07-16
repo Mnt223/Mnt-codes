@@ -1,3 +1,16 @@
+Hi Vandita and Vedha,
+
+We need the details of all GI-related campaigns that were sent out over email—whether via PEGA or non-PEGA channels.
+If you have the content IDs handy, could you please share them with me, ideally broken down by channel?
+
+Thanks in advance!
+
+
+
+
+
+
+
 %let today = %sysfunc(today());
 %let last_run_num = %sysfunc(inputn(&last_run_dt, yymmdd10.));
 %let days_back = %eval(&today - &last_run_num);
