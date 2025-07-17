@@ -1,3 +1,18 @@
+
+Hi Pranil,
+
+This is to inform you that, as per our earlier discussion regarding the MST first cut scheduled for the 18th, we are proposing to extend the timeline.
+
+Due to additional workstreams involving DBMI and Activity MIOS branching, we need to prioritize validation and testing to ensure proper alignment before moving to production. Since MST is an extension of the Branching Semi module, it’s essential that all dependencies are functioning correctly.
+
+Therefore, we are planning to extend the deadline for the first cut of MST by one week — from 18th July to 25th July. The next two days are earmarked for finalizing DBMI and Activity MIOS, following which Branching Semi will be published in production. MST trigger conversion can then be added in parallel.
+
+
+
+
+
+
+
 Hi Vandita and Vedha,
 
 We need the details of all GI-related campaigns that were sent out over email—whether via PEGA or non-PEGA channels.
