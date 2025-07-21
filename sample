@@ -1,3 +1,23 @@
+SIX_MONTHS_PARAMETER = 
+DATATABLE (
+    "Metric", STRING,
+    "Index", INTEGER,
+    {
+        { "Contact%", 0 },
+        { "Appointment%", 1 },
+        { "Conversion%", 2 },
+        { "Inc Casa Lift", 3 },
+        { "Inc TRB Lift", 4 }
+    }
+)
+
+
+
+
+
+
+
+
 
 Hi Pranil,
 
