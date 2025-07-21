@@ -1,3 +1,18 @@
+
+Selected Metric = 
+SELECTEDVALUE('SIX_MONTHS_PARAMETER'[Metric], "Contact%")
+
+
+Selected Metric Value = 
+SWITCH(
+    [Selected Metric],
+    "Contact%", [Contact Rate],
+    "Appointment%", [Appointment Rate],
+    "Conversion%", [Conversion %],
+    "Inc Casa Lift", [Inc Casa Lift NUM1],
+    "Inc TRB Lift", [Inc TRB Lift NUM1],
+    BLANK()
+)
 SIX_MONTHS_PARAMETER = 
 DATATABLE (
     "Metric", STRING,
