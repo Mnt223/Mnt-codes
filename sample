@@ -1,3 +1,14 @@
+Dynamic Chart Title = 
+"Trend of " & [Selected Metric] & 
+IF(
+    [Selected Metric] IN {"Contact%", "Appointment%", "Conversion%"},
+    " (%)",
+    " (Number)"
+)
+
+
+
+
 Selected Metric Format = 
 SWITCH(
     [Selected Metric],
