@@ -1,3 +1,17 @@
+Selected Metric Format = 
+SWITCH(
+    [Selected Metric],
+    "Contact%", FORMAT([Contact Rate], "0.00%"),
+    "Appointment%", FORMAT([Appointment Rate], "0.00%"),
+    "Conversion%", FORMAT([Conversion %], "0.00%"),
+    "Inc Casa Lift", FORMAT([Inc Casa Lift NUM1], "#,##0"),
+    "Inc TRB Lift", FORMAT([Inc TRB Lift NUM1], "#,##0"),
+    BLANK()
+)
+
+
+
+
 
 Selected Metric = 
 SELECTEDVALUE('SIX_MONTHS_PARAMETER'[Metric], "Contact%")
