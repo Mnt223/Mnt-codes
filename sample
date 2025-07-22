@@ -1,3 +1,35 @@
+Selected Product Sales Count = 
+VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+
+VAR RawCount =
+    SWITCH(
+        TRUE(),
+        SelectedProduct = "TMD",
+            CALCULATE(SUM('MSD Trigger Conversion'[TMD_SALES_COUNT]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "INV",
+            CALCULATE(SUM('MSD Trigger Conversion'[INV_SALES_COUNT]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "INS",
+            CALCULATE(SUM('MSD Trigger Conversion'[LT_GI_SALES_COUNT]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "PIL",
+            CALCULATE(SUM('MSD Trigger Conversion'[PIL_SALES_COUNT]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "AIF_PMS",
+            CALCULATE(SUM('MSD Trigger Conversion'[AIF_PMS_SALES_COUNT]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        0
+    )
+
+RETURN IF(RawCount <= 0, 0, RawCount)
+
+
+
+
+
+
+
 Formatted Product Gain =
 VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 VAR RawValue =
