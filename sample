@@ -3,6 +3,26 @@ VAR selectedTrigger = SELECTEDVALUE(TriggerSlicerTable[Trigger_Value])
 RETURN
 IF (
     ISBLANK(selectedTrigger),
+    1,
+    IF (
+        CONTAINSSTRING(MainData[Trigger_1], selectedTrigger)
+        || CONTAINSSTRING(MainData[Trigger_2], selectedTrigger)
+        || CONTAINSSTRING(MainData[Trigger_3], selectedTrigger)
+        || CONTAINSSTRING(MainData[Trigger_4], selectedTrigger),
+        1,
+        0
+    )
+)
+
+
+
+
+
+Trigger Match Flag = 
+VAR selectedTrigger = SELECTEDVALUE(TriggerSlicerTable[Trigger_Value])
+RETURN
+IF (
+    ISBLANK(selectedTrigger),
     1,  -- no filter, show all
     IF (
         selectedTrigger IN {
