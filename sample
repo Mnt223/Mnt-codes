@@ -1,3 +1,44 @@
+Selected Product Sales Value = 
+VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+VAR RawValue =
+    SWITCH(
+        TRUE(),
+        SelectedProduct = "TMD", 
+            CALCULATE(SUM('MSD Trigger Conversion'[TMD_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted Flag] = 1),
+
+        SelectedProduct = "INV", 
+            CALCULATE(SUM('MSD Trigger Conversion'[INV_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted Flag] = 1),
+
+        SelectedProduct = "CASA", 
+            CALCULATE(SUM('MSD Trigger Conversion'[CASA_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted Flag] = 1),
+
+        SelectedProduct = "INS", 
+            CALCULATE(SUM('MSD Trigger Conversion'[INS_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted Flag] = 1),
+
+        SelectedProduct = "PIL", 
+            CALCULATE(SUM('MSD Trigger Conversion'[PIL_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted Flag] = 1),
+
+        SelectedProduct = "AIF_PMS", 
+            CALCULATE(
+                SUM('MSD Trigger Conversion'[AIF_SALES_VALUE]) + 
+                SUM('MSD Trigger Conversion'[PMS_SALES_VALUE]),
+                'MSD Trigger Conversion'[Contacted Flag] = 1
+            ),
+
+        0
+    )
+VAR FinalValue = DIVIDE(RawValue, 10000000)  -- convert to ₹ Cr
+RETURN IF(FinalValue <= 0, 0, FinalValue)
+
+
+
+
+
+
+
+
+
+
 TMD_Uplift_Impact_Cr =
 VAR ContactedSales = CALCULATE(SUM('MSD Trigger Conversion'[TMD_Sales_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 1)
 VAR NotContactedSales = CALCULATE(SUM('MSD Trigger Conversion'[TMD_Sales_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 0)
