@@ -1,3 +1,12 @@
+Product Count Title =
+VAR Product = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+RETURN Product & " Sales Count"
+
+
+
+
+
+
 Selected Product Sales Count = 
 VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 
