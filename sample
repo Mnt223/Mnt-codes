@@ -1,3 +1,38 @@
+Selected Product Gain Cr Formatted = 
+VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+
+VAR RawGain =
+    SWITCH(
+        TRUE(),
+        SelectedProduct = "TMD",
+            CALCULATE(SUM('MSD Trigger Conversion'[TMD_GAIN]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "INV",
+            CALCULATE(SUM('MSD Trigger Conversion'[INV_GAIN]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "INS",
+            CALCULATE(SUM('MSD Trigger Conversion'[LT_GI_GAIN]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "PIL",
+            CALCULATE(SUM('MSD Trigger Conversion'[PIL_GAIN]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "AIF_PMS",
+            CALCULATE(SUM('MSD Trigger Conversion'[AIF_PMS_GAIN]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        0
+    )
+
+VAR FinalGain = DIVIDE(RawGain, 10000000)   -- Convert to ₹ Cr
+
+RETURN 
+    IF(FinalGain <= 0, 
+        "₹0 Cr", 
+        "₹" & FORMAT(FinalGain, "0.00") & " Cr"
+    )
+
+
+
+
 Selected Product Sales Value Cr = 
 VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 
