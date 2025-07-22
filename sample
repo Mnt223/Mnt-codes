@@ -1,4 +1,24 @@
 Trigger Search Flag = 
+VAR selectedTrigger = SELECTEDVALUE(Msd_trigger[Trigger_Value])
+RETURN
+IF (
+    ISBLANK(selectedTrigger),
+    1,
+    IF (
+        CONTAINSSTRING('MSD Trigger Conversion'[Trigger_1], selectedTrigger) ||
+        CONTAINSSTRING('MSD Trigger Conversion'[Trigger_2], selectedTrigger) ||
+        CONTAINSSTRING('MSD Trigger Conversion'[Trigger_3], selectedTrigger) ||
+        CONTAINSSTRING('MSD Trigger Conversion'[Trigger_4], selectedTrigger),
+        1,
+        0
+    )
+)
+
+
+
+
+
+Trigger Search Flag = 
 VAR selectedTrigger = SELECTEDVALUE(TriggerSlicerTable[Trigger_Value])
 RETURN
 IF (
