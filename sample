@@ -1,3 +1,26 @@
+Trigger Search Flag (Measure) = 
+VAR selectedTrigger = SELECTEDVALUE(msd_trigger[Trigger Value])
+RETURN
+IF (
+    ISBLANK(selectedTrigger),
+    1,
+    IF (
+        CONTAINSSTRING(MAX('MSD Trigger Conversion'[Trigger_1]), selectedTrigger) ||
+        CONTAINSSTRING(MAX('MSD Trigger Conversion'[Trigger_2]), selectedTrigger) ||
+        CONTAINSSTRING(MAX('MSD Trigger Conversion'[Trigger_3]), selectedTrigger) ||
+        CONTAINSSTRING(MAX('MSD Trigger Conversion'[Trigger_4]), selectedTrigger),
+        1,
+        0
+    )
+)
+
+
+
+
+
+
+
+
 Trigger Search Flag = 
 VAR selectedTrigger = SELECTEDVALUE(Msd_trigger[Trigger_Value])
 RETURN
