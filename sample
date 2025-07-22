@@ -1,3 +1,31 @@
+TMD_Uplift_Impact =
+VAR ContactedSales = CALCULATE(SUM('MSD Trigger Conversion'[TMD_Sales_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 1)
+VAR NotContactedSales = CALCULATE(SUM('MSD Trigger Conversion'[TMD_Sales_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 0)
+
+VAR TotalContacted = CALCULATE(COUNTROWS('MSD Trigger Conversion'), 'MSD Trigger Conversion'[Contact_Flag] = 1)
+VAR TotalNotContacted = CALCULATE(COUNTROWS('MSD Trigger Conversion'), 'MSD Trigger Conversion'[Contact_Flag] = 0)
+
+VAR A = DIVIDE(ContactedSales, TotalContacted)
+VAR B = DIVIDE(NotContactedSales, TotalNotContacted)
+
+VAR Uplift = A - B
+
+VAR CrossSaleValue_Contacted = CALCULATE(SUM('MSD Trigger Conversion'[TMD_X_Sell_Value]), 'MSD Trigger Conversion'[Contact_Flag] = 1)
+VAR CrossSaleCount_Contacted = CALCULATE(SUM('MSD Trigger Conversion'[TMD_X_Sell_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 1)
+
+VAR AvgXsellPerCustomer = DIVIDE(CrossSaleValue_Contacted, CrossSaleCount_Contacted)
+
+VAR FinalImpact = Uplift * AvgXsellPerCustomer * TotalContacted
+
+RETURN
+FinalImpact
+
+
+
+
+
+
+
 Trigger Search Flag (Measure) = 
 VAR selectedTrigger = SELECTEDVALUE(msd_trigger[Trigger Value])
 RETURN
