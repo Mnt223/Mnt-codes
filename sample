@@ -1,3 +1,26 @@
+Formatted Product Gain =
+VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+VAR RawValue =
+    SWITCH(
+        TRUE(),
+        SelectedProduct = "TMD", [TMD Gain],
+        SelectedProduct = "INV", [Investment Gain],
+        SelectedProduct = "INS", [Insurance Gain],
+        SelectedProduct = "PIL", [PIL Gain],
+        SelectedProduct = "CARD", [CARD Gain],
+        SelectedProduct = "AIF PMS", [AIF PMS Gain]
+    )
+VAR FinalValue = IF(RawValue <= 0, 0, RawValue)
+RETURN
+    FORMAT(FinalValue, "₹#,##0.00") & " Cr"
+
+
+
+
+
+
+
+
 Selected Product Gain Cr Formatted = 
 VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 
