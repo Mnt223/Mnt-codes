@@ -1,3 +1,27 @@
+ContactRate_HTML =
+VAR curr = [Contact Rate]
+VAR prev =
+    CALCULATE(
+        [Contact Rate],
+        DATEADD('DateDim_MSD'[Date], -1, MONTH)
+    )
+VAR diff = DIVIDE(curr - prev, prev, 0)
+VAR arrow = IF(
+    diff > 0,
+    "<span style='color:green;font-size:20px'>▲</span>",
+    "<span style='color:red;font-size:20px'>▼</span>"
+)
+VAR percent = FORMAT(ABS(diff), "0.00%")
+RETURN
+"<div style='font-size:26px;font-weight:bold'>" &
+FORMAT(curr, "0.00%") & "</div>" &
+"<div style='font-size:16px'>" &
+FORMAT(prev, "0.00%") & " (" & arrow & " " & percent & ")</div>"
+
+
+
+
+
 ContactRate_KPI_Display =
 VAR curr = [ContactRate]
 VAR prev =
