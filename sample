@@ -1,3 +1,39 @@
+KPI_CostConversion_Display =
+VAR curr = 
+    CALCULATE(
+        SUM('SalesData'[CostConversion]),
+        'SalesData'[Month] = MAX('SalesData'[Month])
+    )
+
+VAR prev = 
+    CALCULATE(
+        SUM('SalesData'[CostConversion]),
+        'SalesData'[Month] = 
+            CALCULATE(
+                MAX('SalesData'[Month]),
+                FILTER(
+                    ALL('SalesData'),
+                    'SalesData'[Month] < MAX('SalesData'[Month])
+                )
+            )
+    )
+
+VAR diff = DIVIDE(curr - prev, prev, 0)
+
+VAR arrow = IF(diff > 0, "▲", IF(diff < 0, "▼", "-"))
+
+VAR percent = FORMAT(ABS(diff), "0.00%")
+
+RETURN
+"$" & FORMAT(curr, "#,##0") & UNICHAR(10) &
+"$" & FORMAT(prev, "#,##0") & " (" & arrow & " " & percent & ")"
+
+
+
+
+
+
+
 Dynamic Chart Title = 
 "Trend of " & [Selected Metric] & 
 IF(
