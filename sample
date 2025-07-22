@@ -1,3 +1,35 @@
+TMD_Uplift_Impact_Cr =
+VAR ContactedSales = CALCULATE(SUM('MSD Trigger Conversion'[TMD_Sales_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 1)
+VAR NotContactedSales = CALCULATE(SUM('MSD Trigger Conversion'[TMD_Sales_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 0)
+
+VAR TotalContacted = CALCULATE(COUNTROWS('MSD Trigger Conversion'), 'MSD Trigger Conversion'[Contact_Flag] = 1)
+VAR TotalNotContacted = CALCULATE(COUNTROWS('MSD Trigger Conversion'), 'MSD Trigger Conversion'[Contact_Flag] = 0)
+
+VAR A = DIVIDE(ContactedSales, TotalContacted)
+VAR B = DIVIDE(NotContactedSales, TotalNotContacted)
+
+VAR Uplift = A - B
+
+VAR CrossSaleValue_Contacted = CALCULATE(SUM('MSD Trigger Conversion'[TMD_X_Sell_Value]), 'MSD Trigger Conversion'[Contact_Flag] = 1)
+VAR CrossSaleCount_Contacted = CALCULATE(SUM('MSD Trigger Conversion'[TMD_X_Sell_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 1)
+
+VAR AvgXsellPerCustomer = DIVIDE(CrossSaleValue_Contacted, CrossSaleCount_Contacted)
+
+VAR FinalImpact = Uplift * AvgXsellPerCustomer * TotalContacted
+VAR FinalImpactCr = FinalImpact / 10000000
+
+RETURN
+IF(
+    FinalImpactCr > 0,
+    FORMAT(FinalImpactCr, "₹#,##0.00\ Cr"),
+    "₹0.00 Cr"
+)
+
+
+
+
+
+
 TMD_Uplift_Impact =
 VAR ContactedSales = CALCULATE(SUM('MSD Trigger Conversion'[TMD_Sales_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 1)
 VAR NotContactedSales = CALCULATE(SUM('MSD Trigger Conversion'[TMD_Sales_Count]), 'MSD Trigger Conversion'[Contact_Flag] = 0)
