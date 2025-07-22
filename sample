@@ -1,3 +1,25 @@
+Trigger Match Flag = 
+VAR selectedTrigger = SELECTEDVALUE(TriggerSlicerTable[Trigger_Value])
+RETURN
+IF (
+    ISBLANK(selectedTrigger),
+    1,  -- no filter, show all
+    IF (
+        selectedTrigger IN {
+            SELECTEDVALUE('MainData'[Trigger_1]),
+            SELECTEDVALUE('MainData'[Trigger_2]),
+            SELECTEDVALUE('MainData'[Trigger_3]),
+            SELECTEDVALUE('MainData'[Trigger_4])
+        },
+        1,
+        0
+    )
+)
+
+
+
+
+
 ContactRate_HTML =
 VAR curr = [Contact Rate]
 VAR prev =
