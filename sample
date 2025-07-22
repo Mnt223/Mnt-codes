@@ -1,3 +1,38 @@
+Selected Product Sales Value Cr = 
+VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+
+VAR RawValue =
+    SWITCH(
+        TRUE(),
+        SelectedProduct = "TMD",
+            CALCULATE(SUM('MSD Trigger Conversion'[TMD_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "INV",
+            CALCULATE(SUM('MSD Trigger Conversion'[INV_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "INS",
+            CALCULATE(SUM('MSD Trigger Conversion'[LT_GI_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "PIL",
+            CALCULATE(SUM('MSD Trigger Conversion'[PIL_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+
+        SelectedProduct = "AIF_PMS",
+            CALCULATE(
+                SUM('MSD Trigger Conversion'[AIF_PMS_SALES_VALUE]),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            ),
+
+        0
+    )
+
+VAR FinalValue = DIVIDE(RawValue, 10000000)  -- convert to ₹ Cr
+
+RETURN IF(FinalValue <= 0, 0, FinalValue)
+
+
+
+
+
 Selected Product Sales Value = 
 VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 VAR RawValue =
