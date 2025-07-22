@@ -5,6 +5,32 @@ IF (
     ISBLANK(selectedTrigger),
     1,
     IF (
+        COUNTROWS(
+            FILTER(
+                'MSD Trigger Conversion',
+                CONTAINSSTRING('MSD Trigger Conversion'[TRIGGER_1], selectedTrigger) ||
+                CONTAINSSTRING('MSD Trigger Conversion'[TRIGGER_2], selectedTrigger) ||
+                CONTAINSSTRING('MSD Trigger Conversion'[TRIGGER_3], selectedTrigger) ||
+                CONTAINSSTRING('MSD Trigger Conversion'[TRIGGER_4], selectedTrigger)
+            )
+        ) > 0,
+        1,
+        0
+    )
+)
+
+
+
+
+
+
+Trigger Search Flag = 
+VAR selectedTrigger = SELECTEDVALUE(Msd_trigger[Trigger_Value])
+RETURN
+IF (
+    ISBLANK(selectedTrigger),
+    1,
+    IF (
         CONTAINSSTRING('MSD Trigger Conversion'[Trigger_1], selectedTrigger) ||
         CONTAINSSTRING('MSD Trigger Conversion'[Trigger_2], selectedTrigger) ||
         CONTAINSSTRING('MSD Trigger Conversion'[Trigger_3], selectedTrigger) ||
