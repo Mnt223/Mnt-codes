@@ -1,3 +1,16 @@
+Product Value Title =
+VAR Product = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+RETURN Product & " Sales Value (₹ Cr)"
+
+
+Product Gain Title =
+VAR Product = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+RETURN Product & " Gain (₹ Cr)"
+
+
+
+
+
 Product Count Title =
 VAR Product = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 RETURN Product & " Sales Count"
