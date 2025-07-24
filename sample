@@ -1,3 +1,18 @@
+Hi Shantanu,
+
+In my current layout, I’m using three different text slicers. The issue I’m facing is that when I search using one slicer, it does not filter or interact with the others. This is limiting my ability to apply cross-slicer filtering.
+
+Let me know if there’s a workaround or configuration to resolve this.
+
+
+
+
+
+
+
+
+
+
 Product Value Title =
 VAR Product = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 RETURN Product & " Sales Value (₹ Cr)"
