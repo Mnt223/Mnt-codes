@@ -1,3 +1,100 @@
+import pandas as pd
+from mlxtend.preprocessing import TransactionEncoder
+from mlxtend.frequent_patterns import apriori, association_rules
+import os
+
+# --------------------------
+# Step 1: Load Data
+# --------------------------
+# Replace 'your_file.csv' with your actual filename
+df = pd.read_csv("your_file.csv", parse_dates=['date'])
+
+# --------------------------
+# Step 2: Filter Last 3 Months & Active Customers
+# --------------------------
+latest_date = df['date'].max()
+three_months_ago = latest_date - pd.DateOffset(months=3)
+df = df[df['date'] >= three_months_ago]
+
+acct_txn_counts = df.groupby('ACCT')['date'].nunique()
+valid_accts = acct_txn_counts[acct_txn_counts >= 5].index
+df = df[df['ACCT'].isin(valid_accts)]
+
+# --------------------------
+# Step 3: Create Basket per ACCT
+# --------------------------
+baskets = df.groupby('ACCT')['sector'].apply(list).tolist()
+
+# --------------------------
+# Step 4: Transaction Encoding
+# --------------------------
+te = TransactionEncoder()
+te_array = te.fit(baskets).transform(baskets)
+df_encoded = pd.DataFrame(te_array, columns=te.columns_)
+
+# --------------------------
+# Step 5: Frequent Itemsets & Rules
+# --------------------------
+frequent_items = apriori(df_encoded, min_support=0.02, use_colnames=True)
+rules = association_rules(frequent_items, metric='lift', min_threshold=1.0)
+
+rules['antecedents'] = rules['antecedents'].apply(lambda x: sorted(list(x)))
+rules['consequents'] = rules['consequents'].apply(lambda x: sorted(list(x)))
+rules['antecedents_str'] = rules['antecedents'].apply(lambda x: ', '.join(x))
+rules['consequents_str'] = rules['consequents'].apply(lambda x: ', '.join(x))
+rules['score'] = rules['lift'] * rules['confidence']
+
+# --------------------------
+# Step 6: Keep Only 1-Sector Consequents
+# --------------------------
+rules = rules[rules['consequents'].apply(lambda x: len(x) == 1)]
+
+# --------------------------
+# Step 7: Remove A↔B Duplicate Pairs (Keep Strongest Only)
+# --------------------------
+rules['rule_key'] = rules.apply(
+    lambda row: tuple(sorted([row['antecedents_str'], row['consequents_str']])),
+    axis=1
+)
+rules = rules.sort_values(by='lift', ascending=False)
+rules = rules.drop_duplicates(subset='rule_key')
+
+# --------------------------
+# Step 8: Build Tiered Rules
+# --------------------------
+top20_classic = rules.nlargest(20, 'lift').reset_index(drop=True)
+rule1 = rules[rules['antecedents'].apply(len) == 1].nlargest(20, 'lift').reset_index(drop=True)
+rule2 = rules[rules['antecedents'].apply(len) == 2].nlargest(20, 'lift').reset_index(drop=True)
+rule3 = rules[rules['antecedents'].apply(len) == 3].nlargest(20, 'lift').reset_index(drop=True)
+
+combined_rules = pd.concat([rule1, rule2, rule3], ignore_index=True)
+top20_combined = combined_rules.nlargest(20, 'lift').reset_index(drop=True)
+
+# --------------------------
+# Step 9: Save Outputs
+# --------------------------
+output_dir = "market_basket_outputs"
+os.makedirs(output_dir, exist_ok=True)
+
+rule1.to_csv(f"{output_dir}/top20_rule1_X_to_Y.csv", index=False)
+rule2.to_csv(f"{output_dir}/top20_rule2_XY_to_Z.csv", index=False)
+rule3.to_csv(f"{output_dir}/top20_rule3_XYZ_to_A.csv", index=False)
+top20_classic.to_csv(f"{output_dir}/top20_classic_rules.csv", index=False)
+top20_combined.to_csv(f"{output_dir}/top20_combined_rules.csv", index=False)
+
+print("✅ Final outputs saved in folder: market_basket_outputs")
+
+
+
+
+
+
+
+
+
+
+
+
 rules = association_rules(frequent_items, metric='lift', min_threshold=1.0)
 
 # ✅ Keep only 1-item consequents
