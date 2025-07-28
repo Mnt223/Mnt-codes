@@ -4,6 +4,111 @@ from mlxtend.frequent_patterns import apriori, association_rules
 from pyvis.network import Network
 import os
 
+# ---------------------------
+# Step 1: Load Your Data
+# ---------------------------
+# The dataset must contain: Customer_ID, Transaction_Date, Sector_Level
+df = pd.read_csv("your_file.csv", parse_dates=['Transaction_Date'])
+
+# ---------------------------
+# Step 2: Filter Data
+# ---------------------------
+
+# Keep only last 3 months of data
+latest_date = df['Transaction_Date'].max()
+cutoff_date = latest_date - pd.DateOffset(months=3)
+df = df[df['Transaction_Date'] >= cutoff_date]
+
+# Keep only customers with ≥ 5 transactions
+cust_txn_counts = df.groupby('Customer_ID')['Transaction_Date'].nunique()
+valid_customers = cust_txn_counts[cust_txn_counts >= 5].index
+df = df[df['Customer_ID'].isin(valid_customers)]
+
+# ---------------------------
+# Step 3: Create Basket per Customer
+# ---------------------------
+basket_data = df.groupby('Customer_ID')['Sector_Level'].apply(list).tolist()
+
+# ---------------------------
+# Step 4: One-Hot Encode Transactions
+# ---------------------------
+te = TransactionEncoder()
+te_data = te.fit(basket_data).transform(basket_data)
+df_encoded = pd.DataFrame(te_data, columns=te.columns_)
+
+# ---------------------------
+# Step 5: Generate Frequent Itemsets and Rules
+# ---------------------------
+frequent_items = apriori(df_encoded, min_support=0.01, use_colnames=True)
+rules = association_rules(frequent_items, metric='lift', min_threshold=1.0)
+
+# Prepare rule strings for filtering and visualization
+rules['antecedents'] = rules['antecedents'].apply(lambda x: sorted(list(x)))
+rules['consequents'] = rules['consequents'].apply(lambda x: sorted(list(x)))
+rules['antecedents_str'] = rules['antecedents'].apply(lambda x: ', '.join(x))
+rules['consequents_str'] = rules['consequents'].apply(lambda x: ', '.join(x))
+rules['score'] = rules['lift'] * rules['confidence']
+
+# ---------------------------
+# Step 6: Extract 3 Rule Levels
+# ---------------------------
+
+# Rule 1: If X ➝ Y
+rule1 = rules[rules['antecedents'].apply(len) == 1].nlargest(20, 'lift').reset_index(drop=True)
+
+# Rule 2: If X & Y ➝ Z
+rule2 = rules[rules['antecedents'].apply(len) == 2].nlargest(20, 'lift').reset_index(drop=True)
+
+# Rule 3: If X, Y & Z ➝ A
+rule3 = rules[rules['antecedents'].apply(len) == 3].nlargest(20, 'lift').reset_index(drop=True)
+
+# ---------------------------
+# Step 7: Export Rules to CSV
+# ---------------------------
+rule1.to_csv("top20_rule1_X_to_Y.csv", index=False)
+rule2.to_csv("top20_rule2_XY_to_Z.csv", index=False)
+rule3.to_csv("top20_rule3_XYZ_to_A.csv", index=False)
+
+# ---------------------------
+# Step 8: PyVis Network Visualization
+# ---------------------------
+def create_pyvis_graph(rule_df, output_file):
+    g = Network(height="600px", width="100%", notebook=False, directed=True)
+    for _, row in rule_df.iterrows():
+        ant = row['antecedents_str']
+        con = row['consequents_str']
+        g.add_node(ant, label=ant)
+        g.add_node(con, label=con)
+        g.add_edge(ant, con, title=f"Confidence: {row['confidence']:.2f} | Lift: {row['lift']:.2f}")
+    g.show(output_file)
+
+# Create and save interactive network graphs
+create_pyvis_graph(rule1, "rule1_X_to_Y.html")
+create_pyvis_graph(rule2, "rule2_XY_to_Z.html")
+create_pyvis_graph(rule3, "rule3_XYZ_to_A.html")
+
+print("✅ Market Basket Analysis completed successfully.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from mlxtend.preprocessing import TransactionEncoder
+from mlxtend.frequent_patterns import apriori, association_rules
+from pyvis.network import Network
+import os
+
 # -----------------------
 # Step 1: Load Data
 # -----------------------
