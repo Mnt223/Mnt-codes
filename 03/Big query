@@ -2,6 +2,33 @@ RM_Map =
 SELECTCOLUMNS (
     FILTER (
         ADDCOLUMNS (
+            INTERSECT (
+                VALUES(Planner[People_Soft_ID]),
+                VALUES('Base File'[People_Soft_ID])
+            ),
+            "Planner_Name", 
+                COALESCE(
+                    CALCULATE(
+                        MAX(Planner[Planner_Name])
+                    ),
+                    "Unassigned"
+                )
+        ),
+        NOT ISBLANK([People_Soft_ID])
+    ),
+    "People_Soft_ID", [People_Soft_ID],
+    "Planner_Name", [Planner_Name]
+)
+
+
+
+
+
+
+RM_Map =
+SELECTCOLUMNS (
+    FILTER (
+        ADDCOLUMNS (
             VALUES(Planner[People_Soft_ID]),
             "Planner_Name", CALCULATE(
                 MAX(Planner[Planner_Name])
