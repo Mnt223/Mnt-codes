@@ -1,3 +1,17 @@
+EVALUATE
+FILTER (
+    ADDCOLUMNS (
+        BaseTable,
+        "Matched RM", RELATED(Planner[RM_Name])
+    ),
+    ISBLANK ( [Matched RM] )
+        && BaseTable[Group] = "DBMI_BAS"
+)
+
+
+
+
+
 Casa Grow Final :=
 IF(
     ISINSCOPE(Planner[RM_Name]),
