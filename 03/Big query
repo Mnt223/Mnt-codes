@@ -1,3 +1,38 @@
+Planner_Clean =
+SUMMARIZE(
+    Planner,
+    Planner[People_Soft_ID],
+    "Planner_Name", MAX(Planner[Planner_Name])  // Or use FIRSTNONBLANK(...)
+)
+
+RM_Map_Master :=
+SELECTCOLUMNS (
+    FILTER (
+        ADDCOLUMNS (
+            DISTINCT (
+                UNION (
+                    SELECTCOLUMNS('Base File', "People_Soft_ID", 'Base File'[People_Soft_ID]),
+                    SELECTCOLUMNS(Planner_Clean, "People_Soft_ID", Planner_Clean[People_Soft_ID])
+                )
+            ),
+            "Planner_Name",
+                COALESCE(
+                    LOOKUPVALUE(
+                        Planner_Clean[Planner_Name],
+                        Planner_Clean[People_Soft_ID], [People_Soft_ID]
+                    ),
+                    "Unassigned"
+                )
+        ),
+        NOT ISBLANK([People_Soft_ID])
+    ),
+    "People_Soft_ID", [People_Soft_ID],
+    "Planner_Name", [Planner_Name]
+)
+
+
+
+
 RM_Map_Master :=
 SELECTCOLUMNS (
     FILTER (
