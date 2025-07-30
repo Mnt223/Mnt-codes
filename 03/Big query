@@ -1,4 +1,28 @@
 Has Unmatched RM :=
+VAR CountUnmatched =
+    CALCULATE(
+        COUNTROWS(BaseTable),
+        FILTER(
+            BaseTable,
+            BaseTable[Group] = "DBMI_BAS"
+                && ISBLANK(RELATED(Planner[RM_Name]))
+        )
+    )
+RETURN
+    IF(
+        CountUnmatched > 0,
+        "❌ Issue: Unmatched RM Exists",
+        "✅ Clean"
+    )
+
+
+
+
+
+
+
+
+Has Unmatched RM :=
 IF(
     CALCULATE(
         COUNTROWS(BaseTable),
