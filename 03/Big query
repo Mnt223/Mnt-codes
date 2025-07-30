@@ -1,3 +1,16 @@
+RM_Map =
+ADDCOLUMNS(
+    SUMMARIZE(Planner, Planner[People_Soft_ID]),
+    "Planner_Name",
+    COALESCE(MAX(Planner[Planner_Name]), "Unassigned")
+)
+
+
+
+
+
+
+
 Casa Open (Universal) :=
 VAR IsRowLevel = ISINSCOPE(Planner[Planner_Name])
 RETURN
