@@ -1,3 +1,52 @@
+Group = 
+SWITCH(TRUE(),
+    -- DBMI_RM group
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"FRM","PPRM","SPRM","PRMCSUITE","EPRM","GPRM"}, "DBMI_RM",
+
+    -- DBMI_GPB_RM
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"TOP_TIER_RM","GPB_RM"}, "DBMI_GPB_RM",
+
+    -- RM_OT
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"RM-OT"}, "DBMI_OT_RM",
+
+    -- DBS_RM
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"DBS_RM"}, "DBMI_DBS_RM",
+
+    -- PFC
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"PFC"}, "DBMI_PFC_RM",
+
+    -- RBB_RM
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"RBB_RM"}, "DBMI_RBB_RM",
+
+    -- BAS_TG etc.
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"INS","BAS","REGIONALSUPPORT","BAS_LG","BAS_TG","BAS_GPB"}, "DBMI_BAS",
+
+    -- DBMI_SM
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"MANAGERBAS","REGIONALMANAGERBAS","BSM"}, "DBMI_SM",
+
+    -- DBMI_GPB_RH
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"TOPTIERREGIONALHEAD","GBREGIONALHEAD"}, "DBMI_GPB_RH",
+
+    -- DBMI_PSM
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"PSE","UB","JR_UB","SR_UB","SPE2","PSM","PSM1","TOP_TIER_PSM","MIHY","GPB_PSM"}, "DBMI_PSM",
+
+    -- DBMI_CSM
+    COMPRESS(UPPER('YourTable'[ROLE])) IN {"CSM","CSM_PSM","CSM_PSE","CSM_UB","UB_LEADER"}, "DBMI_CSM",
+
+    -- DBMI_DBM
+    COMPRESS(UPPER('YourTable'[ROLE])) = "DBM", "DBMI_DBM",
+
+    -- Default case
+    "None"
+)
+
+
+
+
+
+
+
+
 Total Sales Last 6 Months =
 CALCULATE(
     SUM('SalesData'[SalesAmount]),
