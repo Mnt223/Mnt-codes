@@ -1,3 +1,17 @@
+Casa Open (Universal) :=
+VAR IsRowLevel = ISINSCOPE(Planner[Planner_Name])
+RETURN
+    IF(
+        IsRowLevel,
+        SUM('Base File'[casa_open]),
+        SUMX(
+            VALUES(Planner[Planner_Name]),
+            CALCULATE(SUM('Base File'[casa_open]))
+        )
+    )
+
+
+
 Casa Grow (Safe) :=
 VAR IsRowLevel = ISINSCOPE(Planner[Planner_Name])
 VAR GroupSelected = SELECTEDVALUE('Base File'[Group])
