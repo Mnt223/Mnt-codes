@@ -1,3 +1,38 @@
+Casa Grow (Safe) :=
+VAR IsRowLevel = ISINSCOPE(Planner[Planner_Name])
+VAR GroupSelected = SELECTEDVALUE('Base File'[Group])
+VAR UseSafeMode = 
+    GroupSelected = "DBMI_BAS"
+        && CALCULATE(
+            COUNTROWS('Base File'),
+            FILTER(
+                'Base File',
+                ISBLANK(
+                    LOOKUPVALUE(
+                        Planner[Planner_Name],
+                        Planner[People_Soft_ID], 'Base File'[People_Soft_ID]
+                    )
+                )
+            )
+        ) > 0
+
+RETURN
+    SWITCH(
+        TRUE(),
+        IsRowLevel, SUM('Base File'[casa_grow]),  -- Row values
+        UseSafeMode, SUMX(VALUES(Planner[Planner_Name]), CALCULATE(SUM('Base File'[casa_grow]))),  -- Total fix
+        SUM('Base File'[casa_grow])  -- Default for all other cases
+    )
+
+
+
+
+
+
+
+
+
+
 Has Unmatched RM :=
 VAR CountUnmatched =
     CALCULATE(
