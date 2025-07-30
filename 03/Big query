@@ -1,3 +1,32 @@
+RM_Map_Master :=
+VAR All_IDs =
+    UNION(
+        SELECTCOLUMNS('Base File', "People_Soft_ID", 'Base File'[People_Soft_ID]),
+        SELECTCOLUMNS(Planner, "People_Soft_ID", Planner[People_Soft_ID])
+    )
+
+RETURN
+SELECTCOLUMNS(
+    ADDCOLUMNS(
+        DISTINCT(All_IDs),
+        "Planner_Name",
+            COALESCE(
+                CALCULATE(
+                    MAX(Planner[Planner_Name])
+                ),
+                "Unassigned"
+            )
+    ),
+    "People_Soft_ID", [People_Soft_ID],
+    "Planner_Name", [Planner_Name]
+)
+
+
+
+
+
+
+
 RM_Map =
 SELECTCOLUMNS (
     FILTER (
