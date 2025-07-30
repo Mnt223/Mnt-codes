@@ -1,3 +1,16 @@
+Casa Grow Final :=
+IF(
+    ISINSCOPE(Planner[RM_Name]),
+    SUM(BaseTable[casa_grow]),
+    SUMX(
+        VALUES(Planner[RM_Name]),
+        CALCULATE(SUM(BaseTable[casa_grow]))
+    )
+)
+
+
+
+
 import pandas as pd
 from mlxtend.frequent_patterns import apriori, association_rules
 
