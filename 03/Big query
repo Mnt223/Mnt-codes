@@ -1,3 +1,72 @@
+import pandas as pd
+from mlxtend.frequent_patterns import apriori, association_rules
+
+# Step 1: Load data
+df = pd.read_csv("your_file.csv")  # Replace with actual path
+df['Date'] = pd.to_datetime(df['Date'])
+
+# Step 2: Filter last 3 months
+end_date = df['Date'].max()
+start_date = end_date - pd.DateOffset(months=3)
+df_recent = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
+
+# Step 3: Filter accounts with at least 5 transactions
+txn_count = df_recent.groupby('ACCT')['Sector'].count()
+valid_accts = txn_count[txn_count >= 5].index
+df_recent = df_recent[df_recent['ACCT'].isin(valid_accts)]
+
+# Step 4: Create basket
+basket = df_recent.groupby(['ACCT', 'Sector'])['Date'].count().unstack().fillna(0)
+basket = basket.applymap(lambda x: 1 if x > 0 else 0)
+
+# Step 5: Apriori itemsets
+frequent_items = apriori(basket, min_support=0.001, use_colnames=True)
+
+# Step 6: Generate all rules
+rules_all = association_rules(frequent_items, metric="lift", min_threshold=1.0)
+
+# Step 7: Filter for only target consequents
+target_consequents = {'Entertainment', 'Travel', 'Shopping', 'Groceries'}
+rules_targeted = rules_all[rules_all['consequents'].apply(
+    lambda x: len(x) == 1 and list(x)[0] in target_consequents
+)].copy()
+
+# Step 8: Add antecedent length
+rules_targeted['antecedent_len'] = rules_targeted['antecedents'].apply(lambda x: len(x))
+
+# Step 9: Create 3 rule levels
+rules_1 = rules_targeted[rules_targeted['antecedent_len'] == 1].sort_values(by='lift', ascending=False).head(20)
+rules_2 = rules_targeted[rules_targeted['antecedent_len'] == 2].sort_values(by='lift', ascending=False).head(20)
+rules_3 = rules_targeted[rules_targeted['antecedent_len'] == 3].sort_values(by='lift', ascending=False).head(20)
+
+# Step 10: Combine Top 20 from all 3 into 1 list and sort by lift
+rules_combined = pd.concat([rules_1, rules_2, rules_3])
+rules_overall_top20 = rules_combined.sort_values(by='lift', ascending=False).head(20)
+
+# Step 11: Clean string formatting
+for df in [rules_1, rules_2, rules_3, rules_overall_top20, rules_all]:
+    df['antecedents'] = df['antecedents'].apply(lambda x: ', '.join(sorted(x)))
+    df['consequents'] = df['consequents'].apply(lambda x: ', '.join(sorted(x)))
+
+# Step 12: Export all to Excel
+with pd.ExcelWriter("final_mba_rules_all_5_outputs.xlsx") as writer:
+    rules_1[['antecedents', 'consequents', 'support', 'confidence', 'lift']].to_excel(writer, sheet_name="Rule_1_X_to_Y", index=False)
+    rules_2[['antecedents', 'consequents', 'support', 'confidence', 'lift']].to_excel(writer, sheet_name="Rule_2_XY_to_Z", index=False)
+    rules_3[['antecedents', 'consequents', 'support', 'confidence', 'lift']].to_excel(writer, sheet_name="Rule_3_XYZ_to_A", index=False)
+    rules_all[['antecedents', 'consequents', 'support', 'confidence', 'lift']].to_excel(writer, sheet_name="Normal_MBA_All", index=False)
+    rules_overall_top20[['antecedents', 'consequents', 'support', 'confidence', 'lift']].to_excel(writer, sheet_name="Overall_Top20_Rules", index=False)
+
+
+
+
+
+
+
+
+
+
+
+
 # Merge with spend summary
 sector_spend = df.groupby('sector')['amount'].sum().reset_index()
 
