@@ -1,3 +1,34 @@
+Subject: Urgent: Incomplete TID Mapping for Palladium Mall Campaign
+
+Hi [Recipient’s Name],
+
+We’ve observed a critical issue regarding the Palladium Mall campaign. While validating recent customer transactions, we identified that a spend at Superdry (Palladium) was considered eligible for the offer. However, the TID (Terminal ID) associated with this transaction does not match any of the TIDs currently shared with us for Palladium Mall outlets.
+
+This raises a concern that we might not have the complete list of TIDs associated with outlets participating in the campaign. If any eligible TIDs are missing, it could result in:
+	•	Incorrect exclusion of valid customer spends,
+	•	Inaccurate offer qualification, and
+	•	Potential customer dissatisfaction and escalations.
+
+Request you to please urgently re-verify and share the full and final list of TIDs for all outlets in Palladium Mall that are covered under this campaign. If not already done, please ensure the list includes every terminal in use, especially for high-footfall brands like Superdry.
+
+Looking forward to your immediate response, as this may impact ongoing campaign execution and offer fulfillment.
+
+Best regards,
+[Your Name]
+[Your Designation]
+
+
+
+
+
+
+
+
+
+
+
+
+
 Planner_Clean =
 SUMMARIZE(
     Planner,
