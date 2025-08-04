@@ -1,3 +1,126 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Load and prepare data
+df = pd.read_csv("recomtrain_test_data.csv")
+df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+df.dropna(subset=['Date'], inplace=True)
+df['ACCT'] = df['ACCT'].astype(str)
+
+split_date = pd.to_datetime("2024-12-31")
+test_end_date = pd.to_datetime("2025-03-31")
+train_df = df[df['Date'] < split_date]
+test_df = df[(df['Date'] >= split_date) & (df['Date'] <= test_end_date)]
+sectors = sorted(df['Sector'].unique())
+
+# Create amount and frequency matrices
+def build_amount_freq(df, sectors):
+    amt = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    freq = df.groupby(['ACCT', 'Sector']).size().unstack(fill_value=0)
+    return amt.reindex(columns=sectors, fill_value=0), freq.reindex(columns=sectors, fill_value=0)
+
+# Normalize + calculate variance-based weights
+def get_weighted_matrix(amt, freq):
+    scaler = MinMaxScaler()
+    amt_norm = pd.DataFrame(scaler.fit_transform(amt), index=amt.index, columns=amt.columns)
+    freq_norm = pd.DataFrame(scaler.fit_transform(freq), index=freq.index, columns=freq.columns)
+
+    amt_var = amt_norm.var(axis=1).mean()
+    freq_var = freq_norm.var(axis=1).mean()
+    total = amt_var + freq_var
+    amt_wt = freq_var / total
+    freq_wt = amt_var / total
+
+    combined = amt_wt * amt_norm + freq_wt * freq_norm
+    return combined, amt_wt, freq_wt, amt_var, freq_var
+
+# One-hot encoding
+def get_hot_encoding(df, sectors):
+    binary = df.groupby(['ACCT', 'Sector']).size().unstack(fill_value=0)
+    binary[binary > 0] = 1
+    return binary.reindex(columns=sectors, fill_value=0).reset_index()
+
+# Recommendation ranks
+def get_recommendations(matrix, similarity):
+    norm = pd.DataFrame(MinMaxScaler().fit_transform(matrix), index=matrix.index, columns=matrix.columns)
+    scores = norm.dot(similarity)
+    return scores.rank(axis=1, method='min', ascending=False).astype(int).reset_index()
+
+# Sector-wise rank vs test-hot summary
+def get_sector_summary(test_recom, test_hot, train_hot, sectors):
+    summary = {}
+    for s in sectors:
+        temp = test_recom[['ACCT', s]].rename(columns={s: 'Rank'})
+        temp = temp.merge(test_hot[['ACCT', s]].rename(columns={s: 'Used_in_Test'}), on='ACCT')
+        temp = temp.merge(train_hot[['ACCT', s]].rename(columns={s: 'Used_in_Train'}), on='ACCT')
+        pivot = pd.pivot_table(temp, index='Rank', columns='Used_in_Test', values='ACCT', aggfunc='count', fill_value=0).reset_index()
+        summary[s] = pivot
+    return summary
+
+# Build matrices
+train_amt, train_freq = build_amount_freq(train_df, sectors)
+test_amt, test_freq = build_amount_freq(test_df, sectors)
+
+train_matrix, train_amt_wt, train_freq_wt, train_amt_var, train_freq_var = get_weighted_matrix(train_amt, train_freq)
+test_matrix, *_ = get_weighted_matrix(test_amt, test_freq)
+
+# Similarity & encodings
+sector_sim = pd.DataFrame(cosine_similarity(train_matrix.T), index=sectors, columns=sectors)
+train_hot = get_hot_encoding(train_df, sectors)
+test_hot = get_hot_encoding(test_df, sectors)
+
+# Recommendations
+train_recom = get_recommendations(train_matrix, sector_sim)
+test_recom = get_recommendations(test_matrix, sector_sim)
+
+# Summary sheets
+summary_tables = get_sector_summary(test_recom, test_hot, train_hot, sectors)
+
+# Export
+with pd.ExcelWriter("Recommender_Output.xlsx", engine="xlsxwriter") as writer:
+    train_recom.to_excel(writer, sheet_name="Train_Recommendations", index=False)
+    test_recom.to_excel(writer, sheet_name="Test_Recommendations", index=False)
+    train_hot.to_excel(writer, sheet_name="Train_Hot_Encoding", index=False)
+    test_hot.to_excel(writer, sheet_name="Test_Hot_Encoding", index=False)
+
+    pd.DataFrame({
+        'Metric': ['Mean Variance (Amount)', 'Mean Variance (Frequency)', 'Weight (Amount)', 'Weight (Frequency)'],
+        'Value': [train_amt_var, train_freq_var, train_amt_wt, train_freq_wt]
+    }).to_excel(writer, sheet_name="Weight_Summary", index=False)
+
+    for s, tbl in summary_tables.items():
+        tbl.to_excel(writer, sheet_name=s[:31], index=False)
+
+print("✅ All outputs written to 'Recommender_Output.xlsx'")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Subject: Urgent: Incomplete TID Mapping for Palladium Mall Campaign
 
 Hi [Recipient’s Name],
