@@ -3,6 +3,133 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
 
+# ---------------------------
+# 1. Load and preprocess
+# ---------------------------
+df = pd.read_csv("recomtrain_test_data.csv")
+df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+df.dropna(subset=['Date'], inplace=True)
+df['ACCT'] = df['ACCT'].astype(str)
+
+split_date = pd.to_datetime("2024-12-31")
+test_end_date = pd.to_datetime("2025-03-31")
+train_df = df[df['Date'] < split_date]
+test_df = df[(df['Date'] >= split_date) & (df['Date'] <= test_end_date)]
+sectors = sorted(df['Sector'].unique())
+
+# ---------------------------
+# 2. Amount + Frequency Matrix
+# ---------------------------
+def build_amount_freq(df, sectors):
+    amt = df.pivot_table(index='ACCT', columns='Sector', values='TRAN_AMT', aggfunc='sum', fill_value=0)
+    freq = df.groupby(['ACCT', 'Sector']).size().unstack(fill_value=0)
+    return amt.reindex(columns=sectors, fill_value=0), freq.reindex(columns=sectors, fill_value=0)
+
+def get_weighted_matrix(amt, freq):
+    scaler = MinMaxScaler()
+    amt_norm = pd.DataFrame(scaler.fit_transform(amt), index=amt.index, columns=amt.columns)
+    freq_norm = pd.DataFrame(scaler.fit_transform(freq), index=freq.index, columns=freq.columns)
+    amt_var = amt_norm.var(axis=1).mean()
+    freq_var = freq_norm.var(axis=1).mean()
+    total = amt_var + freq_var
+    amt_wt = freq_var / total
+    freq_wt = amt_var / total
+    combined = amt_wt * amt_norm + freq_wt * freq_norm
+    return combined, amt_wt, freq_wt, amt_var, freq_var
+
+# ---------------------------
+# 3. Hot Encoding
+# ---------------------------
+def get_hot_encoding(df, sectors, suffix):
+    binary = df.groupby(['ACCT', 'Sector']).size().unstack(fill_value=0)
+    binary[binary > 0] = 1
+    binary = binary.reindex(columns=sectors, fill_value=0).reset_index()
+    binary.columns = ['ACCT'] + [f"{col}_{suffix}" for col in binary.columns if col != 'ACCT']
+    return binary
+
+# ---------------------------
+# 4. Recommendation
+# ---------------------------
+def get_recommendations(matrix, similarity):
+    norm = pd.DataFrame(MinMaxScaler().fit_transform(matrix), index=matrix.index, columns=matrix.columns)
+    scores = norm.dot(similarity)
+    return scores.rank(axis=1, method='min', ascending=False).astype(int).reset_index()
+
+# ---------------------------
+# 5. Main Logic
+# ---------------------------
+train_amt, train_freq = build_amount_freq(train_df, sectors)
+test_amt, test_freq = build_amount_freq(test_df, sectors)
+train_matrix, train_amt_wt, train_freq_wt, train_amt_var, train_freq_var = get_weighted_matrix(train_amt, train_freq)
+test_matrix, *_ = get_weighted_matrix(test_amt, test_freq)
+
+sector_sim = pd.DataFrame(cosine_similarity(train_matrix.T), index=sectors, columns=sectors)
+
+train_hot = get_hot_encoding(train_df, sectors, "train")
+test_hot = get_hot_encoding(test_df, sectors, "test")
+
+train_recom = get_recommendations(train_matrix, sector_sim)
+test_recom = get_recommendations(test_matrix, sector_sim)
+
+# ---------------------------
+# 6. Merge Recommendations + Hot Encoding
+# ---------------------------
+train_combined = train_recom.merge(train_hot, on='ACCT', how='left').merge(test_hot, on='ACCT', how='left')
+test_combined = test_recom.merge(test_hot, on='ACCT', how='left').merge(train_hot, on='ACCT', how='left')
+
+# ---------------------------
+# 7. Weight Summary
+# ---------------------------
+weight_summary = pd.DataFrame({
+    'Metric': ['Mean Variance (Amount)', 'Mean Variance (Frequency)', 'Weight (Amount)', 'Weight (Frequency)'],
+    'Value': [train_amt_var, train_freq_var, train_amt_wt, train_freq_wt]
+})
+
+# ---------------------------
+# 8. Export to Excel
+# ---------------------------
+output_path = "Recommender_Output_Final.xlsx"
+
+with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
+    train_recom.to_excel(writer, sheet_name="Train_Recommendations", index=False)
+    test_recom.to_excel(writer, sheet_name="Test_Recommendations", index=False)
+    train_hot.to_excel(writer, sheet_name="Train_Hot_Encoding", index=False)
+    test_hot.to_excel(writer, sheet_name="Test_Hot_Encoding", index=False)
+    train_combined.to_excel(writer, sheet_name="Train_Combined", index=False)
+    test_combined.to_excel(writer, sheet_name="Test_Combined", index=False)
+    weight_summary.to_excel(writer, sheet_name="Weight_Summary", index=False)
+
+print(f"✅ File saved at: {output_path}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
 # Load and prepare data
 df = pd.read_csv("recomtrain_test_data.csv")
 df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
