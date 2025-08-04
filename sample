@@ -1,3 +1,15 @@
+Hi Pavneet,
+
+There are two RMS requests raised under two different IDs — one with the joint ID and the other with the sole ID.
+Due to the joint ID, the system is resolving it to the primary holder, which is why the survey appears to have been triggered twice.
+This occurred because the RMS was raised separately for both IDs.
+
+
+
+
+
+
+
 Group = 
 SWITCH(TRUE(),
     -- DBMI_RM group
