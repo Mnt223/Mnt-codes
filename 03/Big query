@@ -1,3 +1,30 @@
+%macro stack_cube_data;
+    data all_cubes;
+        set
+        %let months = jan24 feb24 mar24 apr24 may24 jun24 
+                     jul24 aug24 sep24 oct24 nov24 dec24;
+
+        %do i = 1 %to %sysfunc(countw(&months));
+            %let m = %scan(&months, &i);
+            cube.cust_cube_&m._data (rename=(pil_revenue_&m=pil_revenue))
+        %end;
+        ;
+        month = lowcase(put(input(scan(vname(pil_revenue), -1, '_'), monyy5.), monyy5.));
+        keep cusid final_cus_segment pil_revenue month;
+    run;
+%mend;
+
+%stack_cube_data;
+
+
+
+
+
+
+
+
+
+
 /* === 1. Setup Month List === */
 %let months = jan24 feb24 mar24 apr24 may24 jun24 
               jul24 aug24 sep24 oct24 nov24 dec24;
