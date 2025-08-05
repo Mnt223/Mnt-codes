@@ -1,3 +1,91 @@
+/* === 1. Setup Month List === */
+%let months = jan24 feb24 mar24 apr24 may24 jun24 
+              jul24 aug24 sep24 oct24 nov24 dec24;
+
+/* === 2. Prepare PIL Data from work.pil_master === */
+data pil;
+    set pil_master;
+    account_open_date = input(account_open_date, date9.);
+    format account_open_date date9.;
+    account_open_month = lowcase(put(account_open_date, monyy5.));       /* e.g. jan24 */
+    month_before_open_date = intnx('month', account_open_date, -1, 'same');
+    month_before_open = lowcase(put(month_before_open_date, monyy5.));   /* e.g. dec23 */
+run;
+
+/* === 3. Stack Cube Data from libref CUBE === */
+data all_cubes;
+    set
+    %do i = 1 %to %sysfunc(countw(&months));
+        %let m = %scan(&months, &i);
+        cube.cust_cube_&m._data (in=a rename=(pil_revenue_&m=pil_revenue))
+    %end;
+    ;
+    month = lowcase(scan(vname(pil_revenue), -1, '_'));  /* or just "&m" if static */
+    keep cusid final_cus_segment pil_revenue month;
+run;
+
+/* === 4. Merge segment from month before account open === */
+proc sql;
+    create table pil_seg as
+    select a.*, b.final_cus_segment as segment_before_open
+    from pil a
+    left join all_cubes b
+    on a.custid = b.cusid and a.month_before_open = b.month;
+quit;
+
+/* === 5. Add Month Rank for PIL and CUBE months === */
+data pil_seg;
+    set pil_seg;
+    open_rank = input(account_open_month, monyy5.);
+    format open_rank monyy5.;
+run;
+
+data cubes_rank;
+    set all_cubes;
+    month_rank = input(month, monyy5.);
+    format month_rank monyy5.;
+run;
+
+/* === 6. Join and Filter Revenue from Open Month to Dec-2024 === */
+proc sql;
+    create table revenue_joined as
+    select a.custid, b.pil_revenue
+    from pil_seg a
+    inner join cubes_rank b
+    on a.custid = b.cusid and b.month_rank >= a.open_rank;
+quit;
+
+proc sql;
+    create table revenue_sum as
+    select custid, sum(pil_revenue) as pil_revenue_from_open_to_dec
+    from revenue_joined
+    group by custid;
+quit;
+
+/* === 7. Final Merge to Get Segment and Revenue === */
+proc sql;
+    create table final_output as
+    select a.custid, a.segment_before_open, b.pil_revenue_from_open_to_dec
+    from pil_seg a
+    left join revenue_sum b
+    on a.custid = b.custid;
+quit;
+
+/* === 8. Export if Needed === */
+proc export data=final_output
+    outfile="/your/export/path/final_pil_segment_summary.csv"
+    dbms=csv
+    replace;
+run;
+
+
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
