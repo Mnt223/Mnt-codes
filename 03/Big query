@@ -1,4 +1,55 @@
 %macro stack_cube_data;
+
+    /* Define mapping of dataset name month to revenue suffix (MMYY) */
+    %let n = 12;
+    %let dsname1 = jan24; %let revcode1 = 0124;
+    %let dsname2 = feb24; %let revcode2 = 0224;
+    %let dsname3 = mar24; %let revcode3 = 0324;
+    %let dsname4 = apr24; %let revcode4 = 0424;
+    %let dsname5 = may24; %let revcode5 = 0524;
+    %let dsname6 = jun24; %let revcode6 = 0624;
+    %let dsname7 = jul24; %let revcode7 = 0724;
+    %let dsname8 = aug24; %let revcode8 = 0824;
+    %let dsname9 = sep24; %let revcode9 = 0924;
+    %let dsname10 = oct24; %let revcode10 = 1024;
+    %let dsname11 = nov24; %let revcode11 = 1124;
+    %let dsname12 = dec24; %let revcode12 = 1224;
+
+    data all_cubes;
+        length month $6;
+        set
+        %do i = 1 %to &n;
+            %let dsn = &&dsname&i;
+            %let rev = &&revcode&i;
+            cube.cust_cube_&dsn._data (in=in_&i rename=(pil_revenue_&rev=pil_revenue))
+        %end;
+        ;
+
+        /* Assign correct month label based on dataset */
+        %do i = 1 %to &n;
+            if in_&i then month = "&&dsname&i";
+        %end;
+
+        keep cusid final_cus_segment pil_revenue month;
+    run;
+
+%mend;
+
+%stack_cube_data;
+
+
+
+
+
+
+
+
+
+
+
+
+
+%macro stack_cube_data;
     data all_cubes;
         set
         %let months = jan24 feb24 mar24 apr24 may24 jun24 
