@@ -1,3 +1,36 @@
+Leads Generated =
+CALCULATE(
+    COUNT('MSD Trigger Conversion'[GA_CUST_ID]),
+
+    // Apply Trigger Name selected in slicer
+    TREATAS(
+        VALUES('Trigger Slicer Table'[Trigger Name]),
+        'MSD Trigger Conversion'[Trigger Name]
+    ),
+
+    // Apply Trigger_display flag
+    TREATAS(
+        VALUES('Trigger Slicer Table'[Trigger_display]),
+        'MSD Trigger Conversion'[Trigger_display]
+    ),
+
+    // Apply PROD_display flag
+    TREATAS(
+        VALUES('Trigger Slicer Table'[PROD_display]),
+        'MSD Trigger Conversion'[PROD_display]
+    ),
+
+    // Apply OBJ_display flag
+    TREATAS(
+        VALUES('Trigger Slicer Table'[OBJ_display]),
+        'MSD Trigger Conversion'[OBJ_display]
+    )
+)
+
+
+
+
+
 
 Leads Generated =
 CALCULATE(
