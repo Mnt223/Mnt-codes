@@ -1,3 +1,133 @@
+Sub CreateFinalPivotTables()
+
+    Dim wsData As Worksheet, wsPivot As Worksheet
+    Dim i As Integer, startRow As Long
+    Dim baseVars As Variant, varName As String
+    Dim pc As PivotCache, pt As PivotTable
+    Dim dataRange As Range
+    Dim colCheck As Boolean
+
+    ' ✅ Speed & memory optimization
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+
+    ' Set source sheet
+    Set wsData = ThisWorkbook.Sheets("RawData")
+
+    ' Clear/create pivot sheet
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    Worksheets("All_Pivots").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
+    Set wsPivot = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+    wsPivot.Name = "All_Pivots"
+
+    ' Full fixed range (A1:AH644743)
+    Set dataRange = wsData.Range("A1:AH644743")
+
+    ' ✅ Extracted base variables from columns B to L
+    baseVars = Array("Entertainment", "Groceries", "Medical", "Other_Regular", "Persona_Finances", _
+                     "Restaurant", "Shopping", "Transportation", "Travel", "Utility_prim", "Utility_sec")
+
+    startRow = 1
+
+    ' Loop over each base variable
+    For i = LBound(baseVars) To UBound(baseVars)
+        varName = baseVars(i)
+
+        colCheck = ColumnExists(wsData, varName) And _
+                   ColumnExists(wsData, varName & "_test") And _
+                   ColumnExists(wsData, varName & "_train") And _
+                   ColumnExists(wsData, "ACCT")
+
+        If Not colCheck Then
+            wsPivot.Cells(startRow, 1).Value = "❌ Skipped: " & varName & " – Missing column(s)"
+            startRow = startRow + 2
+            GoTo NextLoop
+        End If
+
+        ' Create PivotCache from full range
+        Set pc = ThisWorkbook.PivotCaches.Create( _
+            SourceType:=xlDatabase, _
+            SourceData:=dataRange.Address(, , xlR1C1, True))
+
+        ' Create PivotTable
+        Set pt = pc.CreatePivotTable( _
+            TableDestination:=wsPivot.Cells(startRow, 1), _
+            TableName:="Pivot_" & varName)
+
+        On Error GoTo PivotError
+
+        With pt
+            ' Row field
+            .PivotFields(varName).Orientation = xlRowField
+            .PivotFields(varName).Position = 1
+
+            ' Column field
+            .PivotFields(varName & "_test").Orientation = xlColumnField
+            .PivotFields(varName & "_test").Position = 1
+
+            ' Data field: count of ACCT
+            With .PivotFields("ACCT")
+                .Orientation = xlDataField
+                .Function = xlCount
+                .Name = "Count of ACCT"
+            End With
+
+            ' Show as % of row total
+            .DataPivotField.ShowDataAs = xlPercentOfRow
+            .DataPivotField.NumberFormat = "0.0%"
+
+            ' Filter field
+            .PivotFields(varName & "_train").Orientation = xlPageField
+            .PivotFields(varName & "_train").Position = 1
+        End With
+
+        ' Update position for next pivot
+        startRow = startRow + pt.TableRange2.Rows.Count + 3
+        GoTo NextLoop
+
+PivotError:
+        wsPivot.Cells(startRow, 1).Value = "⚠️ Pivot failed for: " & varName
+        startRow = startRow + 2
+        Resume Next
+
+NextLoop:
+    Next i
+
+    ' ✅ Reset Excel settings
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.EnableEvents = True
+
+    MsgBox "✅ All pivots created successfully in 'All_Pivots' sheet!", vbInformation
+
+End Sub
+
+' Check if column exists in header
+Function ColumnExists(ws As Worksheet, colName As String) As Boolean
+    ColumnExists = Not IsError(Application.Match(colName, ws.Range("A1:AH1"), 0))
+End Function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Sub CreateOrderedPivotTables()
 
     Dim wsData As Worksheet, wsPivot As Worksheet
