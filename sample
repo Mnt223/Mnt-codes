@@ -1,3 +1,56 @@
+Xsell Product Sales Count =
+VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+
+// Common filter block used for all products
+VAR BaseFilter =
+    FILTER(
+        'MSD Trigger Conversion',
+        [Trigger_display] = 1 &&
+        [PROD_display] = 1 &&
+        [OBJ_display] = 1 &&
+        'MSD Trigger Conversion'[Contacted_Flag] = 1
+    )
+
+VAR RawCount =
+    SWITCH(
+        TRUE(),
+
+        SelectedProduct = "TMD", 
+            CALCULATE(SUM('MSD Trigger Conversion'[TMD_SALES_COUNT]), BaseFilter),
+
+        SelectedProduct = "INV", 
+            CALCULATE(SUM('MSD Trigger Conversion'[INV_SALES_COUNT]), BaseFilter),
+
+        SelectedProduct = "LI/GI", 
+            CALCULATE(SUM('MSD Trigger Conversion'[LI_GI_SALES_COUNT]), BaseFilter),
+
+        SelectedProduct = "PIL", 
+            CALCULATE(SUM('MSD Trigger Conversion'[PIL_SALES_COUNT]), BaseFilter),
+
+        SelectedProduct = "AIF/PMS", 
+            CALCULATE(SUM('MSD Trigger Conversion'[AIF_PMS_SALES_COUNT]), BaseFilter),
+
+        SelectedProduct = "HML", 
+            CALCULATE(SUM('MSD Trigger Conversion'[HML_SALES_COUNT]), BaseFilter),
+
+        SelectedProduct = "CARD", 
+            CALCULATE(SUM('MSD Trigger Conversion'[CARD_SALES_COUNT]), BaseFilter),
+
+        SelectedProduct = "PREM CARD", 
+            CALCULATE(SUM('MSD Trigger Conversion'[PREMIER_CARD_SALES_COUNT]), BaseFilter),
+
+        0
+    )
+
+RETURN
+IF(RawCount <= 0, 0, RawCount)
+
+
+
+
+
+
+
 Contact Rate =
 DIVIDE(
     CALCULATE(COUNTROWS('MSD Trigger Conversion'), 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1),
