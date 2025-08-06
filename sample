@@ -1,3 +1,27 @@
+
+Leads Generated =
+CALCULATE(
+    COUNT('MSD Trigger Conversion'[GA_CUST_ID]),
+    'MSD Trigger Conversion'[Trigger_display] = 1,
+    TREATAS(
+        VALUES('Trigger Slicer Table'[Trigger Name]), 
+        'MSD Trigger Conversion'[Trigger Name]
+    ),
+    TREATAS(
+        VALUES('Trigger Slicer Table'[PROD_display]), 
+        'MSD Trigger Conversion'[PROD_display]
+    ),
+    TREATAS(
+        VALUES('Trigger Slicer Table'[OBJ_display]), 
+        'MSD Trigger Conversion'[OBJ_display]
+    )
+)
+
+
+
+
+
+
 Hi Pavneet,
 
 There are two RMS requests raised under two different IDs — one with the joint ID and the other with the sole ID.
