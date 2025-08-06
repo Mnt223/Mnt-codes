@@ -1,3 +1,87 @@
+%macro create_pivots(input_ds=your_dataset, output_file='pivot_output.xlsx');
+
+    /* List of base variables (without _test/_train) */
+    %let base_vars = Entertainment Groceries Medical Other_Regular Persona_Finances Restaurant Shopping Transportation Travel Utility_sec Utility_prim;
+
+    /* Loop through each base variable */
+    %do i = 1 %to %sysfunc(countw(&base_vars));
+        %let var = %scan(&base_vars, &i);
+        %let var_test = &var._test;
+        %let var_train = &var._train;
+
+        /* Step 1: Create raw table with all values */
+        proc sql;
+            create table pivot_&var as
+            select 
+                &var as row_val,
+                &var_test as col_val,
+                count(ACCT) as count_acct
+            from &input_ds
+            group by &var, &var_test;
+        quit;
+
+        /* Step 2: Transpose for columns */
+        proc sort data=pivot_&var;
+            by row_val col_val;
+        run;
+
+        proc transpose data=pivot_&var out=trans_&var(drop=_name_) prefix=col_;
+            by row_val;
+            id col_val;
+            var count_acct;
+        run;
+
+        /* Step 3: Add row totals and compute percentages */
+        data final_&var;
+            set trans_&var;
+            array cols[*] col_:;
+            row_total = sum(of col_:);
+
+            /* Calculate % of row total */
+            %do j = 1 %to 100;
+                %if %sysfunc(exist(final_&var)) %then %do;
+                    if n(col_&j) then pct_&j = (col_&j / row_total) * 100;
+                %end;
+            %end;
+        run;
+
+        /* Step 4: Export with filter column */
+        data export_&var;
+            set final_&var;
+            length &var_train $50;
+            set &input_ds(keep=&var_train);
+        run;
+
+    %end;
+
+    /* Step 5: Export all to Excel with one sheet per variable */
+    ods excel file=&output_file options(sheet_interval='proc');
+
+    %do i = 1 %to %sysfunc(countw(&base_vars));
+        %let var = %scan(&base_vars, &i);
+        proc print data=export_&var label;
+            title "Pivot for &var";
+        run;
+    %end;
+
+    ods excel close;
+
+%mend;
+
+/* Call the macro */
+%create_pivots(input_ds=your_dataset, output_file='pivot_output.xlsx');
+
+
+
+
+
+
+
+
+
+
+
+
 %macro stack_cube_data;
 
     /* Define mapping of dataset name month to revenue suffix (MMYY) */
