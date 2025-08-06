@@ -1,3 +1,16 @@
+Contact Rate =
+VAR BF = FILTER('MSD Trigger Conversion', [Trigger_display] = 1 && [PROD_display] = 1 && [OBJ_display] = 1)
+RETURN
+DIVIDE(
+    CALCULATE(COUNTROWS('MSD Trigger Conversion'), BF, 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1),
+    CALCULATE(COUNTROWS('MSD Trigger Conversion'), BF),
+    0
+)
+
+
+
+
+
 Xsell Product Sales Count =
 VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 
