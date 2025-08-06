@@ -1,3 +1,15 @@
+Contact Rate =
+DIVIDE(
+    CALCULATE(COUNTROWS('MSD Trigger Conversion'), 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1),
+    COUNTROWS('MSD Trigger Conversion'),
+    0
+)
+
+
+
+
+
+
 Leads Generated =
 CALCULATE(
     COUNT('MSD Trigger Conversion'[GA_CUST_ID]),
