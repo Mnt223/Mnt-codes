@@ -1,3 +1,90 @@
+Sub CreatePivotTablesForAllVars()
+
+    Dim wsData As Worksheet, wsPivot As Worksheet
+    Dim lastRow As Long, i As Integer, startRow As Long
+    Dim baseVars As Variant, varName As String
+    Dim pc As PivotCache, pt As PivotTable
+    Dim dataRange As Range
+
+    ' Update with your sheet name
+    Set wsData = ThisWorkbook.Sheets("RawData")
+
+    ' Create/clear output sheet
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    Worksheets("All_Pivots").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    Set wsPivot = ThisWorkbook.Sheets.Add
+    wsPivot.Name = "All_Pivots"
+    
+    ' Get last row
+    lastRow = wsData.Cells(wsData.Rows.Count, "A").End(xlUp).Row
+    Set dataRange = wsData.Range("A1").CurrentRegion
+
+    ' List of base variables (no suffix)
+    baseVars = Array("Entertainment", "Groceries", "Medical", "Other_Regular", "Persona_Finances", _
+                     "Restaurant", "Shopping", "Transportation", "Travel", "Utility_sec", "Utility_prim")
+
+    startRow = 1
+
+    For i = LBound(baseVars) To UBound(baseVars)
+        varName = baseVars(i)
+
+        ' Create Pivot Cache
+        Set pc = ThisWorkbook.PivotCaches.Create( _
+            SourceType:=xlDatabase, _
+            SourceData:=dataRange)
+
+        ' Create Pivot Table
+        Set pt = pc.CreatePivotTable( _
+            TableDestination:=wsPivot.Cells(startRow, 1), _
+            TableName:="Pivot_" & varName)
+
+        With pt
+            .PivotFields(varName).Orientation = xlRowField
+            .PivotFields(varName).Position = 1
+
+            .PivotFields(varName & "_test").Orientation = xlColumnField
+            .PivotFields(varName & "_test").Position = 1
+
+            .PivotFields("ACCT").Orientation = xlDataField
+            .PivotFields("ACCT").Function = xlCount
+            .PivotFields("ACCT").NumberFormat = "0.0%"
+
+            .DataPivotField.ShowDataAs = xlPercentOfRow
+
+            On Error Resume Next ' In case train field is missing
+            .PivotFields(varName & "_train").Orientation = xlPageField
+            .PivotFields(varName & "_train").Position = 1
+            On Error GoTo 0
+        End With
+
+        ' Set next pivot position
+        startRow = startRow + pt.TableRange2.Rows.Count + 3
+
+    Next i
+
+    MsgBox "All pivot tables created successfully in sheet 'All_Pivots'.", vbInformation
+
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 %macro create_pivots(input_ds=your_dataset, output_file='pivot_output.xlsx');
 
     /* List of base variables (without _test/_train) */
