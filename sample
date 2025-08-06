@@ -1,5 +1,34 @@
 Xsell Product Sales Value Cr =
 VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
+VAR RawValue =
+    IF (
+        [Trigger_display] = 1 &&
+        [PROD_display] = 1 &&
+        [OBJ_display] = 1,
+        SWITCH (
+            SelectedProduct,
+            "TMD", CALCULATE(SUM('MSD Trigger Conversion'[TMD_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+            "INV", CALCULATE(SUM('MSD Trigger Conversion'[INV_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+            "LI/GI", CALCULATE(SUM('MSD Trigger Conversion'[LI_GI_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+            "PIL", CALCULATE(SUM('MSD Trigger Conversion'[PIL_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+            "AIF/PMS", CALCULATE(SUM('MSD Trigger Conversion'[AIF_PMS_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+            "CARD", CALCULATE(SUM('MSD Trigger Conversion'[CARD_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+            "HML", CALCULATE(SUM('MSD Trigger Conversion'[HML_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+            "PREM CARD", CALCULATE(SUM('MSD Trigger Conversion'[PREMIER_CARD_SALES_VALUE]), 'MSD Trigger Conversion'[Contacted_Flag] = 1),
+            BLANK()
+        )
+    )
+VAR FinalValue = DIVIDE(RawValue, 10000000)
+
+RETURN
+    IF(FinalValue <= 0, "₹0 Cr", "₹" & FORMAT(FinalValue, "0.00") & " Cr")
+
+
+
+
+
+Xsell Product Sales Value Cr =
+VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 VAR SalesColumn =
     SWITCH(
         SelectedProduct,
