@@ -1,3 +1,21 @@
+Conversion % :=
+VAR BaseFilter =
+    FILTER(
+        'MSD Trigger Conversion',
+        [Trigger_display] = 1 &&
+        [PROD_display]    = 1 &&
+        [OBJ_display]     = 1 &&
+        'MSD Trigger Conversion'[Contacted_Flag] = 1   -- keep if needed
+    )
+RETURN
+DIVIDE(
+    CALCULATE([Total Sales Count], BaseFilter),
+    CALCULATE([Leads Generated],  BaseFilter)
+)
+
+
+
+
 
 Conversion % :=
 VAR SalesCnt :=
