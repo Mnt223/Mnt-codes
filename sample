@@ -1,3 +1,13 @@
+
+A Power BI dashboard has already been built in PROD. Some enhancements to the report view have been completed, and we now need to publish it with the new updates.
+
+
+
+
+
+
+
+
 Xsell Product Sales Value Cr =
 VAR SelectedProduct = SELECTEDVALUE('PRODUCT SELECTOR'[Metric])
 VAR ShowFlag =
