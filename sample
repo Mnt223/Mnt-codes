@@ -1,3 +1,45 @@
+
+Conversion % :=
+VAR SalesCnt :=
+    CALCULATE(
+          SUM('MSD Trigger Conversion'[AIF_SALES_COUNT])
+        + SUM('MSD Trigger Conversion'[CARD_SALES_COUNT])
+        + SUM('MSD Trigger Conversion'[GI_SALES_COUNT])
+        + SUM('MSD Trigger Conversion'[HML_SALES_COUNT])
+        + SUM('MSD Trigger Conversion'[INV_SALES_COUNT])
+        + SUM('MSD Trigger Conversion'[LI_SALES_COUNT])
+        + SUM('MSD Trigger Conversion'[PIL_SALES_COUNT])
+        + SUM('MSD Trigger Conversion'[PMS_SALES_COUNT])
+        + SUM('MSD Trigger Conversion'[TMD_SALES_COUNT]),
+        FILTER(
+            'MSD Trigger Conversion',
+            [Trigger_display] = 1 &&
+            [PROD_display]    = 1 &&
+            [OBJ_display]     = 1
+        ),
+        'MSD Trigger Conversion'[Contacted_Flag] = 1
+    )
+VAR Leads :=
+    CALCULATE(
+        [Leads Generated],
+        FILTER(
+            'MSD Trigger Conversion',
+            [Trigger_display] = 1 &&
+            [PROD_display]    = 1 &&
+            [OBJ_display]     = 1
+        ),
+        'MSD Trigger Conversion'[Contacted_Flag] = 1
+    )
+RETURN
+DIVIDE(SalesCnt, Leads)
+
+
+
+
+
+
+
+
 Total Xsell :=
 VAR XValue =
       SUM('MSD Trigger Conversion'[AIF_SALES_VALUE])
