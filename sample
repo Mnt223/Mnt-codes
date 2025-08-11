@@ -1,3 +1,32 @@
+Total Xsell :=
+VAR XValue =
+      SUM('MSD Trigger Conversion'[AIF_SALES_VALUE])
+    + SUM('MSD Trigger Conversion'[CARD_SALES_VALUE])
+    + SUM('MSD Trigger Conversion'[GI_SALES_VALUE])
+    + SUM('MSD Trigger Conversion'[HML_SALES_VALUE])
+    + SUM('MSD Trigger Conversion'[INV_SALES_VALUE])
+    + SUM('MSD Trigger Conversion'[LI_SALES_VALUE])
+    + SUM('MSD Trigger Conversion'[PIL_SALES_VALUE])
+    + SUM('MSD Trigger Conversion'[PMS_SALES_VALUE])
+    + SUM('MSD Trigger Conversion'[TMD_SALES_VALUE])
+VAR XFiltered :=
+    CALCULATE(
+        XValue,
+        FILTER(
+            'MSD Trigger Conversion',
+            [Trigger_display] = 1 &&
+            [PROD_display]    = 1 &&
+            [OBJ_display]     = 1
+        ),
+        'MSD Trigger Conversion'[Contacted_Flag] = 1
+    )
+RETURN
+"₹ " & FORMAT(DIVIDE(XFiltered, 10000000), "0.00") & " Cr"
+
+
+
+
+
 
 A Power BI dashboard has already been built in PROD. Some enhancements to the report view have been completed, and we now need to publish it with the new updates.
 
