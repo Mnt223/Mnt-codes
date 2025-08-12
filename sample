@@ -1,3 +1,31 @@
+Hi Pranil,
+
+We started the MSD dashboard with the initial ask to create different tasks for slicers and a few key metrics. As discussed, we planned to share the first cut by 25th July, and that version was ready on time.
+
+However, there were some challenges:
+	•	Slicer logic changes: Initially, the requirement was to use consolidated slicers, but later it was changed to individual slicers. This required redesigning the entire approach in Power BI. Due to this change, all related formulas and matrix structures had to be updated.
+	•	Complex metrics: The requested metrics are advanced, requiring detailed validations. We have also calculated outliers and incremental TRBs.
+	•	Data discrepancies: While the Power BI logic was working fine, the numbers did not match with your SES logic output, as SAS is calculating differently. Resolving these discrepancies took additional effort.
+
+Currently, we are delivering based on the evolved requirements, which have become a highly customized, report-level Power BI view. I have been providing regular updates (daily or on alternate days), and there has been continuous progress.
+
+At present, I’m working on the beautification and overall look and feel of the dashboard. By tomorrow morning, the dashboard will be ready for validation — you can validate the numbers at that stage. I’ll aim to complete the final look and feel by tomorrow, but if not, it will be finalized early next week.
+
+The last and current weeks have been particularly occupied due to multiple critical priorities, including BAU activities and resolving discrepancies in brand sales MIS numbers. As Kennedy already mentioned, this is why the dashboard work has been deprioritized for this short week.
+
+To clarify — the timeline impact is not due to delays, but rather due to the evolving requirements and the addition of new metrics and customizations during development.
+
+Thanks,
+[Your Name]
+
+
+
+
+
+
+
+
+
 Conversion % :=
 VAR BaseFilter =
     FILTER(
