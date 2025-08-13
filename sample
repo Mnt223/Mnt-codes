@@ -1,3 +1,33 @@
+Pre_Post_Card :=
+VAR BaseFilter =
+    FILTER (
+        'MSD Trigger Conversion',
+        [Trigger_display] = 1
+            && [PROD_display] = 1
+            && [OBJ_display] = 1
+            && 'MSD Trigger Conversion'[Contacted_Flag] = 1
+    )
+VAR AvgPre  =
+    CALCULATE ( AVERAGE ( 'MSD Trigger Conversion'[Pre_TPPC] ),  BaseFilter )
+VAR AvgPost =
+    CALCULATE ( AVERAGE ( 'MSD Trigger Conversion'[Post_TPPC] ), BaseFilter )
+VAR ValueDiff = AvgPre - AvgPost
+VAR ValuePct  = DIVIDE ( ValueDiff, AvgPre )        -- handles /0 safely
+RETURN
+IF (
+    ISBLANK ( AvgPre ),
+    BLANK(),
+    FORMAT ( ValueDiff / 10000000, "#,0" ) & " Cr (" &
+    FORMAT ( ValuePct, "0.0%" ) & ")"
+)
+
+
+
+
+
+
+
+
 Hi Pranil,
 
 We started the MSD dashboard with the initial ask to create different tasks for slicers and a few key metrics. As discussed, we planned to share the first cut by 25th July, and that version was ready on time.
