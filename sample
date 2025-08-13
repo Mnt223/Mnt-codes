@@ -1,3 +1,47 @@
+
+Selected Metric Value =
+VAR LatestMonth =
+    EOMONTH( MAX( 'Date'[Date] ), 0 )
+VAR SixMonthsBack =
+    EOMONTH( LatestMonth, -5 ) -- This makes it last 6 months including current
+
+RETURN
+SWITCH(
+    [Selected Metric],
+
+    "Contact Rate",
+        CALCULATE(
+            [Contact Rate] * 100,
+            'Date'[Date] >= SixMonthsBack
+        ),
+
+    "Conversion Rate",
+        CALCULATE(
+            [Conversion %] * 100,
+            'Date'[Date] >= SixMonthsBack
+        ),
+
+    "Inc CASA Gain",
+        CALCULATE(
+            [Inc Casa Lift_num],
+            'Date'[Date] >= SixMonthsBack &&
+            'Date'[Date] < LatestMonth -- exclude latest month
+        ),
+
+    "Inc TRB Gain",
+        CALCULATE(
+            [Inc TRB Lift_num],
+            'Date'[Date] >= SixMonthsBack &&
+            'Date'[Date] < LatestMonth
+        ),
+
+    BLANK()
+)
+
+
+
+
+
 Pre_Post_Card :=
 VAR BaseFilter =
     FILTER (
