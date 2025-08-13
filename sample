@@ -1,3 +1,24 @@
+Hi Bithika,
+
+The Campaign Power BI dashboard has already been built and published in PROD. However, there are some enhancements to the report view that have now been completed and are ready for release.
+
+Previously, Vrinda used to update PROD directly for any changes in the report view using the updated Power BI file. As discussed with you and Suhas, it has been agreed that all changes will first be deployed to UAT, and after successful validation, will be moved to PROD.
+
+I am sharing the updated .pbix file. Please push it to UAT, and once signed off, proceed with the PROD deployment as per our discussion.
+
+For this dashboard, we are currently using the UAT SharePoint. A PROD SharePoint also needs to be created—please share the process for this.
+
+Jira Ticket: INMCLOUD-2222
+AD Group: hsbc-multi-DACOMMS-Prod-Users
+
+
+
+
+
+
+
+
+
 Hi Gopal,
 
 At the moment, I’m not exactly aware of the issue since this report is being generated for the first time and I don’t have much background on it. Tomorrow, I’ll check with Kenare and Aishwarya, as they have been triggering these reports for months. I’ll review the details with them and get back to you regarding this discrepancy.
