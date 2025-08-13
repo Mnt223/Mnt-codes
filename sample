@@ -1,3 +1,36 @@
+
+Selected Metric Value =
+VAR LatestMonthStart =
+    DATE(YEAR(MAXX(ALL(DateDim_MSD), DateDim_MSD[Date])),
+         MONTH(MAXX(ALL(DateDim_MSD), DateDim_MSD[Date])),
+         1
+    )
+VAR SixMonthsBack = EOMONTH(LatestMonthStart, -5)
+VAR BaseFilter =
+    FILTER('MSD Trigger Conversion',
+        [Trigger_display] = 1 &&
+        [PROD_display] = 1 &&
+        [OBJ_display] = 1
+    )
+RETURN
+SWITCH(
+    [Selected Metric],
+    "Contact Rate", CALCULATE([Contact Rate] * 100, BaseFilter,
+        FILTER(ALL(DateDim_MSD), DateDim_MSD[Date] >= SixMonthsBack && DateDim_MSD[Date] <= EOMONTH(LatestMonthStart,0))),
+    "Conversion Rate", CALCULATE([Conversion %] * 100, BaseFilter,
+        FILTER(ALL(DateDim_MSD), DateDim_MSD[Date] >= SixMonthsBack && DateDim_MSD[Date] <= EOMONTH(LatestMonthStart,0))),
+    "Inc CASA Gain", CALCULATE([Inc Casa Lift_num], BaseFilter,
+        FILTER(ALL(DateDim_MSD), DateDim_MSD[Date] >= SixMonthsBack && DateDim_MSD[Date] < LatestMonthStart)),
+    "Inc TRB Gain", CALCULATE([Inc TRB Lift_num], BaseFilter,
+        FILTER(ALL(DateDim_MSD), DateDim_MSD[Date] >= SixMonthsBack && DateDim_MSD[Date] < LatestMonthStart))
+)
+
+
+
+
+
+
+
 Selected Metric Value =
 VAR LatestMonth = EOMONTH(MAXX(ALL(DateDim_MSD), DateDim_MSD[Date]), 0)
 VAR SixMonthsBack = EOMONTH(LatestMonth, -5)
