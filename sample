@@ -1,3 +1,61 @@
+Selected Metric Value =
+VAR LatestMonth =
+    EOMONTH(
+        CALCULATE( MAX ( DateDim_MSD[Date] ), ALL ( DateDim_MSD ) ),
+        0
+    )
+VAR SixMonthsBack =
+    EOMONTH( LatestMonth, -5 )            -- last 6 months window
+
+RETURN
+SWITCH (
+    [Selected Metric],
+
+    "Contact Rate",
+        CALCULATE (
+            [Contact Rate] * 100,
+            FILTER (
+                ALL ( DateDim_MSD ),
+                DateDim_MSD[Date] >= SixMonthsBack
+                    && DateDim_MSD[Date] <= LatestMonth        -- include latest
+            )
+        ),
+
+    "Conversion Rate",
+        CALCULATE (
+            [Conversion %] * 100,
+            FILTER (
+                ALL ( DateDim_MSD ),
+                DateDim_MSD[Date] >= SixMonthsBack
+                    && DateDim_MSD[Date] <= LatestMonth        -- include latest
+            )
+        ),
+
+    "Inc CASA Gain",
+        CALCULATE (
+            [Inc Casa Lift_num],
+            FILTER (
+                ALL ( DateDim_MSD ),
+                DateDim_MSD[Date] >= SixMonthsBack
+                    && DateDim_MSD[Date] < LatestMonth         -- EXCLUDE latest
+            )
+        ),
+
+    "Inc TRB Gain",
+        CALCULATE (
+            [Inc TRB Lift_num],
+            FILTER (
+                ALL ( DateDim_MSD ),
+                DateDim_MSD[Date] >= SixMonthsBack
+                    && DateDim_MSD[Date] < LatestMonth         -- EXCLUDE latest
+            )
+        ),
+
+    BLANK ()
+)
+
+
+
 
 Selected Metric Value =
 VAR LatestMonth =
