@@ -1,3 +1,33 @@
+
+Selected Metric Value :=
+VAR FactMonth = VALUES ( 'MSD Trigger Conversion'[trg_month] )
+VAR LM =
+    EOMONTH (
+        CALCULATE (
+            MAX ( DateDim_MSD[Date] ),
+            TREATAS ( FactMonth, FORMAT ( DateDim_MSD[Date], "MMM-yy" ) ),
+            ALL ( DateDim_MSD )
+        ), 0
+    )
+VAR AXM =
+    EOMONTH (
+        CALCULATE (
+            MAX ( DateDim_MSD[Date] ),
+            TREATAS ( FactMonth, FORMAT ( DateDim_MSD[Date], "MMM-yy" ) )
+        ), 0
+    )
+VAR In6 = AXM >= EOMONTH ( LM, -5 ) && AXM <= LM
+RETURN
+SWITCH (
+    [Selected Metric],
+    "Contact Rate",    IF ( In6, [Contact Rate] * 100 ),
+    "Conversion Rate", IF ( In6, [Conversion %] * 100 ),
+    "Inc CASA Gain",   IF ( In6 && AXM <> LM, [Inc Casa Lift_num] ),
+    "Inc TRB Gain",    IF ( In6 && AXM <> LM, [Inc TRB Lift_num] )
+)
+
+
+
 Selected Metric Value :=
 VAR LM =
     EOMONTH (
