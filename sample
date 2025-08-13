@@ -1,3 +1,19 @@
+Selected Metric Value :=
+VAR M = SELECTEDVALUE('MSD Trigger Conversion'[trg_month])
+VAR AXM = EOMONTH(DATE(2000+RIGHT(M,2),
+    SWITCH(LEFT(M,3),"Jan",1,"Feb",2,"Mar",3,"Apr",4,"May",5,"Jun",6,"Jul",7,"Aug",8,"Sep",9,"Oct",10,"Nov",11,"Dec",12)),0)
+VAR LM  = EOMONTH(CALCULATE(MAX(DateDim_MSD[Date]),ALL(DateDim_MSD)),0)
+VAR In6 = AXM >= EOMONTH(LM,-5) && AXM <= LM
+RETURN
+SWITCH(
+    [Selected Metric],
+    "Contact Rate",    IF(In6,[Contact Rate]*100),
+    "Conversion Rate", IF(In6,[Conversion %]*100),
+    "Inc CASA Gain",   IF(In6 && AXM<>LM,[Inc Casa Lift_num]),
+    "Inc TRB Gain",    IF(In6 && AXM<>LM,[Inc TRB Lift_num])
+)
+
+
 
 Selected Metric Value :=
 VAR FactMonth = VALUES ( 'MSD Trigger Conversion'[trg_month] )
