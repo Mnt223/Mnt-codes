@@ -1,3 +1,43 @@
+Selected Metric Value =
+VAR LMStart = DATE(YEAR(MAXX(ALL(DateDim_MSD), DateDim_MSD[Date])),
+                   MONTH(MAXX(ALL(DateDim_MSD), DateDim_MSD[Date])), 1)
+VAR SixBack = EOMONTH(LMStart, -5)
+VAR BF = FILTER('MSD Trigger Conversion',
+                [Trigger_display] = 1 &&
+                [PROD_display] = 1 &&
+                [OBJ_display] = 1)
+VAR DateInc = FILTER(ALL(DateDim_MSD), DateDim_MSD[Date] >= SixBack && DateDim_MSD[Date] <= EOMONTH(LMStart, 0))
+VAR DateExc = FILTER(ALL(DateDim_MSD), DateDim_MSD[Date] >= SixBack && DateDim_MSD[Date] < LMStart)
+RETURN
+SWITCH(
+    [Selected Metric],
+    "Contact Rate",   ROUND(CALCULATE([Contact Rate] * 100, BF, DateInc), 2),
+    "Conversion Rate",ROUND(CALCULATE([Conversion %] * 100, BF, DateInc), 2),
+    "Inc CASA Gain",  ROUND(CALCULATE([Inc Casa Lift_num], BF, DateExc), 2),
+    "Inc TRB Gain",   ROUND(CALCULATE([Inc TRB Lift_num], BF, DateExc), 2)
+)
+
+
+
+
+
+
+
+
+Selected Metric Value Display =
+SWITCH(
+    [Selected Metric],
+    "Contact Rate",    FORMAT([Selected Metric Value Num]/100, "0.00%"),
+    "Conversion Rate", FORMAT([Selected Metric Value Num]/100, "0.00%"),
+    "Inc CASA Gain",   FORMAT([Selected Metric Value Num], "0.00") & " Cr",
+    "Inc TRB Gain",    FORMAT([Selected Metric Value Num], "0.00") & " Cr"
+)
+
+
+
+
+
+
 Selected Metric Value Num =
 VAR LMStart = DATE(YEAR(MAXX(ALL(DateDim_MSD), DateDim_MSD[Date])),
                    MONTH(MAXX(ALL(DateDim_MSD), DateDim_MSD[Date])), 1)
