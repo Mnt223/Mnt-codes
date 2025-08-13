@@ -1,3 +1,23 @@
+Selected Metric Value :=
+VAR LatestMonth =
+    EOMONTH ( CALCULATE ( MAX ( DateDim_MSD[Date] ), ALL ( DateDim_MSD ) ), 0 )
+VAR SixMonthsBack = EOMONTH ( LatestMonth, -5 )
+VAR AxisMonth = EOMONTH ( MAX ( DateDim_MSD[Date] ), 0 )
+VAR InLast6 = AxisMonth >= SixMonthsBack && AxisMonth <= LatestMonth
+
+RETURN
+SWITCH (
+    [Selected Metric],
+    "Contact Rate",     IF ( InLast6, [Contact Rate] * 100 ),
+    "Conversion Rate",  IF ( InLast6, [Conversion %] * 100 ),
+    "Inc CASA Gain",    IF ( InLast6 && AxisMonth <> LatestMonth, [Inc Casa Lift_num] ),
+    "Inc TRB Gain",     IF ( InLast6 && AxisMonth <> LatestMonth, [Inc TRB Lift_num] )
+)
+
+
+
+
+
 Selected Metric Value =
 VAR LatestMonth =
     EOMONTH(
