@@ -1,3 +1,28 @@
+Total Xsell (Cr) :=
+VAR v =
+    SUMX (
+        FILTER (
+            'MSD Trigger Conversion',
+            CALCULATE ( [Trigger_display] ) = 1 &&
+            CALCULATE ( [PROD_display] )    = 1 &&
+            CALCULATE ( [OBJ_display] )     = 1 &&
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        ),
+        CALCULATE (
+            [AIF_SALES_VALUE] + [CARD_SALES_VALUE] + [GI_SALES_VALUE] + [HML_SALES_VALUE] +
+            [INV_SALES_VALUE] + [LI_SALES_VALUE]  + [PIL_SALES_VALUE] + [PMS_SALES_VALUE] +
+            [TMD_SALES_VALUE]
+        )
+    )
+RETURN FORMAT( DIVIDE( v, 10000000 ), "0.00" ) & " Cr"
+
+
+
+
+
+
+
+
 Hi Bithika,
 
 The Campaign Power BI dashboard has already been built and published in PROD. However, there are some enhancements to the report view that have now been completed and are ready for release.
