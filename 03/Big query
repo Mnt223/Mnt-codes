@@ -1,3 +1,773 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Premier Income Estimator — Auto‑Calibrating + Profiling + Charts (Production)
+=============================================================================
+
+What it does (no hardcoding):
+1) Profiles live data for key vars (min/max/P10/P50/P90).
+2) Calibrates ratios/bands from your data (medians/quantiles).
+3) Estimates expected income (regression or rules).
+4) Flags Missing/Low/Mismatch/OK.
+5) Exports Excel with tabs: flags, summary, data_profile, calib_*.
+6) Generates & embeds charts (matplotlib only).
+
+Required columns (CSV/Parquet):
+- cusid, cc_max_lmt, cc_tot_lmt, fin_ann_inc1, inc_src, trb_bal_0625_uniq, final_cus_seg
+(Note: you said data is Premier‑only; script works without filtering.)
+
+Quick start:
+-----------
+# Calibrate+regress, lock per‑segment bands if sample ≥100, embed charts
+python premier_income_estimator_pro.py --in data.csv --outdir ./out \
+  --mode regression --lock_segment_bands
+
+# Use rules only, winsorize inputs at profile P2.5/P97.5 for modeling
+python premier_income_estimator_pro.py --in data.csv --outdir ./out_rules \
+  --mode rules --winsorize --winsor_lo 0.025 --winsor_hi 0.975
+
+# Reuse prior calibration (reproducible month-over-month)
+python premier_income_estimator_pro.py --in next.csv --outdir ./out_fix \
+  --mode rules --import_calib calib.json
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+from dataclasses import dataclass
+from typing import Dict, Tuple, Optional, Any, List
+
+import numpy as np
+import pandas as pd
+
+# Use non-interactive backend for servers
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+
+# ==============================
+# Configuration defaults
+# ==============================
+@dataclass(frozen=True)
+class Defaults:
+    segment: str = "Premier"
+    min_income_annual: float = 1_800_000.0   # ₹/year (base floor, not hard threshold for profiling)
+    band_lower: float = 0.65
+    band_upper: float = 1.75
+    q_lo: float = 0.10
+    q_hi: float = 0.90
+    min_records_per_segment: int = 100
+    use_log_model: bool = True
+
+
+DEFAULTS = Defaults()
+
+
+# ==============================
+# Logging
+# ==============================
+def setup_logging(verbosity: int = 1):
+    level = logging.WARNING
+    if verbosity >= 2:
+        level = logging.INFO
+    if verbosity >= 3:
+        level = logging.DEBUG
+    logging.basicConfig(
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        level=level,
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+
+# ==============================
+# Utilities
+# ==============================
+def _to_num(x: Any) -> float:
+    if x is None:
+        return np.nan
+    try:
+        return float(x)
+    except Exception:
+        try:
+            return float(str(x).replace(",", "").replace("₹", "").strip())
+        except Exception:
+            return np.nan
+
+
+def clean_numeric_cols(df: pd.DataFrame, cols) -> pd.DataFrame:
+    for c in cols:
+        if c in df.columns:
+            df[c] = df[c].apply(_to_num)
+    return df
+
+
+def read_input(path: str) -> pd.DataFrame:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in [".parquet", ".pq"]:
+        df = pd.read_parquet(path)
+    else:
+        df = pd.read_csv(path, dtype={"cusid": "string"})
+    if "cusid" in df.columns:
+        df["cusid"] = df["cusid"].astype("string")
+    return df
+
+
+# ==============================
+# Data profiling (no assumptions)
+# ==============================
+PROFILE_COLS = ["cc_max_lmt", "cc_tot_lmt", "trb_bal_0625_uniq", "fin_ann_inc1"]
+
+def profile_vars(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    out = []
+    for c in cols:
+        if c not in df.columns:
+            continue
+        s = pd.to_numeric(df[c], errors="coerce")
+        if s.dropna().empty:
+            out.append({"variable": c, "min": np.nan, "p10": np.nan, "p50": np.nan,
+                        "p90": np.nan, "max": np.nan, "non_null": 0})
+            continue
+        out.append({
+            "variable": c,
+            "min": float(np.nanmin(s)),
+            "p10": float(np.nanquantile(s, 0.10)),
+            "p50": float(np.nanmedian(s)),
+            "p90": float(np.nanquantile(s, 0.90)),
+            "max": float(np.nanmax(s)),
+            "non_null": int(s.notna().sum())
+        })
+    return pd.DataFrame(out)
+
+
+def winsorize_series(s: pd.Series, lo_q: float, hi_q: float) -> pd.Series:
+    s = s.astype(float)
+    lo = np.nanquantile(s, lo_q)
+    hi = np.nanquantile(s, hi_q)
+    return s.clip(lower=lo, upper=hi)
+
+
+# ==============================
+# Rule-based expected income
+# ==============================
+def expected_income_rules(row: pd.Series, ratios: Dict, mins: Dict, seg: str) -> float:
+    seg_rat = ratios.get(seg, ratios.get("__overall__", {}))
+    cc_ratio = max(1e-9, seg_rat.get("cc_to_monthly_income_ratio", 1.5))
+    trb_months = max(1e-9, seg_rat.get("trb_to_monthly_income_months", 3.0))
+    min_income = float(mins.get(seg, mins.get("__overall__", DEFAULTS.min_income_annual)))
+
+    cc_max = max(0.0, row.get("cc_max_lmt", 0.0) or 0.0)
+    cc_tot = max(0.0, row.get("cc_tot_lmt", 0.0) or 0.0)
+    trb = max(0.0, row.get("trb_bal_0625_uniq", 0.0) or 0.0)
+
+    monthly_from_cc = cc_max / cc_ratio
+    monthly_from_trb = trb / trb_months
+    monthly_from_cc_tot = (cc_tot / cc_ratio) * 0.25
+
+    monthly_est = max(monthly_from_cc, monthly_from_trb, monthly_from_cc_tot)
+    annual_est = monthly_est * 12.0
+    return float(max(annual_est, 0.8 * min_income))
+
+
+# ==============================
+# Regression expected income
+# ==============================
+def fit_regression(df_train: pd.DataFrame, use_log: bool = True):
+    feats = ["trb_bal_0625_uniq", "cc_max_lmt", "cc_tot_lmt"]
+    X = df_train[feats].astype(float).values
+    y = df_train["fin_ann_inc1"].astype(float).values
+    if use_log:
+        X = np.log1p(X)
+        y = np.log1p(y)
+    X_ = np.c_[np.ones(X.shape[0]), X]
+    beta, *_ = np.linalg.lstsq(X_, y, rcond=None)
+    y_hat = X_.dot(beta)
+    resid = y - y_hat
+    sigma = float(np.sqrt(np.mean(resid ** 2)))
+    return beta, sigma, feats
+
+
+def predict_regression(df: pd.DataFrame, beta, feats, use_log: bool = True) -> np.ndarray:
+    X = df[feats].astype(float).values
+    if use_log:
+        X = np.log1p(X)
+    X_ = np.c_[np.ones(X.shape[0]), X]
+    y_hat = X_.dot(beta)
+    return np.expm1(y_hat) if use_log else y_hat
+
+
+# ==============================
+# Calibration (data‑driven)
+# ==============================
+def calibrate(df: pd.DataFrame, q_lo: float, q_hi: float, base_min_income: float):
+    work = df.copy()
+    work["monthly_income"] = work["fin_ann_inc1"] / 12.0
+    work = work[work["monthly_income"] > 0].copy()
+
+    work["r_cc"] = work["cc_max_lmt"] / work["monthly_income"]
+    work["r_trb"] = work["trb_bal_0625_uniq"] / work["monthly_income"]
+    work.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+    def agg_seg(g):
+        return pd.Series({
+            "n": g.shape[0],
+            "cc_to_monthly_income_ratio": np.nanmedian(g["r_cc"].values),
+            "trb_to_monthly_income_months": np.nanmedian(g["r_trb"].values),
+            "monthly_income_median": np.nanmedian(g["monthly_income"].values),
+            "annual_income_median": np.nanmedian(g["monthly_income"].values) * 12.0
+        })
+
+    by_seg = work.groupby("final_cus_seg", dropna=False).apply(agg_seg).reset_index()
+    overall = agg_seg(work)
+    overall.name = "__overall__"
+
+    mins_by_seg = {
+        s: max(base_min_income, float(row["annual_income_median"] * 0.9))
+        for s, row in by_seg.set_index("final_cus_seg").iterrows()
+    }
+    mins_by_seg["__overall__"] = max(base_min_income, float(overall["annual_income_median"] * 0.9))
+
+    ratios_by_seg = {
+        s: {
+            "cc_to_monthly_income_ratio": float(row["cc_to_monthly_income_ratio"]),
+            "trb_to_monthly_income_months": float(row["trb_to_monthly_income_months"]),
+            "n": int(row["n"])
+        }
+        for s, row in by_seg.set_index("final_cus_seg").iterrows()
+    }
+    ratios_by_seg["__overall__"] = {
+        "cc_to_monthly_income_ratio": float(overall["cc_to_monthly_income_ratio"]),
+        "trb_to_monthly_income_months": float(overall["trb_to_monthly_income_months"]),
+        "n": int(overall["n"])
+    }
+
+    work["expected_rules"] = [
+        expected_income_rules(r, ratios_by_seg, mins_by_seg, r.get("final_cus_seg", "__overall__"))
+        for _, r in work.iterrows()
+    ]
+    eps = 1e-9
+    work["rep_to_exp"] = work["fin_ann_inc1"] / (work["expected_rules"] + eps)
+
+    def band_agg(g):
+        qlo = np.nanquantile(g["rep_to_exp"].values, q_lo)
+        qhi = np.nanquantile(g["rep_to_exp"].values, q_hi)
+        return pd.Series({"q_lo": float(qlo), "q_hi": float(qhi), "n": g.shape[0]})
+
+    bands_seg = work.groupby("final_cus_seg", dropna=False).apply(band_agg).reset_index()
+    bands_overall = band_agg(work)
+    bands_overall.name = "__overall__"
+
+    bands_by_seg = {
+        s: {"band_lower": float(max(0.4, row["q_lo"])), "band_upper": float(min(2.5, row["q_hi"])), "n": int(row["n"])}
+        for s, row in bands_seg.set_index("final_cus_seg").iterrows()
+    }
+    bands_by_seg["__overall__"] = {
+        "band_lower": float(max(0.4, bands_overall["q_lo"])),
+        "band_upper": float(min(2.5, bands_overall["q_hi"])),
+        "n": int(bands_overall["n"])
+    }
+
+    # Summary tables for Excel
+    tbl_ratios = by_seg.sort_values("n", ascending=False)
+    tbl_bands = bands_seg.sort_values("n", ascending=False)
+    tbl_overall = pd.DataFrame({
+        "metric": ["cc_to_monthly_income_ratio", "trb_to_monthly_income_months", "band_lower", "band_upper", "n"],
+        "value": [ratios_by_seg["__overall__"]["cc_to_monthly_income_ratio"],
+                  ratios_by_seg["__overall__"]["trb_to_monthly_income_months"],
+                  bands_by_seg["__overall__"]["band_lower"],
+                  bands_by_seg["__overall__"]["band_upper"],
+                  ratios_by_seg["__overall__"]["n"]]
+    })
+
+    summary = {
+        "ratios_by_seg": tbl_ratios,
+        "bands_by_seg": tbl_bands,
+        "overall": tbl_overall
+    }
+    return ratios_by_seg, bands_by_seg, mins_by_seg, summary
+
+
+# ==============================
+# Flagging
+# ==============================
+def flag_income(reported: float, expected: float, lower: float, upper: float, min_income_annual: float) -> str:
+    if pd.isna(reported) or reported <= 0:
+        return "Missing"
+    base = "Low" if reported < min_income_annual else "OK"
+    if reported < expected * lower or reported > expected * upper:
+        return "Mismatch"
+    return base
+
+
+# ==============================
+# Plotting (matplotlib, one plot per fig)
+# ==============================
+def _save_scatter_with_fit(
+    outdir: str, x: np.ndarray, y: np.ndarray, x_label: str, y_label: str,
+    pred_fn=None, hold_vals: Optional[Dict[str, float]] = None, fname: str = "scatter.png"
+):
+    # Scatter
+    plt.figure()
+    plt.scatter(x, y, alpha=0.4)
+    # Fitted curve along x if pred_fn provided (others held at medians)
+    if pred_fn is not None:
+        xs = np.linspace(np.nanpercentile(x, 1), np.nanpercentile(x, 99), 180)
+        ys = []
+        for xv in xs:
+            ys.append(pred_fn(xv, hold_vals))
+        plt.plot(xs, ys)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    path = os.path.join(outdir, fname)
+    plt.tight_layout()
+    plt.savefig(path, dpi=140)
+    plt.close()
+    return path
+
+
+def _save_actual_vs_pred(outdir: str, actual: np.ndarray, pred: np.ndarray, fname: str = "actual_vs_pred.png"):
+    plt.figure()
+    plt.scatter(pred, actual, alpha=0.4)
+    # 45-degree
+    lo = np.nanpercentile(np.concatenate([actual, pred]), 1)
+    hi = np.nanpercentile(np.concatenate([actual, pred]), 99)
+    plt.plot([lo, hi], [lo, hi])
+    plt.xlabel("Predicted Income (₹)")
+    plt.ylabel("Actual Income (₹)")
+    path = os.path.join(outdir, fname)
+    plt.tight_layout()
+    plt.savefig(path, dpi=140)
+    plt.close()
+    return path
+
+
+def _save_residuals_vs_pred(outdir: str, pred: np.ndarray, resid: np.ndarray, fname: str = "residuals_vs_pred.png"):
+    plt.figure()
+    plt.scatter(pred, resid, alpha=0.4)
+    plt.axhline(0)
+    plt.xlabel("Predicted Income (₹)")
+    plt.ylabel("Residuals (Actual - Pred)")
+    path = os.path.join(outdir, fname)
+    plt.tight_layout()
+    plt.savefig(path, dpi=140)
+    plt.close()
+    return path
+
+
+def _save_residual_hist(outdir: str, resid: np.ndarray, fname: str = "residual_hist.png"):
+    plt.figure()
+    plt.hist(resid[~np.isnan(resid)], bins=40)
+    plt.xlabel("Residuals")
+    plt.ylabel("Frequency")
+    path = os.path.join(outdir, fname)
+    plt.tight_layout()
+    plt.savefig(path, dpi=140)
+    plt.close()
+    return path
+
+
+def _save_corr_heatmap(outdir: str, df: pd.DataFrame, cols: List[str], fname: str = "corr_matrix.png"):
+    corr = df[cols].corr(method="pearson")
+    plt.figure()
+    plt.imshow(corr, interpolation="nearest")
+    plt.xticks(range(len(cols)), cols, rotation=45, ha="right")
+    plt.yticks(range(len(cols)), cols)
+    plt.colorbar()
+    plt.title("Correlation Matrix")
+    path = os.path.join(outdir, fname)
+    plt.tight_layout()
+    plt.savefig(path, dpi=140)
+    plt.close()
+    return path
+
+
+# ==============================
+# Pipeline
+# ==============================
+def run_pipeline(
+    df: pd.DataFrame,
+    cfg: Dict[str, Any],
+    mode: str = "regression",
+    lock_segment_bands: bool = False,
+    import_calib: Optional[Dict[str, Any]] = None,
+    winsorize: bool = False,
+    winsor_lo: float = 0.025,
+    winsor_hi: float = 0.975,
+    outdir: str = "./out"
+) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    # Clean numerics
+    df = clean_numeric_cols(df, PROFILE_COLS)
+    if "final_cus_seg" not in df.columns:
+        df["final_cus_seg"] = DEFAULTS.segment
+
+    # 1) Data Profile (raw, for audit; this drives no hardcoding)
+    profile = profile_vars(df, PROFILE_COLS)
+
+    # Optional winsorization for MODELING ONLY (keeps raw for reporting)
+    model_df = df.copy()
+    if winsorize:
+        for c in PROFILE_COLS:
+            if c in model_df.columns and model_df[c].notna().any():
+                model_df[c] = winsorize_series(model_df[c], winsor_lo, winsor_hi)
+
+    # 2) Calibration on valid salaries (winsorized view if enabled)
+    valid = model_df["fin_ann_inc1"].notna() & (model_df["fin_ann_inc1"] > 0)
+    calib_df = model_df.loc[valid].copy()
+
+    if import_calib is not None:
+        ratios_by_seg = import_calib["ratios_by_seg"]
+        bands_by_seg = import_calib["bands_by_seg"]
+        mins_by_seg = import_calib["mins_by_seg"]
+        calib_sheets = {"ratios_by_seg": pd.DataFrame(), "bands_by_seg": pd.DataFrame(), "overall": pd.DataFrame()}
+    elif calib_df.empty or calib_df.shape[0] < 50:
+        ratios_by_seg = {"__overall__": {"cc_to_monthly_income_ratio": 1.5, "trb_to_monthly_income_months": 3.0, "n": 0}}
+        bands_by_seg = {"__overall__": {"band_lower": cfg["band_lower"], "band_upper": cfg["band_upper"], "n": 0}}
+        mins_by_seg = {"__overall__": cfg["min_income_annual"]}
+        calib_sheets = {"ratios_by_seg": pd.DataFrame(), "bands_by_seg": pd.DataFrame(), "overall": pd.DataFrame()}
+    else:
+        ratios_by_seg, bands_by_seg, mins_by_seg, calib_sheets = calibrate(
+            calib_df, cfg["q_lo"], cfg["q_hi"], cfg["min_income_annual"]
+        )
+
+    def segkey(seg: str) -> str:
+        if not lock_segment_bands:
+            return "__overall__"
+        n_ratio = ratios_by_seg.get(seg, {}).get("n", 0)
+        n_band = bands_by_seg.get(seg, {}).get("n", 0)
+        return seg if (n_ratio >= cfg["min_records_per_segment"] and n_band >= cfg["min_records_per_segment"]) else "__overall__"
+
+    # 3) Expected income (regression on modeling view if enough data and not importing)
+    df_calc = model_df.copy()
+    if mode == "regression" and (calib_df.shape[0] >= 50) and (import_calib is None):
+        beta, sigma, feats = fit_regression(calib_df, use_log=cfg["use_log_model"])
+        df_calc["expected_income"] = predict_regression(df_calc, beta, feats, use_log=cfg["use_log_model"])
+        model_info = {"mode": "regression", "beta": beta.tolist(), "sigma": sigma, "feats": feats}
+    else:
+        df_calc["expected_income"] = [
+            expected_income_rules(r, ratios_by_seg, mins_by_seg, r.get("final_cus_seg", "__overall__"))
+            for _, r in df_calc.iterrows()
+        ]
+        model_info = {"mode": "rules" if import_calib is None else "rules(imported_bands)"}
+
+    # 4) Bounds & flags (using calibrated bands)
+    lowers, uppers, mins_used = [], [], []
+    for _, r in df_calc.iterrows():
+        seg = r.get("final_cus_seg", "__overall__")
+        sk = segkey(seg)
+        band = bands_by_seg.get(sk, bands_by_seg["__overall__"])
+        lower = float(band["band_lower"])
+        upper = float(band["band_upper"])
+        min_income = float(mins_by_seg.get(sk, mins_by_seg["__overall__"]))
+        lowers.append(lower); uppers.append(upper); mins_used.append(min_income)
+
+    df_calc["lower_bound"] = df_calc["expected_income"] * np.array(lowers)
+    df_calc["upper_bound"] = df_calc["expected_income"] * np.array(uppers)
+    df_calc["min_income_used"] = mins_used
+
+    # Flags are evaluated on REPORTED income (raw), not winsorized
+    df_calc["income_flag"] = [
+        flag_income(rep, exp, lo, up, mn)
+        for rep, exp, lo, up, mn in zip(df["fin_ann_inc1"], df_calc["expected_income"], lowers, uppers, mins_used)
+    ]
+    df_calc["income_gap"] = df_calc["expected_income"] - df["fin_ann_inc1"].fillna(0.0)
+
+    # 5) Charts (saved PNGs and embedded into Excel)
+    charts = {}
+    os.makedirs(outdir, exist_ok=True)
+
+    # Helper for regression partial fit lines
+    hold = {
+        "trb_bal_0625_uniq": float(np.nanmedian(model_df["trb_bal_0625_uniq"])) if "trb_bal_0625_uniq" in model_df else 0.0,
+        "cc_max_lmt": float(np.nanmedian(model_df["cc_max_lmt"])) if "cc_max_lmt" in model_df else 0.0,
+        "cc_tot_lmt": float(np.nanmedian(model_df["cc_tot_lmt"])) if "cc_tot_lmt" in model_df else 0.0
+    }
+
+    if model_info["mode"] == "regression":
+        beta = np.array(model_info["beta"])
+        use_log = cfg["use_log_model"]
+
+        def pred_partial(x_val: float, hold_vals: Dict[str, float], vary: str) -> float:
+            # Build one row with vary=x_val and others held
+            trb = x_val if vary == "trb_bal_0625_uniq" else hold_vals["trb_bal_0625_uniq"]
+            cmax = x_val if vary == "cc_max_lmt" else hold_vals["cc_max_lmt"]
+            ctot = x_val if vary == "cc_tot_lmt" else hold_vals["cc_tot_lmt"]
+            X = np.array([1.0, trb, cmax, ctot])
+            if use_log:
+                X = np.array([1.0, np.log1p(trb), np.log1p(cmax), np.log1p(ctot)])
+                yhat = np.dot(X, beta)
+                return float(np.expm1(yhat))
+            else:
+                return float(np.dot(X, beta))
+
+        # Scatter + fitted curve for each predictor
+        charts["income_vs_trb"] = _save_scatter_with_fit(
+            outdir,
+            x=model_df["trb_bal_0625_uniq"].values,
+            y=df["fin_ann_inc1"].values,
+            x_label="TRB (₹)",
+            y_label="Income (₹)",
+            pred_fn=lambda xv, _: pred_partial(xv, hold, "trb_bal_0625_uniq"),
+            hold_vals=hold,
+            fname="income_vs_trb.png"
+        )
+        charts["income_vs_ccmax"] = _save_scatter_with_fit(
+            outdir,
+            x=model_df["cc_max_lmt"].values,
+            y=df["fin_ann_inc1"].values,
+            x_label="CC Max Limit (₹)",
+            y_label="Income (₹)",
+            pred_fn=lambda xv, _: pred_partial(xv, hold, "cc_max_lmt"),
+            hold_vals=hold,
+            fname="income_vs_ccmax.png"
+        )
+        charts["income_vs_cctot"] = _save_scatter_with_fit(
+            outdir,
+            x=model_df["cc_tot_lmt"].values,
+            y=df["fin_ann_inc1"].values,
+            x_label="CC Total Limit (₹)",
+            y_label="Income (₹)",
+            pred_fn=lambda xv, _: pred_partial(xv, hold, "cc_tot_lmt"),
+            hold_vals=hold,
+            fname="income_vs_cctot.png"
+        )
+
+        # Actual vs Predicted, Residuals, Histogram
+        y_pred = df_calc["expected_income"].values
+        y_act = df["fin_ann_inc1"].astype(float).values
+        resid = y_act - y_pred
+        charts["actual_vs_pred"] = _save_actual_vs_pred(outdir, y_act, y_pred, "actual_vs_pred.png")
+        charts["resid_vs_pred"] = _save_residuals_vs_pred(outdir, y_pred, resid, "residuals_vs_pred.png")
+        charts["resid_hist"] = _save_residual_hist(outdir, resid, "residual_hist.png")
+
+    # Correlation matrix (raw)
+    corr_cols = ["fin_ann_inc1", "trb_bal_0625_uniq", "cc_max_lmt", "cc_tot_lmt"]
+    charts["corr_matrix"] = _save_corr_heatmap(outdir, df, [c for c in corr_cols if c in df.columns], "corr_matrix.png")
+
+    # 6) Prepare final outputs (use raw df for reporting columns; expected/bounds/flags from df_calc)
+    keep = [
+        "cusid", "final_cus_seg", "inc_src",
+        "trb_bal_0625_uniq", "cc_max_lmt", "cc_tot_lmt",
+        "fin_ann_inc1", "expected_income", "lower_bound", "upper_bound",
+        "income_gap", "income_flag"
+    ]
+    out_df = pd.concat([df, df_calc[["expected_income","lower_bound","upper_bound","income_gap","income_flag"]]], axis=1)
+    existing = [c for c in keep if c in out_df.columns]
+    out_df = out_df[existing].copy()
+    if "cusid" in out_df.columns:
+        out_df["cusid"] = out_df["cusid"].astype("string")
+
+    # Summary
+    summary = (
+        out_df.groupby(["final_cus_seg", "income_flag"], dropna=False)
+        .agg(customers=("cusid", "nunique"),
+             avg_reported=("fin_ann_inc1", "mean"),
+             avg_expected=("expected_income", "mean"),
+             total_gap=("income_gap", "sum"))
+        .reset_index()
+    )
+
+    details = {
+        "ratios_by_seg": ratios_by_seg,
+        "bands_by_seg": bands_by_seg,
+        "mins_by_seg": mins_by_seg,
+        "calib_sheets": calib_sheets,
+        "profile": profile
+    }
+
+    # 7) Save Excel + embed charts
+    out_csv = os.path.join(outdir, "premier_income_flags.csv")
+    out_xlsx = os.path.join(outdir, "premier_income_flags.xlsx")
+    out_df.to_csv(out_csv, index=False)
+
+    with pd.ExcelWriter(out_xlsx, engine="xlsxwriter") as writer:
+        # Data sheets
+        out_df.to_excel(writer, index=False, sheet_name="flags")
+        summary.to_excel(writer, index=False, sheet_name="summary")
+        profile.to_excel(writer, index=False, sheet_name="data_profile")
+
+        # Calibration sheets
+        if not details["calib_sheets"]["ratios_by_seg"].empty:
+            details["calib_sheets"]["ratios_by_seg"].to_excel(writer, index=False, sheet_name="calib_ratios")
+        if not details["calib_sheets"]["bands_by_seg"].empty:
+            details["calib_sheets"]["bands_by_seg"].to_excel(writer, index=False, sheet_name="calib_bands")
+        if not details["calib_sheets"]["overall"].empty:
+            details["calib_sheets"]["overall"].to_excel(writer, index=False, sheet_name="calib_overall")
+
+        # Basic formatting
+        wb = writer.book
+        ws_flags = writer.sheets["flags"]
+        num_fmt = wb.add_format({"num_format": "#,##0"})
+        text_fmt = wb.add_format({"num_format": "@"})
+        money_cols = ["trb_bal_0625_uniq","cc_max_lmt","cc_tot_lmt","fin_ann_inc1","expected_income","lower_bound","upper_bound","income_gap"]
+
+        for i, col in enumerate(out_df.columns):
+            ws_flags.set_column(i, i, max(12, min(28, len(col)+2)), text_fmt if col=="cusid" else None)
+        for col in money_cols:
+            if col in out_df.columns:
+                idx = out_df.columns.get_loc(col)
+                ws_flags.set_column(idx, idx, 16, num_fmt)
+
+        # Charts sheet with embedded PNGs
+        ws_ch = wb.add_worksheet("charts")
+        row, col = 1, 1
+        for name, path in charts.items():
+            if os.path.exists(path):
+                ws_ch.insert_image(row, col, path)
+                row += 22  # space between images
+
+    meta = {
+        "mode": model_info["mode"],
+        "use_log_model": cfg["use_log_model"],
+        "lock_segment_bands": lock_segment_bands,
+        "winsorized_for_model": winsorize,
+        "winsor_lo": winsor_lo,
+        "winsor_hi": winsor_hi,
+        "q_lo": cfg["q_lo"],
+        "q_hi": cfg["q_hi"],
+        "min_income_annual": cfg["min_income_annual"],
+        "min_records_per_segment": cfg["min_records_per_segment"]
+    }
+    with open(os.path.join(outdir, "meta.txt"), "w", encoding="utf-8") as f:
+        for k, v in meta.items():
+            f.write(f"{k}: {v}\n")
+
+    # Return everything for potential callers
+    return out_df, model_info, details, {"charts": charts, "out_csv": out_csv, "out_xlsx": out_xlsx}
+
+
+# ==============================
+# CLI
+# ==============================
+def main():
+    ap = argparse.ArgumentParser(description="Premier Income Estimator — Production (Profiling + Charts)")
+    ap.add_argument("--in", dest="in_path", required=True, help="Input CSV/Parquet path")
+    ap.add_argument("--outdir", default="./out", help="Output directory")
+    ap.add_argument("--mode", choices=["regression","rules"], default="regression", help="Estimation mode")
+    ap.add_argument("--lock_segment_bands", action="store_true", help="Use segment-wise bands/ratios if sample is sufficient")
+    ap.add_argument("--min_records_per_segment", type=int, default=DEFAULTS.min_records_per_segment)
+    ap.add_argument("--q_lo", type=float, default=DEFAULTS.q_lo, help="Lower quantile for band calibration")
+    ap.add_argument("--q_hi", type=float, default=DEFAULTS.q_hi, help="Upper quantile for band calibration")
+    ap.add_argument("--min_income_annual", type=float, default=DEFAULTS.min_income_annual, help="Base minimum annual income (₹)")
+    ap.add_argument("--use_log_model", action="store_true", help="Use log1p regression (default True)")
+    ap.add_argument("--no_log_model", action="store_true", help="Disable log1p regression")
+    ap.add_argument("--import_calib", default=None, help="Path to load calibration JSON")
+    ap.add_argument("--export_calib", default=None, help="Path to write learned calibration JSON")
+    ap.add_argument("--winsorize", action="store_true", help="Winsorize key vars for modeling (keeps raw for reporting)")
+    ap.add_argument("--winsor_lo", type=float, default=0.025, help="Winsor lower quantile")
+    ap.add_argument("--winsor_hi", type=float, default=0.975, help="Winsor upper quantile")
+    ap.add_argument("-v", "--verbose", action="count", default=1, help="Verbosity: -v (info), -vv (debug)")
+    args = ap.parse_args()
+
+    setup_logging(args.verbose)
+
+    cfg: Dict[str, Any] = {
+        "segment": DEFAULTS.segment,
+        "min_income_annual": args.min_income_annual,
+        "band_lower": DEFAULTS.band_lower,
+        "band_upper": DEFAULTS.band_upper,
+        "q_lo": args.q_lo,
+        "q_hi": args.q_hi,
+        "min_records_per_segment": args.min_records_per_segment,
+        "use_log_model": DEFAULTS.use_log_model,
+    }
+    if args.no_log_model:
+        cfg["use_log_model"] = False
+    if args.use_log_model:
+        cfg["use_log_model"] = True
+
+    # Read
+    try:
+        df = read_input(args.in_path)
+    except Exception as e:
+        logging.exception("Failed to read input: %s", e)
+        sys.exit(2)
+
+    required = ["cusid","cc_max_lmt","cc_tot_lmt","fin_ann_inc1","inc_src","trb_bal_0625_uniq","final_cus_seg"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        logging.error("Missing required columns: %s", missing)
+        sys.exit(2)
+
+    # Optional import calibration
+    import_calib = None
+    if args.import_calib:
+        try:
+            with open(args.import_calib, "r", encoding="utf-8") as f:
+                import_calib = json.load(f)
+        except Exception as e:
+            logging.exception("Failed to import calibration JSON: %s", e)
+            sys.exit(2)
+
+    # Run pipeline
+    out_df, model_info, details, files = run_pipeline(
+        df=df,
+        cfg=cfg,
+        mode=args.mode,
+        lock_segment_bands=args.lock_segment_bands,
+        import_calib=import_calib,
+        winsorize=args.winsorize,
+        winsor_lo=args.winsor_lo,
+        winsor_hi=args.winsor_hi,
+        outdir=args.outdir
+    )
+
+    # Optional export calibration
+    if args.export_calib:
+        try:
+            calib_payload = {
+                "ratios_by_seg": details["ratios_by_seg"],
+                "bands_by_seg": details["bands_by_seg"],
+                "mins_by_seg": details["mins_by_seg"],
+                "meta": {
+                    "source_file": os.path.basename(args.in_path),
+                    "mode": model_info.get("mode"),
+                    "q_lo": cfg["q_lo"],
+                    "q_hi": cfg["q_hi"],
+                    "min_records_per_segment": cfg["min_records_per_segment"]
+                }
+            }
+            with open(args.export_calib, "w", encoding="utf-8") as f:
+                json.dump(calib_payload, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logging.exception("Failed to export calibration JSON: %s", e)
+            sys.exit(2)
+
+    logging.info("Output CSV: %s", files["out_csv"])
+    logging.info("Output XLSX: %s", files["out_xlsx"])
+    logging.info("Charts saved to: %s", args.outdir)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Sub CreateFinalPivotTables()
 
     Dim wsData As Worksheet, wsPivot As Worksheet
