@@ -1,3 +1,20 @@
+Hi Prashant,
+
+The input file you shared for the MSF BDM scorecard mapping is not in the agreed format, which caused the failure of both the daily and weekly code runs.
+
+Please ensure that the formatting strictly follows what we discussed so that the code can align accordingly. For example, variable names must remain consistent (e.g., Area should remain as MSF Area). Any changes in variable naming or structure directly break the process.
+
+Due to this format issue, our code failed, and we had to rerun it, which has led to a delay in today’s report delivery. Going forward, kindly make sure the file matches the set format to avoid such delays.
+
+
+
+
+
+
+
+
+
+
 Hi Gopal,
 
 For non-PEGA, I spoke with Smriti. She mentioned that she will only be able to complete the mapping next week. This means both the July 31st and August 15th mappings will be provided together in one go.
