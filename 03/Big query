@@ -1,6 +1,736 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Premier Income Estimator — Monotonic Quantile GBM + Conformal + Rules + kNN
+===========================================================================
+
+What this does (fact-based, no guesses):
+1) Profiles live data (min/max + P10/P50/P90) for TRB, CC limits, income.
+2) Calibrates rules from valid-income rows (median ratios + quantile bands).
+3) Trains LightGBM quantile models with **monotonic constraints** (q10/q50/q90).
+4) Builds **conformal** prediction intervals on a hold-out (coverage ~90%).
+5) For each row, computes three estimates:
+     R = rules (missing-aware), M = GBM median, K = kNN (missing-aware)
+   and blends with a robust **median**, then applies **data-driven sanity caps**.
+6) Flags rows using **conformal lower/upper** (or q10/q90 if conformal off).
+7) Exports CSV + Excel (flags, summary, data_profile, calibration tables, charts).
+
+Inputs (any case/spaces; normalized internally):
+    cusid, cc_max_lmt, cc_tot_lmt, fin_ann_inc1, inc_src, trb_bal_0625_uniq, final_cus_seg
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+from dataclasses import dataclass
+from typing import Dict, Tuple, Optional, Any, List
+
+import numpy as np
+import pandas as pd
+
+# Matplotlib (no seaborn, single charts)
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+try:
+    import lightgbm as lgb
+    HAS_LGB = True
+except Exception:
+    HAS_LGB = False
+
+
+# ==============================
+# Config
+# ==============================
+@dataclass(frozen=True)
+class Defaults:
+    q_lo: float = 0.10
+    q_hi: float = 0.90
+    min_valid_incomes: int = 200       # for GBM+conformal; <200 -> still runs but warns
+    min_for_any_train: int = 50        # below this = no training at all
+    segment_label: str = "Premier"
+    winsor_lo: float = 0.01            # for training features only
+    winsor_hi: float = 0.99
+    conformal_alpha: float = 0.10      # ~90% coverage
+    random_state: int = 42
+    gbm_num_leaves: int = 31
+    gbm_estimators: int = 600
+    gbm_lr: float = 0.05
+
+DEFAULTS = Defaults()
+
+
+# ==============================
+# Logging
+# ==============================
+def setup_logging(v: int):
+    level = logging.WARNING
+    if v >= 2:
+        level = logging.INFO
+    if v >= 3:
+        level = logging.DEBUG
+    logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s",
+                        level=level, datefmt="%Y-%m-%d %H:%M:%S")
+
+
+# ==============================
+# IO & Cleaning
+# ==============================
+def _to_num(x: Any) -> float:
+    if x is None:
+        return np.nan
+    try:
+        return float(x)
+    except Exception:
+        try:
+            return float(str(x).replace(",", "").replace("₹", "").strip())
+        except Exception:
+            return np.nan
+
+
+def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    ren = {"cc_max_limit": "cc_max_lmt", "cc_total_limit": "cc_tot_lmt",
+           "trb": "trb_bal_0625_uniq", "income": "fin_ann_inc1"}
+    df.rename(columns=ren, inplace=True)
+    return df
+
+
+def read_input(path: str) -> pd.DataFrame:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".xlsx", ".xls"):
+        df = pd.read_excel(path, dtype={"cusid": "string"})
+    elif ext in (".parquet", ".pq"):
+        df = pd.read_parquet(path)
+        if "cusid" in df.columns:
+            df["cusid"] = df["cusid"].astype("string")
+    else:
+        df = pd.read_csv(path, dtype={"cusid": "string"})
+    df = standardize_columns(df)
+    if "cusid" in df.columns:
+        df["cusid"] = df["cusid"].astype("string")
+    return df
+
+
+def clean_numeric_cols(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    df = df.copy()
+    for c in cols:
+        if c in df.columns:
+            df[c] = df[c].apply(_to_num)
+    return df
+
+
+# ==============================
+# Profiling
+# ==============================
+PROFILE_COLS = ["cc_max_lmt", "cc_tot_lmt", "trb_bal_0625_uniq", "fin_ann_inc1"]
+
+def profile_vars(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    rows = []
+    for c in cols:
+        if c not in df.columns: continue
+        s = pd.to_numeric(df[c], errors="coerce")
+        rows.append({
+            "variable": c,
+            "non_null": int(s.notna().sum()),
+            "min": float(np.nanmin(s)) if s.notna().any() else np.nan,
+            "p10": float(np.nanquantile(s, 0.10)) if s.notna().any() else np.nan,
+            "p50": float(np.nanmedian(s)) if s.notna().any() else np.nan,
+            "p90": float(np.nanquantile(s, 0.90)) if s.notna().any() else np.nan,
+            "max": float(np.nanmax(s)) if s.notna().any() else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
+def winsorize_series(s: pd.Series, lo_q: float, hi_q: float) -> pd.Series:
+    s = s.astype(float)
+    lo = np.nanquantile(s, lo_q)
+    hi = np.nanquantile(s, hi_q)
+    return s.clip(lower=lo, upper=hi)
+
+
+# ==============================
+# Calibration from valid incomes
+# ==============================
+def calibrate(df_valid: pd.DataFrame, q_lo: float, q_hi: float):
+    work = df_valid.copy()
+    work["monthly_income"] = work["fin_ann_inc1"] / 12.0
+    work = work[work["monthly_income"] > 0].copy()
+
+    work["r_cc"] = work["cc_max_lmt"] / work["monthly_income"]
+    work["r_trb"] = work["trb_bal_0625_uniq"] / work["monthly_income"]
+    work.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+    cc_to_monthly = float(np.nanmedian(work["r_cc"]))
+    trb_to_months = float(np.nanmedian(work["r_trb"]))
+    seg_median_annual = float(np.nanmedian(work["monthly_income"]) * 12.0)
+    seg_floor = 0.9 * seg_median_annual  # conservative lower floor
+
+    ratios = {"__overall__": {
+        "cc_to_monthly_income_ratio": cc_to_monthly,
+        "trb_to_monthly_income_months": trb_to_months,
+        "n": int(work.shape[0])
+    }}
+    mins = {"__overall__": seg_floor}
+
+    # draft expected via rules to compute bands
+    def rule_row(r):
+        cc_ratio = max(1e-9, cc_to_monthly)
+        trb_months = max(1e-9, trb_to_months)
+        trb = max(0.0, r.get("trb_bal_0625_uniq", 0.0) or 0.0)
+        cmax = max(0.0, r.get("cc_max_lmt", 0.0) or 0.0)
+        ctot = max(0.0, r.get("cc_tot_lmt", 0.0) or 0.0)
+        monthly_terms = []
+        if cmax > 0: monthly_terms.append(cmax/cc_ratio)
+        if trb  > 0: monthly_terms.append(trb/trb_months)
+        if ctot > 0: monthly_terms.append((ctot/cc_ratio)*0.25)
+        if not monthly_terms: return np.nan
+        return max(monthly_terms)*12.0
+
+    work["est_rules"] = [rule_row(r) for _, r in work.iterrows()]
+    rep_to_exp = work["fin_ann_inc1"] / (work["est_rules"] + 1e-9)
+    ql = float(np.nanquantile(rep_to_exp, q_lo))
+    qh = float(np.nanquantile(rep_to_exp, q_hi))
+    bands = {"__overall__": {"band_lower": max(0.4, ql), "band_upper": min(2.5, qh), "n": int(work.shape[0])}}
+
+    # for Excel
+    calib_ratios = pd.DataFrame([{
+        "final_cus_seg": "Premier", "n": work.shape[0],
+        "cc_to_monthly_income_ratio": cc_to_monthly,
+        "trb_to_monthly_income_months": trb_to_months,
+        "annual_income_median": seg_median_annual
+    }])
+    calib_bands = pd.DataFrame([{
+        "final_cus_seg": "Premier", "q_lo": bands["__overall__"]["band_lower"],
+        "q_hi": bands["__overall__"]["band_upper"], "n": work.shape[0]
+    }])
+    calib_overall = pd.DataFrame({
+        "metric": ["cc_to_monthly_income_ratio","trb_to_monthly_income_months","band_lower","band_upper","n"],
+        "value": [cc_to_monthly, trb_to_months, bands["__overall__"]["band_lower"], bands["__overall__"]["band_upper"], work.shape[0]]
+    })
+    sheets = {"ratios_by_seg": calib_ratios, "bands_by_seg": calib_bands, "overall": calib_overall}
+    return ratios, bands, mins, sheets
+
+
+# ==============================
+# Rules, kNN, Sanity caps
+# ==============================
+FEATS = ["trb_bal_0625_uniq", "cc_max_lmt", "cc_tot_lmt"]
+
+def available_feats(row: pd.Series, feats: List[str]) -> List[str]:
+    have = []
+    for f in feats:
+        v = row.get(f, np.nan)
+        if pd.notna(v) and np.isfinite(v) and float(v) > 0.0:
+            have.append(f)
+    return have
+
+
+def rules_estimate(row: pd.Series, ratios_overall: Dict[str, float], seg_floor_annual: float) -> float:
+    cc_ratio = max(1e-9, ratios_overall["cc_to_monthly_income_ratio"])
+    trb_months = max(1e-9, ratios_overall["trb_to_monthly_income_months"])
+    trb  = max(0.0, float(row.get("trb_bal_0625_uniq", 0.0)) or 0.0)
+    cmax = max(0.0, float(row.get("cc_max_lmt", 0.0)) or 0.0)
+    ctot = max(0.0, float(row.get("cc_tot_lmt", 0.0)) or 0.0)
+
+    monthly_terms = []
+    if cmax > 0: monthly_terms.append(cmax / cc_ratio)
+    if trb  > 0: monthly_terms.append(trb / trb_months)
+    if ctot > 0: monthly_terms.append((ctot / cc_ratio) * 0.25)
+    if not monthly_terms: return np.nan
+
+    annual = max(monthly_terms) * 12.0
+    return float(max(annual, 0.8 * seg_floor_annual))
+
+
+def knn_block(df_valid: pd.DataFrame, feats: List[str], k: int = 15):
+    base = df_valid[feats + ["fin_ann_inc1"]].copy()
+    base = base.replace([np.inf, -np.inf], np.nan).dropna(subset=["fin_ann_inc1"])
+    if base.empty:
+        return lambda row: np.nan
+
+    y_log = np.log1p(base["fin_ann_inc1"].astype(float).values)
+    Xcols = {f: base[f].astype(float).values for f in feats}
+
+    def predict(row: pd.Series) -> float:
+        pres = available_feats(row, feats)
+        if not pres: return np.nan
+        dist = None
+        for f in pres:
+            rv = float(row.get(f, 0.0) or 0.0)
+            d = (Xcols[f] - rv) ** 2
+            dist = d if dist is None else (dist + d)
+        dist = np.sqrt(dist)
+        idx = np.argsort(dist)[:max(3, min(k, len(dist)))]
+        return float(np.expm1(np.nanmedian(y_log[idx])))
+    return predict
+
+
+def derive_caps(df_valid: pd.DataFrame, feats: List[str]) -> Dict[str, float]:
+    caps = {"c_trb": np.inf, "c_cmax": np.inf, "c_ctot": np.inf}
+    d = df_valid[feats + ["fin_ann_inc1"]].astype(float).replace([np.inf, -np.inf], np.nan)
+    y = d["fin_ann_inc1"]
+
+    def p90_ratio(col):
+        r = (y / d[col]).replace([np.inf, -np.inf], np.nan).dropna()
+        return float(np.nanquantile(r, 0.90)) if not r.empty else np.inf
+
+    if "trb_bal_0625_uniq" in d: caps["c_trb"]  = p90_ratio("trb_bal_0625_uniq")
+    if "cc_max_lmt" in d:        caps["c_cmax"] = p90_ratio("cc_max_lmt")
+    if "cc_tot_lmt" in d:        caps["c_ctot"] = p90_ratio("cc_tot_lmt")
+    return caps
+
+
+def apply_caps(row: pd.Series, y_hat: float, caps: Dict[str, float],
+               p01_income: float, p99_income: float, seg_floor_annual: float) -> float:
+    if pd.isna(y_hat): return np.nan
+    up_list = [p99_income]
+    trb  = float(row.get("trb_bal_0625_uniq", 0.0) or 0.0)
+    cmax = float(row.get("cc_max_lmt", 0.0) or 0.0)
+    ctot = float(row.get("cc_tot_lmt", 0.0) or 0.0)
+    if np.isfinite(caps["c_trb"])  and trb  > 0: up_list.append(caps["c_trb"]  * trb)
+    if np.isfinite(caps["c_cmax"]) and cmax > 0: up_list.append(caps["c_cmax"] * cmax)
+    if np.isfinite(caps["c_ctot"]) and ctot > 0: up_list.append(caps["c_ctot"] * ctot)
+    upper_cap = min([v for v in up_list if np.isfinite(v)])
+    lower_cap = max(p01_income, 0.8 * seg_floor_annual)
+    return float(np.clip(y_hat, lower_cap, upper_cap))
+
+
+# ==============================
+# GBM Features & Training (Quantile + Monotonic)
+# ==============================
+def build_gbm_features(df: pd.DataFrame) -> pd.DataFrame:
+    X = df.copy()
+    # raw
+    for c in FEATS:
+        if c in X: X[c] = pd.to_numeric(X[c], errors="coerce")
+    # log1p
+    for c in FEATS:
+        lc = f"log1p_{c}"
+        X[lc] = np.log1p(X[c]) if c in X else np.nan
+    # missing flags (zero or NaN treated as missing signal)
+    for c in FEATS:
+        X[f"is_missing_{c}"] = (~(X[c].astype(float) > 0)).astype(int)
+    # simple ratios (safe divide)
+    X["ratio_trb_cmax"] = (X["trb_bal_0625_uniq"] / (X["cc_max_lmt"] + 1e-9)).replace([np.inf,-np.inf], np.nan)
+    X["ratio_trb_ctot"] = (X["trb_bal_0625_uniq"] / (X["cc_tot_lmt"] + 1e-9)).replace([np.inf,-np.inf], np.nan)
+    X["ratio_cmax_ctot"] = (X["cc_max_lmt"] / (X["cc_tot_lmt"] + 1e-9)).replace([np.inf,-np.inf], np.nan)
+    return X
+
+
+def gbm_train_quantiles(df_valid: pd.DataFrame, random_state: int,
+                        num_leaves: int, n_estimators: int, lr: float):
+    """
+    Train three monotonic quantile GBMs (q10/q50/q90) on log-income.
+    Monotonic constraints apply on log1p_TRB / log1p_CCmax / log1p_CCtot (increasing).
+    """
+    if not HAS_LGB:
+        return None
+
+    X = build_gbm_features(df_valid)
+    y = df_valid["fin_ann_inc1"].astype(float)
+    y_log = np.log1p(y)
+
+    # train/valid split (20% holdout) for conformal
+    rs = np.random.RandomState(DEFAULTS.random_state)
+    m = X.shape[0]
+    idx = np.arange(m); rs.shuffle(idx)
+    split = int(0.8 * m)
+    tr_idx, va_idx = idx[:split], idx[split:]
+    Xtr, Xva = X.iloc[tr_idx], X.iloc[va_idx]
+    ytr, yva = y_log.iloc[tr_idx], y_log.iloc[va_idx]
+
+    # features order and monotonic constraints
+    feats = list(X.columns)
+    mono = []
+    for f in feats:
+        if f.startswith("log1p_trb") or f.startswith("log1p_cc_max") or f.startswith("log1p_cc_tot"):
+            mono.append(1)
+        else:
+            mono.append(0)
+
+    params_base = dict(
+        boosting_type="gbdt",
+        num_leaves=num_leaves,
+        learning_rate=lr,
+        n_estimators=n_estimators,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        random_state=random_state,
+        monotone_constraints=mono,
+        min_data_in_leaf=20,
+        verbose=-1
+    )
+
+    def train_for_alpha(alpha):
+        model = lgb.LGBMRegressor(objective="quantile", alpha=alpha, **params_base)
+        model.fit(Xtr, ytr, eval_set=[(Xva, yva)], eval_metric="quantile", verbose=False)
+        return model
+
+    models = {
+        "q10": train_for_alpha(0.10),
+        "q50": train_for_alpha(0.50),
+        "q90": train_for_alpha(0.90),
+        "feats": feats,
+        "valid_idx": va_idx.tolist(),
+        "y_log_valid": y_log.iloc[va_idx].values
+    }
+    return models
+
+
+def gbm_predict_all(df: pd.DataFrame, models: Dict[str, Any]) -> Dict[str, np.ndarray]:
+    X = build_gbm_features(df)[models["feats"]]
+    out = {}
+    for k in ("q10","q50","q90"):
+        out[k] = np.expm1(models[k].predict(X))
+    return out
+
+
+def conformal_from_valid(models: Dict[str, Any], preds_valid_log50: np.ndarray, alpha: float) -> float:
+    """
+    Simple symmetric absolute residual conformal on validation (log space).
+    Returns q such that coverage ~ 1-alpha when using +/- q around median.
+    """
+    yv = models["y_log_valid"]
+    res = np.abs(yv - preds_valid_log50)
+    q = np.quantile(res, 1 - alpha)
+    return float(q)
+
+
+# ==============================
+# Plotting
+# ==============================
+def scatter_with_fit(path, x, y, xlab, ylab):
+    plt.figure(); plt.scatter(x, y, alpha=0.4)
+    plt.xlabel(xlab); plt.ylabel(ylab)
+    plt.tight_layout(); plt.savefig(path, dpi=140); plt.close()
+
+
+def actual_vs_pred(path, actual, pred):
+    plt.figure(); plt.scatter(pred, actual, alpha=0.4)
+    lo = np.nanpercentile(np.concatenate([actual, pred]), 1)
+    hi = np.nanpercentile(np.concatenate([actual, pred]), 99)
+    plt.plot([lo, hi], [lo, hi])
+    plt.xlabel("Predicted Income (₹)"); plt.ylabel("Actual Income (₹)")
+    plt.tight_layout(); plt.savefig(path, dpi=140); plt.close()
+
+
+def resid_plots(path_sc, path_hist, pred, resid):
+    plt.figure(); plt.scatter(pred, resid, alpha=0.4); plt.axhline(0)
+    plt.xlabel("Predicted Income (₹)"); plt.ylabel("Residuals (Actual - Pred)")
+    plt.tight_layout(); plt.savefig(path_sc, dpi=140); plt.close()
+    plt.figure(); plt.hist(resid[~np.isnan(resid)], bins=40)
+    plt.xlabel("Residuals"); plt.ylabel("Frequency")
+    plt.tight_layout(); plt.savefig(path_hist, dpi=140); plt.close()
+
+
+def corr_heatmap(path, df, cols):
+    corr = df[cols].corr(method="pearson")
+    plt.figure(); plt.imshow(corr, interpolation="nearest")
+    plt.xticks(range(len(cols)), cols, rotation=45, ha="right"); plt.yticks(range(len(cols)), cols)
+    plt.colorbar(); plt.title("Correlation Matrix")
+    plt.tight_layout(); plt.savefig(path, dpi=140); plt.close()
+
+
+# ==============================
+# Flagging
+# ==============================
+def flag_row(reported, lower, upper):
+    if pd.isna(reported) or reported <= 0: return "Missing"
+    if reported < lower or reported > upper: return "Mismatch"
+    return "OK"
+
+
+# ==============================
+# Pipeline
+# ==============================
+def run_pipeline(
+    df: pd.DataFrame,
+    outdir: str,
+    q_lo: float,
+    q_hi: float,
+    winsorize_for_train: bool,
+    conformal_alpha: float,
+    verbose: int
+):
+    os.makedirs(outdir, exist_ok=True)
+    if "final_cus_seg" not in df.columns:
+        df["final_cus_seg"] = Defaults.segment_label
+    df = clean_numeric_cols(df, PROFILE_COLS)
+
+    # 1) Profile
+    profile = profile_vars(df, PROFILE_COLS)
+
+    # 2) Build modeling view
+    model_df = df.copy()
+    if winsorize_for_train:
+        for c in FEATS:
+            if c in model_df and model_df[c].notna().any():
+                model_df[c] = winsorize_series(model_df[c], Defaults.winsor_lo, Defaults.winsor_hi)
+
+    valid_mask = model_df["fin_ann_inc1"].notna() & (model_df["fin_ann_inc1"] > 0)
+    df_valid = model_df.loc[valid_mask].copy()
+    n_valid = int(df_valid.shape[0])
+
+    if n_valid < Defaults.min_for_any_train:
+        raise RuntimeError(f"Only {n_valid} rows with valid income; need ≥ {Defaults.min_for_any_train} to train.")
+
+    # 3) Calibration for rules & bands
+    ratios, bands, mins, calib_sheets = calibrate(df_valid, q_lo, q_hi)
+    seg_floor_annual = float(mins["__overall__"])
+
+    # 4) Train GBM quantiles (if available)
+    models = None
+    if HAS_LGB:
+        models = gbm_train_quantiles(
+            df_valid, random_state=Defaults.random_state,
+            num_leaves=Defaults.gbm_num_leaves,
+            n_estimators=Defaults.gbm_estimators,
+            lr=Defaults.gbm_lr
+        )
+        if n_valid < Defaults.min_valid_incomes:
+            logging.warning("Valid incomes are %d (< %d). GBM will work but intervals/stability improve with more.",
+                            n_valid, Defaults.min_valid_incomes)
+    else:
+        logging.warning("lightgbm not installed. Skipping GBM; using Rules + kNN only.")
+
+    # 5) Predict GBM on all rows (if trained)
+    gbm_preds = {"q10": np.full(len(df), np.nan), "q50": np.full(len(df), np.nan), "q90": np.full(len(df), np.nan)}
+    conf_delta = None
+    if models is not None:
+        gbm_preds = gbm_predict_all(model_df, models)
+        # conformal delta on validation
+        X_valid_hold = build_gbm_features(df_valid).iloc[models["valid_idx"]][models["feats"]]
+        med_valid_log = models["q50"].predict(X_valid_hold)
+        conf_delta = conformal_from_valid(models, med_valid_log, conformal_alpha)
+
+    # 6) kNN predictor + caps
+    knn_pred = knn_block(df_valid, FEATS, k=15)
+    caps = derive_caps(df_valid, FEATS)
+    inc_series = df_valid["fin_ann_inc1"].astype(float)
+    p01_income = float(np.nanquantile(inc_series, 0.01)) if inc_series.notna().any() else 0.0
+    p99_income = float(np.nanquantile(inc_series, 0.99)) if inc_series.notna().any() else np.inf
+
+    # 7) Per-row estimates (R, M, K), blend and cap
+    R_list, M_list, K_list, Y_list = [], [], [], []
+    L_q, U_q = [], []  # quantile interval from GBM
+    L_c, U_c = [], []  # conformal interval around q50
+
+    for i, r in model_df.iterrows():
+        # rules
+        R = rules_estimate(r, ratios["__overall__"], seg_floor_annual)
+
+        # gbm median
+        M = float(gbm_preds["q50"][i]) if np.isfinite(gbm_preds["q50"][i]) else np.nan
+
+        # kNN
+        K = knn_pred(r)
+
+        vals = [v for v in (R, M, K) if pd.notna(v) and np.isfinite(v)]
+        y_raw = float(np.nanmedian(vals)) if vals else np.nan
+
+        # caps
+        y_cap = apply_caps(r, y_raw, caps, p01_income, p99_income, seg_floor_annual)
+        R_list.append(R); M_list.append(M); K_list.append(K); Y_list.append(y_cap)
+
+        # intervals
+        lq = float(gbm_preds["q10"][i]) if np.isfinite(gbm_preds["q10"][i]) else np.nan
+        uq = float(gbm_preds["q90"][i]) if np.isfinite(gbm_preds["q90"][i]) else np.nan
+        L_q.append(lq); U_q.append(uq)
+
+        if models is not None and conf_delta is not None and np.isfinite(M):
+            # conformal in log space: q50_log +/- delta, back-transform
+            mlog = np.log1p(M)
+            lc = float(np.expm1(max(0.0, mlog - conf_delta)))
+            uc = float(np.expm1(mlog + conf_delta))
+        else:
+            lc, uc = np.nan, np.nan
+        L_c.append(lc); U_c.append(uc)
+
+    # Choose intervals: use conformal if available; else quantile; else calibrated bands
+    lower_final, upper_final = [], []
+    bl = float(bands["__overall__"]["band_lower"]); bu = float(bands["__overall__"]["band_upper"])
+    for i, yhat in enumerate(Y_list):
+        if np.isfinite(L_c[i]) and np.isfinite(U_c[i]):
+            lo, up = L_c[i], U_c[i]
+        elif np.isfinite(L_q[i]) and np.isfinite(U_q[i]):
+            lo, up = L_q[i], U_q[i]
+        else:
+            lo, up = yhat * bl, yhat * bu
+        # also clip to global caps
+        lo = max(lo, p01_income, 0.8 * seg_floor_annual)
+        up = min(up, p99_income)
+        lower_final.append(lo); upper_final.append(up)
+
+    # 8) assemble outputs
+    out = df.copy()
+    out["est_rules"] = R_list
+    out["est_gbm"]   = M_list
+    out["est_knn"]   = K_list
+    out["expected_income"] = Y_list
+    out["lower_bound"] = lower_final
+    out["upper_bound"] = upper_final
+    out["income_gap"] = out["expected_income"] - out["fin_ann_inc1"].fillna(0.0)
+    out["income_flag"] = [flag_row(rep, lo, up)
+                          for rep, lo, up in zip(out["fin_ann_inc1"], out["lower_bound"], out["upper_bound"])]
+
+    # 9) summary
+    summary = (
+        out.groupby(["final_cus_seg", "income_flag"], dropna=False)
+        .agg(customers=("cusid", "nunique"),
+             avg_reported=("fin_ann_inc1", "mean"),
+             avg_expected=("expected_income", "mean"),
+             total_gap=("income_gap", "sum"))
+        .reset_index()
+    )
+
+    # 10) charts
+    charts = {}
+    charts["corr_matrix"] = os.path.join(outdir, "corr_matrix.png")
+    corr_cols = [c for c in ["fin_ann_inc1","trb_bal_0625_uniq","cc_max_lmt","cc_tot_lmt"] if c in df.columns]
+    if len(corr_cols) >= 2: corr_heatmap(charts["corr_matrix"], df, corr_cols)
+
+    # if GBM present, residual plots w.r.t GBM median
+    if any(np.isfinite(M_list)):
+        act = out["fin_ann_inc1"].astype(float).values
+        pred = np.array([m if np.isfinite(m) else np.nan for m in M_list])
+        resid = act - pred
+        charts["actual_vs_pred"] = os.path.join(outdir, "actual_vs_pred.png")
+        charts["resid_vs_pred"]  = os.path.join(outdir, "resid_vs_pred.png")
+        charts["resid_hist"]     = os.path.join(outdir, "resid_hist.png")
+        actual_vs_pred(charts["actual_vs_pred"], act, pred)
+        resid_plots(charts["resid_vs_pred"], charts["resid_hist"], pred, resid)
+
+    # 11) save files
+    out_csv = os.path.join(outdir, "premier_income_flags.csv")
+    out_xlsx = os.path.join(outdir, "premier_income_flags.xlsx")
+    out.to_csv(out_csv, index=False)
+
+    with pd.ExcelWriter(out_xlsx, engine="xlsxwriter") as writer:
+        out.to_excel(writer, index=False, sheet_name="flags")
+        summary.to_excel(writer, index=False, sheet_name="summary")
+        profile.to_excel(writer, index=False, sheet_name="data_profile")
+        # calibration tables
+        if not calib_sheets["ratios_by_seg"].empty:
+            calib_sheets["ratios_by_seg"].to_excel(writer, index=False, sheet_name="calib_ratios")
+        if not calib_sheets["bands_by_seg"].empty:
+            calib_sheets["bands_by_seg"].to_excel(writer, index=False, sheet_name="calib_bands")
+        if not calib_sheets["overall"].empty:
+            calib_sheets["overall"].to_excel(writer, index=False, sheet_name="calib_overall")
+
+        # charts sheet
+        wb = writer.book
+        ws = wb.add_worksheet("charts"); r = 1
+        for name, p in charts.items():
+            if os.path.exists(p): ws.insert_image(r, 1, p); r += 22
+
+    meta = {
+        "has_lightgbm": HAS_LGB,
+        "valid_rows_for_training": n_valid,
+        "conformal_alpha": conformal_alpha,
+        "bands_lower": float(bands["__overall__"]["band_lower"]),
+        "bands_upper": float(bands["__overall__"]["band_upper"])
+    }
+    with open(os.path.join(outdir, "meta.txt"), "w", encoding="utf-8") as f:
+        for k, v in meta.items(): f.write(f"{k}: {v}\n")
+
+    return out_csv, out_xlsx, charts
+
+
+# ==============================
+# CLI
+# ==============================
+def main(args_list: Optional[List[str]] = None):
+    ap = argparse.ArgumentParser(description="Premier Income Estimator — GBM+Conformal+Rules+kNN")
+    ap.add_argument("--in", dest="in_path", required=True, help="Input file (.xlsx/.xls/.csv/.parquet)")
+    ap.add_argument("--outdir", default="./out", help="Output directory")
+    ap.add_argument("--winsorize", action="store_true", help="Winsorize features for training only")
+    ap.add_argument("--q_lo", type=float, default=DEFAULTS.q_lo)
+    ap.add_argument("--q_hi", type=float, default=DEFAULTS.q_hi)
+    ap.add_argument("--conformal_alpha", type=float, default=DEFAULTS.conformal_alpha)
+    ap.add_argument("-v", "--verbose", action="count", default=1)
+    args = ap.parse_args(args_list)
+
+    setup_logging(args.verbose)
+
+    try:
+        df = read_input(args.in_path)
+    except Exception as e:
+        logging.exception("Failed to read input: %s", e); sys.exit(2)
+
+    required = ["cusid","cc_max_lmt","cc_tot_lmt","fin_ann_inc1","inc_src","trb_bal_0625_uniq"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        logging.error("Missing required columns: %s", missing); sys.exit(2)
+
+    try:
+        out_csv, out_xlsx, charts = run_pipeline(
+            df=df,
+            outdir=args.outdir,
+            q_lo=args.q_lo, q_hi=args.q_hi,
+            winsorize_for_train=args.winsorize,
+            conformal_alpha=args.conformal_alpha,
+            verbose=args.verbose
+        )
+    except Exception as e:
+        logging.exception("Run failed: %s", e); sys.exit(2)
+
+    logging.info("Output CSV: %s", out_csv)
+    logging.info("Output XLSX: %s", out_xlsx)
+    logging.info("Charts saved alongside outputs.")
+
+
+if __name__ == "__main__":
+    # main()  # normal CLI
+    # --- Spyder quick-run: uncomment and set your path ---
+    # main([
+    #     "--in", r"C:\path\to\mydata.xlsx",
+    #     "--outdir", r"C:\path\to\out",
+    #     "--winsorize",
+    #     "-v"
+    # ])
+    pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
 Premier Income Estimator — Production (Data-Driven, Profiling, Regression, Charts)
 ==================================================================================
 
