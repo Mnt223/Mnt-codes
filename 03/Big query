@@ -4,6 +4,743 @@
 Premier Income Estimator — Production (Data-Driven, Profiling, Regression, Charts)
 ==================================================================================
 
+Guarantees (fact-based, no guesses):
+- Profiles live data (min/max + P10/P50/P90) for: TRB, CC max, CC total, Income.
+- Calibrates mismatch bands from data (quantiles of reported/expected via rules).
+- Predicts income using Ridge/OLS (closed-form) with K-fold CV over an alpha grid.
+- Flags Missing / Mismatch / OK using calibrated bands (no hardcoded thresholds).
+- Exports CSV + Excel (flags, summary, data_profile, calibration tables, charts).
+- Robust to outliers via optional winsorization (for modeling only).
+- Friendly to Spyder and Terminal (CLI). No sklearn dependency.
+
+Required columns (case/spacing tolerant — normalized internally):
+    cusid, cc_max_lmt, cc_tot_lmt, fin_ann_inc1, inc_src, trb_bal_0625_uniq, final_cus_seg
+
+Run (terminal):
+    python premier_income_estimator_final.py --in "mydata.xlsx" --outdir ./out --mode regression
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+from dataclasses import dataclass
+from typing import Dict, Tuple, Optional, Any, List
+
+import numpy as np
+import pandas as pd
+
+# Matplotlib (no seaborn, single-plot figures, no custom styles)
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+
+# ==============================
+# Config & Logging
+# ==============================
+@dataclass(frozen=True)
+class Defaults:
+    q_lo: float = 0.10                 # lower quantile for band calibration
+    q_hi: float = 0.90                 # upper quantile for band calibration
+    kfolds: int = 5                    # CV folds for ridge/OLS
+    alpha_grid: tuple = (0.0, 0.1, 1.0, 10.0, 100.0, 1000.0)  # 0.0 -> OLS
+    min_valid_incomes: int = 50        # minimum rows with valid income to calibrate/train
+    use_log_model: bool = True         # log1p modeling (stable on skew)
+    segment_label: str = "Premier"     # default if final_cus_seg missing
+
+
+DEFAULTS = Defaults()
+
+
+def setup_logging(verbosity: int = 1):
+    level = logging.WARNING
+    if verbosity >= 2:
+        level = logging.INFO
+    if verbosity >= 3:
+        level = logging.DEBUG
+    logging.basicConfig(
+        format="%(asctime)s | %(levelname)s | %(message)s",
+        level=level,
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+
+# ==============================
+# IO & Cleaning
+# ==============================
+def _to_num(x: Any) -> float:
+    if x is None:
+        return np.nan
+    try:
+        return float(x)
+    except Exception:
+        try:
+            return float(str(x).replace(",", "").replace("₹", "").strip())
+        except Exception:
+            return np.nan
+
+
+def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    # common variants
+    rename = {
+        "cc_max_limit": "cc_max_lmt",
+        "cc_total_limit": "cc_tot_lmt",
+        "trb": "trb_bal_0625_uniq",
+        "income": "fin_ann_inc1",
+    }
+    df.rename(columns=rename, inplace=True)
+    return df
+
+
+def read_input(path: str) -> pd.DataFrame:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".xlsx", ".xls"):
+        df = pd.read_excel(path, dtype={"cusid": "string"})
+    elif ext in (".parquet", ".pq"):
+        df = pd.read_parquet(path)
+        if "cusid" in df.columns:
+            df["cusid"] = df["cusid"].astype("string")
+    else:
+        df = pd.read_csv(path, dtype={"cusid": "string"})
+    df = standardize_columns(df)
+    if "cusid" in df.columns:
+        df["cusid"] = df["cusid"].astype("string")
+    return df
+
+
+def clean_numeric_cols(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    df = df.copy()
+    for c in cols:
+        if c in df.columns:
+            df[c] = df[c].apply(_to_num)
+    return df
+
+
+# ==============================
+# Data Profiling (facts from live data)
+# ==============================
+PROFILE_COLS = ["cc_max_lmt", "cc_tot_lmt", "trb_bal_0625_uniq", "fin_ann_inc1"]
+
+def profile_vars(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    rows = []
+    for c in cols:
+        if c not in df.columns:
+            continue
+        s = pd.to_numeric(df[c], errors="coerce")
+        rows.append({
+            "variable": c,
+            "non_null": int(s.notna().sum()),
+            "min": float(np.nanmin(s)) if s.notna().any() else np.nan,
+            "p10": float(np.nanquantile(s, 0.10)) if s.notna().any() else np.nan,
+            "p50": float(np.nanmedian(s)) if s.notna().any() else np.nan,
+            "p90": float(np.nanquantile(s, 0.90)) if s.notna().any() else np.nan,
+            "max": float(np.nanmax(s)) if s.notna().any() else np.nan,
+        })
+    return pd.DataFrame(rows)
+
+
+def winsorize_series(s: pd.Series, lo_q: float, hi_q: float) -> pd.Series:
+    s = s.astype(float)
+    lo = np.nanquantile(s, lo_q)
+    hi = np.nanquantile(s, hi_q)
+    return s.clip(lower=lo, upper=hi)
+
+
+# ==============================
+# Calibration (purely data-driven)
+# ==============================
+def calibrate_from_data(df_valid: pd.DataFrame, q_lo: float, q_hi: float):
+    """
+    Uses ONLY rows with valid income to learn:
+      - Ratios for rules: median(cc_max / monthly_income), median(TRB / monthly_income)
+      - Segment minimum (floor) from median annual income (data-driven)
+      - Bands from quantiles of (reported / expected_rules)
+    """
+    work = df_valid.copy()
+    work["monthly_income"] = work["fin_ann_inc1"] / 12.0
+    work = work[work["monthly_income"] > 0].copy()
+
+    work["r_cc"] = work["cc_max_lmt"] / work["monthly_income"]
+    work["r_trb"] = work["trb_bal_0625_uniq"] / work["monthly_income"]
+    work.replace([np.inf, -np.inf], np.nan, inplace=True)
+
+    cc_to_monthly = float(np.nanmedian(work["r_cc"].values))
+    trb_to_months = float(np.nanmedian(work["r_trb"].values))
+    seg_min_annual = float(np.nanmedian(work["monthly_income"].values) * 12.0 * 0.9)
+
+    ratios = {"__overall__": {
+        "cc_to_monthly_income_ratio": cc_to_monthly,
+        "trb_to_monthly_income_months": trb_to_months,
+        "n": int(work.shape[0])
+    }}
+    mins = {"__overall__": seg_min_annual}
+
+    # expected via rules to compute mismatch bands
+    def expected_rules_row(row):
+        cc_ratio = max(1e-9, cc_to_monthly)
+        trb_months = max(1e-9, trb_to_months)
+        cc_max = max(0.0, row.get("cc_max_lmt", 0.0) or 0.0)
+        cc_tot = max(0.0, row.get("cc_tot_lmt", 0.0) or 0.0)
+        trb = max(0.0, row.get("trb_bal_0625_uniq", 0.0) or 0.0)
+        monthly = max(cc_max / cc_ratio, trb / trb_months, (cc_tot / cc_ratio) * 0.25)
+        return monthly * 12.0
+
+    work["expected_rules"] = [expected_rules_row(r) for _, r in work.iterrows()]
+    eps = 1e-9
+    rep_to_exp = work["fin_ann_inc1"] / (work["expected_rules"] + eps)
+    band_lower = float(np.nanquantile(rep_to_exp.values, q_lo))
+    band_upper = float(np.nanquantile(rep_to_exp.values, q_hi))
+    bands = {"__overall__": {"band_lower": max(0.4, band_lower),
+                             "band_upper": min(2.5, band_upper),
+                             "n": int(work.shape[0])}}
+
+    # Summary tables (for Excel)
+    calib_ratios = pd.DataFrame([{
+        "final_cus_seg": "Premier",
+        "n": work.shape[0],
+        "cc_to_monthly_income_ratio": cc_to_monthly,
+        "trb_to_monthly_income_months": trb_to_months,
+        "annual_income_median": float(np.nanmedian(work["monthly_income"]) * 12.0)
+    }])
+    calib_bands = pd.DataFrame([{
+        "final_cus_seg": "Premier",
+        "q_lo": bands["__overall__"]["band_lower"], "q_hi": bands["__overall__"]["band_upper"], "n": work.shape[0]
+    }])
+    calib_overall = pd.DataFrame({
+        "metric": ["cc_to_monthly_income_ratio", "trb_to_monthly_income_months",
+                   "band_lower", "band_upper", "n"],
+        "value": [cc_to_monthly, trb_to_months, bands["__overall__"]["band_lower"],
+                  bands["__overall__"]["band_upper"], work.shape[0]]
+    })
+
+    summary_tbls = {"ratios_by_seg": calib_ratios, "bands_by_seg": calib_bands, "overall": calib_overall}
+    return ratios, bands, mins, summary_tbls
+
+
+# ==============================
+# Modeling (OLS/Ridge via closed-form + CV) — FIXED alpha handling
+# ==============================
+def _ridge_closed_form(X: np.ndarray, y: np.ndarray, alpha: float) -> np.ndarray:
+    """
+    Closed-form ridge solution with unpenalized intercept (first column).
+    alpha is forced to float >= 0.
+    """
+    if alpha is None or not np.isfinite(alpha) or alpha < 0:
+        alpha = 1.0  # safe fallback
+    n_features = X.shape[1]
+    I = np.eye(n_features)
+    I[0, 0] = 0.0  # do not penalize intercept
+    XtX = X.T @ X
+    Xty = X.T @ y
+    beta = np.linalg.solve(XtX + float(alpha) * I, Xty)
+    return beta
+
+
+def _kfold_indices(n: int, k: int, rng: np.random.RandomState) -> List[Tuple[np.ndarray, np.ndarray]]:
+    idx = np.arange(n)
+    rng.shuffle(idx)
+    folds = np.array_split(idx, k)
+    pairs = []
+    for i in range(k):
+        val = folds[i]
+        train = np.hstack([folds[j] for j in range(k) if j != i]) if k > 1 else idx
+        pairs.append((train, val))
+    return pairs
+
+
+def fit_ridge_cv(df_valid: pd.DataFrame, use_log: bool, kfolds: int, alphas: Optional[tuple]):
+    """
+    Cross-validate ridge across an alpha grid (includes 0.0 = OLS).
+    FIX: guarantees non-empty alpha grid and non-None best_alpha.
+    Drops any rows with NaNs in features or target before training.
+    """
+    feats = ["trb_bal_0625_uniq", "cc_max_lmt", "cc_tot_lmt"]
+    data = df_valid[feats + ["fin_ann_inc1"]].astype(float)
+    data = data.replace([np.inf, -np.inf], np.nan).dropna(axis=0, how="any")
+    if data.empty or data.shape[0] < 2:
+        raise RuntimeError("Not enough clean rows to train regression after dropping NaNs/infs.")
+
+    X = data[feats].values
+    y = data["fin_ann_inc1"].values
+    if use_log:
+        X = np.log1p(X); y = np.log1p(y)
+
+    X1 = np.c_[np.ones(X.shape[0]), X]
+
+    # Ensure valid alpha grid
+    if not alphas or len(alphas) == 0:
+        alphas = (0.0, 0.1, 1.0, 10.0, 100.0, 1000.0)
+
+    # Ensure valid kfolds
+    k = max(2, min(kfolds, X1.shape[0]))  # at least 2, at most n
+    rng = np.random.RandomState(42)
+    splits = _kfold_indices(X1.shape[0], k, rng)
+
+    best_alpha, best_mse = float(alphas[0]), np.inf  # initialize with first alpha
+    for alpha in alphas:
+        alpha = 0.0 if alpha == 0 else float(alpha)
+        mses = []
+        for tr, va in splits:
+            beta = _ridge_closed_form(X1[tr], y[tr], alpha)
+            pred = X1[va] @ beta
+            mse = float(np.mean((y[va] - pred) ** 2))
+            mses.append(mse)
+        avg = float(np.mean(mses))
+        if avg < best_mse:
+            best_mse, best_alpha = avg, float(alpha)
+
+    # Train final model with best_alpha
+    beta = _ridge_closed_form(X1, y, best_alpha)
+    model = {"beta": beta.tolist(), "feats": feats, "alpha": float(best_alpha), "use_log": bool(use_log), "cv_mse": float(best_mse)}
+    return model
+
+
+def predict_model(df: pd.DataFrame, model: Dict[str, Any]) -> np.ndarray:
+    X = df[model["feats"]].astype(float).values
+    if model["use_log"]:
+        X = np.log1p(X)
+    X1 = np.c_[np.ones(X.shape[0]), X]
+    yhat = X1 @ np.array(model["beta"])
+    return np.expm1(yhat) if model["use_log"] else yhat
+
+
+# ==============================
+# Rules (use calibrated ratios)
+# ==============================
+def expected_income_rules(row: pd.Series, ratios: Dict[str, Dict], mins: Dict[str, float]) -> float:
+    r = ratios["__overall__"]
+    cc_ratio = max(1e-9, r["cc_to_monthly_income_ratio"])
+    trb_months = max(1e-9, r["trb_to_monthly_income_months"])
+    cc_max = max(0.0, row.get("cc_max_lmt", 0.0) or 0.0)
+    cc_tot = max(0.0, row.get("cc_tot_lmt", 0.0) or 0.0)
+    trb = max(0.0, row.get("trb_bal_0625_uniq", 0.0) or 0.0)
+    monthly = max(cc_max / cc_ratio, trb / trb_months, (cc_tot / cc_ratio) * 0.25)
+    seg_floor = float(mins["__overall__"])
+    return float(max(monthly * 12.0, 0.8 * seg_floor))
+
+
+# ==============================
+# Flagging
+# ==============================
+def flag_income(reported: float, expected: float, lower: float, upper: float) -> str:
+    if pd.isna(reported) or reported <= 0:
+        return "Missing"
+    if reported < expected * lower or reported > expected * upper:
+        return "Mismatch"
+    return "OK"
+
+
+# ==============================
+# Plotting (one figure per chart)
+# ==============================
+def _save_scatter_with_fit(outdir: str, x: np.ndarray, y: np.ndarray, x_label: str, y_label: str,
+                           pred_fn=None, fname: str = "scatter.png"):
+    plt.figure()
+    plt.scatter(x, y, alpha=0.4)
+    if pred_fn is not None and np.isfinite(x).any():
+        xs = np.linspace(np.nanpercentile(x, 1), np.nanpercentile(x, 99), 180)
+        ys = [pred_fn(xv) for xv in xs]
+        plt.plot(xs, ys)
+    plt.xlabel(x_label); plt.ylabel(y_label)
+    path = os.path.join(outdir, fname)
+    plt.tight_layout(); plt.savefig(path, dpi=140); plt.close()
+    return path
+
+
+def _save_actual_vs_pred(outdir: str, actual: np.ndarray, pred: np.ndarray, fname: str):
+    plt.figure()
+    plt.scatter(pred, actual, alpha=0.4)
+    lo = np.nanpercentile(np.concatenate([actual, pred]), 1)
+    hi = np.nanpercentile(np.concatenate([actual, pred]), 99)
+    plt.plot([lo, hi], [lo, hi])
+    plt.xlabel("Predicted Income (₹)"); plt.ylabel("Actual Income (₹)")
+    path = os.path.join(outdir, fname)
+    plt.tight_layout(); plt.savefig(path, dpi=140); plt.close()
+    return path
+
+
+def _save_residuals(outdir: str, pred: np.ndarray, resid: np.ndarray, fname_scatter: str, fname_hist: str):
+    plt.figure()
+    plt.scatter(pred, resid, alpha=0.4)
+    plt.axhline(0)
+    plt.xlabel("Predicted Income (₹)"); plt.ylabel("Residuals (Actual - Pred)")
+    p_sc = os.path.join(outdir, fname_scatter)
+    plt.tight_layout(); plt.savefig(p_sc, dpi=140); plt.close()
+
+    plt.figure()
+    plt.hist(resid[~np.isnan(resid)], bins=40)
+    plt.xlabel("Residuals"); plt.ylabel("Frequency")
+    p_hist = os.path.join(outdir, fname_hist)
+    plt.tight_layout(); plt.savefig(p_hist, dpi=140); plt.close()
+    return p_sc, p_hist
+
+
+def _save_corr_heatmap(outdir: str, df: pd.DataFrame, cols: List[str], fname: str = "corr_matrix.png"):
+    corr = df[cols].corr(method="pearson")
+    plt.figure()
+    plt.imshow(corr, interpolation="nearest")
+    plt.xticks(range(len(cols)), cols, rotation=45, ha="right")
+    plt.yticks(range(len(cols)), cols)
+    plt.colorbar()
+    plt.title("Correlation Matrix")
+    path = os.path.join(outdir, fname)
+    plt.tight_layout(); plt.savefig(path, dpi=140); plt.close()
+    return path
+
+
+# ==============================
+# Pipeline
+# ==============================
+def run_pipeline(
+    df: pd.DataFrame,
+    q_lo: float,
+    q_hi: float,
+    use_log_model: bool,
+    kfolds: int,
+    alpha_grid: tuple,
+    mode: str,
+    winsorize_for_model: bool,
+    winsor_lo: float,
+    winsor_hi: float,
+    import_calib: Optional[Dict[str, Any]],
+    outdir: str
+) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    if "final_cus_seg" not in df.columns:
+        df["final_cus_seg"] = Defaults.segment_label
+    df = clean_numeric_cols(df, PROFILE_COLS)
+
+    # 1) Data profile
+    profile = profile_vars(df, PROFILE_COLS)
+
+    # 2) Modeling view (optional winsorization)
+    model_df = df.copy()
+    if winsorize_for_model:
+        for c in PROFILE_COLS:
+            if c in model_df.columns and model_df[c].notna().any():
+                model_df[c] = winsorize_series(model_df[c], winsor_lo, winsor_hi)
+
+    valid_mask = model_df["fin_ann_inc1"].notna() & (model_df["fin_ann_inc1"] > 0)
+    df_valid = model_df.loc[valid_mask].copy()
+    n_valid = int(df_valid.shape[0])
+
+    if import_calib is not None:
+        ratios = import_calib["ratios_by_seg"]
+        bands = import_calib["bands_by_seg"]
+        mins = import_calib["mins_by_seg"]
+        calib_sheets = {"ratios_by_seg": pd.DataFrame(), "bands_by_seg": pd.DataFrame(), "overall": pd.DataFrame()}
+    else:
+        if n_valid < DEFAULTS.min_valid_incomes:
+            raise RuntimeError(
+                f"Insufficient valid income records for calibration/training "
+                f"({n_valid} found; require >= {DEFAULTS.min_valid_incomes})."
+            )
+        ratios, bands, mins, calib_sheets = calibrate_from_data(df_valid, q_lo, q_hi)
+
+    # 3) Expected income
+    out = model_df.copy()
+    model_info: Dict[str, Any]
+    if mode == "regression":
+        model = fit_ridge_cv(df_valid, use_log=use_log_model, kfolds=kfolds, alphas=alpha_grid)
+        out["expected_income"] = predict_model(out, model)
+        model_info = {"mode": "regression", **model}
+    else:
+        out["expected_income"] = [expected_income_rules(r, ratios, mins) for _, r in out.iterrows()]
+        model_info = {"mode": "rules", "ratios": ratios["__overall__"]}
+
+    # 4) Bounds & flags
+    lower = float(bands["__overall__"]["band_lower"])
+    upper = float(bands["__overall__"]["band_upper"])
+    out["lower_bound"] = out["expected_income"] * lower
+    out["upper_bound"] = out["expected_income"] * upper
+    out["income_flag"] = [flag_income(rep, exp, lower, upper)
+                          for rep, exp in zip(df["fin_ann_inc1"], out["expected_income"])]
+    out["income_gap"] = out["expected_income"] - df["fin_ann_inc1"].fillna(0.0)
+
+    # 5) Reporting frame
+    cols_keep = ["cusid", "final_cus_seg", "inc_src",
+                 "trb_bal_0625_uniq", "cc_max_lmt", "cc_tot_lmt",
+                 "fin_ann_inc1", "expected_income", "lower_bound", "upper_bound",
+                 "income_gap", "income_flag"]
+    df_out = pd.concat([df, out[["expected_income", "lower_bound", "upper_bound", "income_gap", "income_flag"]]], axis=1)
+    df_out = df_out[[c for c in cols_keep if c in df_out.columns]].copy()
+    if "cusid" in df_out.columns:
+        df_out["cusid"] = df_out["cusid"].astype("string")
+
+    # 6) Summary
+    summary = (
+        df_out.groupby(["final_cus_seg", "income_flag"], dropna=False)
+        .agg(customers=("cusid", "nunique"),
+             avg_reported=("fin_ann_inc1", "mean"),
+             avg_expected=("expected_income", "mean"),
+             total_gap=("income_gap", "sum"))
+        .reset_index()
+    )
+
+    # 7) Charts
+    os.makedirs(outdir, exist_ok=True)
+    charts = {}
+
+    if model_info["mode"] == "regression":
+        med_trb = float(np.nanmedian(model_df["trb_bal_0625_uniq"])) if "trb_bal_0625_uniq" in model_df else 0.0
+        med_cmax = float(np.nanmedian(model_df["cc_max_lmt"])) if "cc_max_lmt" in model_df else 0.0
+        med_ctot = float(np.nanmedian(model_df["cc_tot_lmt"])) if "cc_tot_lmt" in model_df else 0.0
+        beta = np.array(model_info["beta"]); use_log = model_info["use_log"]
+
+        def pred_with_x(xv, vary: str):
+            trb = xv if vary == "trb" else med_trb
+            cmax = xv if vary == "cmax" else med_cmax
+            ctot = xv if vary == "ctot" else med_ctot
+            vec = np.array([1.0, trb, cmax, ctot])
+            if use_log:
+                vec = np.array([1.0, np.log1p(trb), np.log1p(cmax), np.log1p(ctot)])
+                yhat = vec @ beta
+                return float(np.expm1(yhat))
+            else:
+                return float(vec @ beta)
+
+        charts["income_vs_trb"] = _save_scatter_with_fit(
+            outdir,
+            x=model_df["trb_bal_0625_uniq"].values,
+            y=df["fin_ann_inc1"].values,
+            x_label="TRB (₹)", y_label="Income (₹)",
+            pred_fn=lambda xv: pred_with_x(xv, "trb"),
+            fname="income_vs_trb.png"
+        )
+        charts["income_vs_ccmax"] = _save_scatter_with_fit(
+            outdir,
+            x=model_df["cc_max_lmt"].values,
+            y=df["fin_ann_inc1"].values,
+            x_label="CC Max Limit (₹)", y_label="Income (₹)",
+            pred_fn=lambda xv: pred_with_x(xv, "cmax"),
+            fname="income_vs_ccmax.png"
+        )
+        charts["income_vs_cctot"] = _save_scatter_with_fit(
+            outdir,
+            x=model_df["cc_tot_lmt"].values,
+            y=df["fin_ann_inc1"].values,
+            x_label="CC Total Limit (₹)", y_label="Income (₹)",
+            pred_fn=lambda xv: pred_with_x(xv, "ctot"),
+            fname="income_vs_cctot.png"
+        )
+        y_pred = out["expected_income"].values
+        y_act = df["fin_ann_inc1"].astype(float).values
+        resid = y_act - y_pred
+        charts["actual_vs_pred"] = _save_actual_vs_pred(outdir, y_act, y_pred, "actual_vs_pred.png")
+        p_sc, p_hist = _save_residuals(outdir, y_pred, resid, "residuals_vs_pred.png", "residual_hist.png")
+        charts["resid_vs_pred"] = p_sc
+        charts["resid_hist"] = p_hist
+
+    corr_cols = [c for c in ["fin_ann_inc1", "trb_bal_0625_uniq", "cc_max_lmt", "cc_tot_lmt"] if c in df.columns]
+    if len(corr_cols) >= 2:
+        charts["corr_matrix"] = _save_corr_heatmap(outdir, df, corr_cols, "corr_matrix.png")
+
+    # 8) Write outputs
+    out_csv = os.path.join(outdir, "premier_income_flags.csv")
+    out_xlsx = os.path.join(outdir, "premier_income_flags.xlsx")
+    df_out.to_csv(out_csv, index=False)
+
+    with pd.ExcelWriter(out_xlsx, engine="xlsxwriter") as writer:
+        df_out.to_excel(writer, index=False, sheet_name="flags")
+        summary.to_excel(writer, index=False, sheet_name="summary")
+        profile.to_excel(writer, index=False, sheet_name="data_profile")
+
+        calib = calib_sheets
+        if not calib["ratios_by_seg"].empty:
+            calib["ratios_by_seg"].to_excel(writer, index=False, sheet_name="calib_ratios")
+        if not calib["bands_by_seg"].empty:
+            calib["bands_by_seg"].to_excel(writer, index=False, sheet_name="calib_bands")
+        if not calib["overall"].empty:
+            calib["overall"].to_excel(writer, index=False, sheet_name="calib_overall")
+
+        wb = writer.book
+        ws_flags = writer.sheets["flags"]
+        num_fmt = wb.add_format({"num_format": "#,##0"})
+        text_fmt = wb.add_format({"num_format": "@"})
+        money_cols = ["trb_bal_0625_uniq", "cc_max_lmt", "cc_tot_lmt", "fin_ann_inc1",
+                      "expected_income", "lower_bound", "upper_bound", "income_gap"]
+        for i, col in enumerate(df_out.columns):
+            ws_flags.set_column(i, i, max(12, min(28, len(col) + 2)), text_fmt if col == "cusid" else None)
+        for col in money_cols:
+            if col in df_out.columns:
+                j = df_out.columns.get_loc(col)
+                ws_flags.set_column(j, j, 16, num_fmt)
+
+        ws_ch = wb.add_worksheet("charts")
+        row, col = 1, 1
+        for _, path in charts.items():
+            if os.path.exists(path):
+                ws_ch.insert_image(row, col, path)
+                row += 22
+
+    meta = {
+        "mode": model_info["mode"],
+        "use_log_model": use_log_model,
+        "q_lo": q_lo, "q_hi": q_hi,
+        "kfolds": kfolds, "alpha_grid": tuple(alpha_grid),
+        "winsorized_for_model": winsorize_for_model,
+        "winsor_lo": winsor_lo, "winsor_hi": winsor_hi,
+        "calibration_rows": int(ratios["__overall__"]["n"])
+    }
+    with open(os.path.join(outdir, "meta.txt"), "w", encoding="utf-8") as f:
+        for k, v in meta.items():
+            f.write(f"{k}: {v}\n")
+
+    details = {
+        "ratios_by_seg": ratios,
+        "bands_by_seg": bands,
+        "mins_by_seg": mins,
+        "summary_tables": calib_sheets,
+        "profile": profile
+    }
+    files = {"out_csv": out_csv, "out_xlsx": out_xlsx, "charts": charts}
+    return df_out, model_info, details, files
+
+
+# ==============================
+# Main (CLI & Spyder)
+# ==============================
+def main(args_list: Optional[List[str]] = None):
+    ap = argparse.ArgumentParser(description="Premier Income Estimator — Production")
+    ap.add_argument("--in", dest="in_path", required=True, help="Input file (.xlsx/.xls/.csv/.parquet)")
+    ap.add_argument("--outdir", default="./out", help="Output directory")
+    ap.add_argument("--mode", choices=["regression", "rules"], default="regression", help="Modeling mode")
+    ap.add_argument("--q_lo", type=float, default=DEFAULTS.q_lo, help="Lower quantile for band calibration")
+    ap.add_argument("--q_hi", type=float, default=DEFAULTS.q_hi, help="Upper quantile for band calibration")
+    ap.add_argument("--kfolds", type=int, default=DEFAULTS.kfolds, help="CV folds for ridge/OLS")
+    ap.add_argument("--use_log_model", action="store_true", help="Use log1p regression (default True)")
+    ap.add_argument("--no_log_model", action="store_true", help="Disable log1p regression")
+    ap.add_argument("--winsorize", action="store_true", help="Winsorize key vars for modeling only")
+    ap.add_argument("--winsor_lo", type=float, default=0.025, help="Winsor lower quantile")
+    ap.add_argument("--winsor_hi", type=float, default=0.975, help="Winsor upper quantile")
+    ap.add_argument("--import_calib", default=None, help="Path to JSON calibration to reuse")
+    ap.add_argument("--export_calib", default=None, help="Path to write learned calibration JSON")
+    ap.add_argument("-v", "--verbose", action="count", default=1, help="Verbosity: -v (info), -vv (debug)")
+    args = ap.parse_args(args_list)
+
+    setup_logging(args.verbose)
+
+    use_log = DEFAULTS.use_log_model
+    if args.no_log_model: use_log = False
+    if args.use_log_model: use_log = True
+
+    try:
+        df = read_input(args.in_path)
+    except Exception as e:
+        logging.exception("Failed to read input: %s", e)
+        sys.exit(2)
+
+    required = ["cusid", "cc_max_lmt", "cc_tot_lmt", "fin_ann_inc1", "inc_src", "trb_bal_0625_uniq"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        logging.error("Missing required columns: %s", missing)
+        sys.exit(2)
+
+    import_cal = None
+    if args.import_calib:
+        try:
+            with open(args.import_calib, "r", encoding="utf-8") as f:
+                import_cal = json.load(f)
+        except Exception as e:
+            logging.exception("Failed to import calibration JSON: %s", e)
+            sys.exit(2)
+
+    try:
+        df_out, model_info, details, files = run_pipeline(
+            df=df,
+            q_lo=args.q_lo,
+            q_hi=args.q_hi,
+            use_log_model=use_log,
+            kfolds=args.kfolds,
+            alpha_grid=DEFAULTS.alpha_grid,  # always non-empty
+            mode=args.mode,
+            winsorize_for_model=args.winsorize,
+            winsor_lo=args.winsor_lo,
+            winsor_hi=args.winsor_hi,
+            import_calib=import_cal,
+            outdir=args.outdir
+        )
+    except Exception as e:
+        logging.exception("Run failed: %s", e)
+        sys.exit(2)
+
+    if args.export_calib:
+        try:
+            payload = {
+                "ratios_by_seg": details["ratios_by_seg"],
+                "bands_by_seg": details["bands_by_seg"],
+                "mins_by_seg": details["mins_by_seg"],
+                "meta": {"source_file": os.path.basename(args.in_path),
+                         "q_lo": args.q_lo, "q_hi": args.q_hi, "kfolds": args.kfolds}
+            }
+            with open(args.export_calib, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logging.exception("Failed to export calibration JSON: %s", e)
+            sys.exit(2)
+
+    logging.info("Output CSV: %s", files["out_csv"])
+    logging.info("Output XLSX: %s", files["out_xlsx"])
+    logging.info("Charts saved to: %s", args.outdir)
+
+
+if __name__ == "__main__":
+    # ---- Terminal usage (normal) ----
+    # main()  # uncomment to use with real CLI args
+
+    # ---- Spyder usage (simulate CLI here) ----
+    # main([
+    #     "--in", r"C:\path\to\mydata.xlsx",
+    #     "--outdir", "./out",
+    #     "--mode", "regression",
+    #     # "--winsorize",
+    # ])
+    pass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Premier Income Estimator — Production (Data-Driven, Profiling, Regression, Charts)
+==================================================================================
+
 What this script guarantees (fact-based, no guesses):
 - Reads your live data (Excel/CSV/Parquet) and FIRST profiles actual ranges
   (min/max and P10/P50/P90) for: TRB, CC max limit, CC total limit, income.
