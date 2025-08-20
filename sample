@@ -1,3 +1,22 @@
+Hi Tapabrata,
+
+Regarding the Medallia server upload:
+	•	On 9th August, 36 records got uploaded which were not from the file shared on 7th August. This happened due to system errors — the 7th August file was not picked up by the code, and instead, 36 records came from the previous day’s file.
+	•	On 7th August, we shared 11,809 records, and on 11th August, we shared 1,343 records. Including the 36 records mentioned earlier, a total of 13,152 records were considered together for survey triggering.
+	•	From the 7th August file (interaction dates 4th, 5th, 6th), 822 surveys were triggered.
+	•	From the 11th August file (interaction dates 7th, 8th, 9th), 508 surveys were triggered.
+	•	Together, this makes 1,330 surveys triggered across both input files.
+
+Additionally, for global exclusions, we are currently not saving the waterfalls for this activity. Hence, we don’t have the exclusions bifurcation right now. However, starting with the Friday batch, we will capture and share the waterfall breakdown so you’ll have complete visibility of exclusions going forward.
+
+
+
+
+
+
+
+
+
 Hi Prashant,
 
 The input file you shared for the MSF BDM scorecard mapping is not in the agreed format, which caused the failure of both the daily and weekly code runs.
