@@ -1,3 +1,187 @@
+/*==========================================================
+  LIBNAME (set one of these as needed)
+----------------------------------------------------------*/
+/* Windows example: */
+/* libname MYLIB "C:\Users\YourUser\Projects\cust_cube\";  */
+
+/* UNIX/SAS server example: */
+/* libname MYLIB "/sas/data/cust_cube/";                   */
+
+/* Database example (Oracle/Teradata – adjust creds/params): */
+/* libname MYLIB oracle user=xxx password=yyy path="ORCL"; */
+/* libname MYLIB teradata user=xxx password=yyy server=tdprod database=dbname; */
+
+/*==========================================================
+  CONFIG
+----------------------------------------------------------*/
+%let SRCLIB = MYLIB;   /* <- change to the libref you set above */
+
+/* Quiet, but keep enough detail if debugging later */
+options nomprint nomlogic nosymbolgen;
+
+/*==========================================================
+  1) DISCOVER MONTHLY TABLES (>= JAN23)
+----------------------------------------------------------*/
+proc sql noprint;
+  create table work__cube_list as
+  select
+      upcase(libname) as libname length=8,
+      upcase(memname) as memname length=32,
+      /* Extract MMMYY token from cust_cube_MMMYY_data */
+      upcase(scan(memname, 3, '_')) as mmmYY length=5,
+      /* Convert MMMYY into a true month date for filter/order */
+      input(upcase(scan(memname, 3, '_')), monyy5.) as mth format=yymmn7.
+  from dictionary.tables
+  where upcase(libname) = upcase("&SRCLIB")
+    and upcase(memname) like 'CUST_CUBE_%_DATA'
+    and calculated mth >= input('JAN23', monyy5.)
+  order by calculated mth;
+quit;
+
+/* Guard for empty list */
+%local n_tables;
+proc sql noprint;
+  select count(*) into :n_tables from work__cube_list;
+quit;
+
+%if &n_tables = 0 %then %do;
+  %put ERROR: No tables from JAN23 onward found in &SRCLIB with pattern CUST_CUBE_%_DATA.;
+  %return;
+%end;
+
+/*==========================================================
+  2) UNION ALL MONTHS INTO A SINGLE TABLE
+----------------------------------------------------------*/
+/* Clean any prior run artifacts */
+proc datasets lib=work nolist;
+  delete cust_cube_all cust_cube_all_prep cust_cube_premier
+         out_new_premier_mom out_months_to_card_freq;
+quit;
+
+/* Shell ensures stable structure for PROC APPEND */
+data cust_cube_all;
+  length cusid $64 ntb_mth $3 final_cus_seg $32 data_mth_char $5;
+  /* has_card_mmyy is numeric in source; keep numeric */
+  format acquisition_mth yymmn7.;
+  stop;
+run;
+
+/* Materialize the list into macro vars for looping */
+data _null_;
+  set work__cube_list end=last;
+  retain idx 0;
+  idx + 1;
+  call symputx(cats('tlib', idx), libname);
+  call symputx(cats('tmem', idx), memname);
+  call symputx(cats('tmth', idx), mmmYY);
+  if last then call symputx('n_tables', idx);
+run;
+
+/* Append each monthly table */
+%macro append_all;
+  %do i=1 %to &n_tables;
+    %let _lib = &&tlib&i;
+    %let _mem = &&tmem&i;
+    %let _mmm = &&tmth&i;
+
+    data work__one;
+      set &_lib..&_mem(keep=cusid ntb_mth final_cus_seg has_card_mmyy);
+      length data_mth_char $5;
+      data_mth_char   = "&_mmm";                        /* e.g., JAN23 */
+      acquisition_mth = input(data_mth_char, monyy5.);  /* first of month */
+      format acquisition_mth yymmn7.;
+    run;
+
+    proc append base=cust_cube_all data=work__one force; run;
+  %end;
+%mend;
+%append_all
+
+/*==========================================================
+  3) CONVERT has_card_mmyy (numeric) -> card_mth (month date)
+     - If value looks like YYYYMM integer (>99999), parse as YYMMN6.
+     - Else treat it as a SAS date and snap to month-begin.
+----------------------------------------------------------*/
+data cust_cube_all_prep;
+  set cust_cube_all;
+  length card_mth 8;
+  format card_mth yymmn7.;
+
+  if missing(has_card_mmyy) then card_mth = .;
+  else do;
+    if has_card_mmyy > 99999 then do;                        /* e.g., 202501 */
+      card_mth = input(put(has_card_mmyy, z6.), yymmn6.);
+    end;
+    else do;                                                 /* SAS date -> month begin */
+      card_mth = intnx('month', has_card_mmyy, 0, 'b');
+    end;
+  end;
+run;
+
+/*==========================================================
+  4) FILTER NEW PREMIER & COMPUTE MONTH LAG
+----------------------------------------------------------*/
+data cust_cube_premier;
+  set cust_cube_all_prep;
+  where upcase(ntb_mth) = 'YES' and upcase(final_cus_seg) = 'PREMIER';
+
+  /* Discrete month gap: 0 = same month, 1 = next month, etc. */
+  months_to_card = .;
+  if nmiss(card_mth, acquisition_mth) = 0 then
+    months_to_card = intck('month', acquisition_mth, card_mth);
+run;
+
+/*==========================================================
+  5) OUTPUTS
+----------------------------------------------------------*/
+proc sql;
+  /* MoM new Premier (order by true date, display formatted) */
+  create table out_new_premier_mom as
+  select acquisition_mth format=yymmn7. as acquisition_mth label='Acquisition Month',
+         count(distinct cusid)          as new_premier_cust
+  from cust_cube_premier
+  group by acquisition_mth
+  order by acquisition_mth;
+
+  /* Frequency: months from acquisition to card */
+  create table out_months_to_card_freq as
+  select months_to_card,
+         count(distinct cusid) as cust_count
+  from cust_cube_premier
+  group by months_to_card
+  order by months_to_card;
+quit;
+
+/*==========================================================
+  6) OPTIONAL QUICK VIEWS
+----------------------------------------------------------*/
+title "New Premier Customers (MoM) — From JAN23 Onward";
+proc print data=out_new_premier_mom noobs; run;
+
+title "Frequency: Months from Acquisition to Card — From JAN23 Onward";
+proc print data=out_months_to_card_freq noobs; run;
+title;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /*=============================*
  | CONFIG
  *=============================*/
