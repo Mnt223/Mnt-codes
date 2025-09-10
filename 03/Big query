@@ -1,4 +1,239 @@
 /*==========================================================
+  CONFIG & LIBS
+==========================================================*/
+options mprint mlogic symbolgen nocenter validvarname=any;
+options dtreset formchar="|----|+|---+=|-/\<>*";
+
+libname bank "/your/path/here";  /* <-- Replace with actual path */
+
+/* Dates */
+%let cohort_start = '01JAN2024'd;
+%let cohort_end   = '31MAR2024'd;
+%let txn_start    = '01JAN2024'd;
+%let txn_end      = '31MAR2025'd;
+
+/*==========================================================
+  1) BUILD Q1-2024 COHORT
+     - Keep only accounts opened Jan–Mar 2024
+==========================================================*/
+proc sql;
+  create table work.q1_cohort as
+  select acct,
+         date_opened
+  from bank.premier_card_acq
+  where &cohort_start. <= date_opened <= &cohort_end.;
+quit;
+
+/* QA: Cohort size */
+proc sql;
+  select count(*) as n_accounts format=comma12.
+  from work.q1_cohort;
+quit;
+
+/*==========================================================
+  2) ATTACH TRANSACTIONS (Jan-2024 to Mar-2025)
+     - Keep txns for the cohort only
+==========================================================*/
+proc sql;
+  create table work.q1_txn_raw as
+  select c.acct,
+         c.date_opened,
+         t.tran_amt,
+         t.mt_eff_date,
+         t.mt_category_code
+  from work.q1_cohort c
+  left join bank.card_tran3 t
+    on c.acct = t.acct
+       and &txn_start. <= t.mt_eff_date <= &txn_end.;
+quit;
+
+/*==========================================================
+  3) RELATIVE MONTHS FROM OPEN DATE
+     - months_since_open = 0 (open month), 1 (next), …, 11 (12th month)
+==========================================================*/
+data work.q1_txn_rel;
+  set work.q1_txn_raw;
+  /* Only compute if txn_date present; keep missing rows for no-transaction accounts */
+  if not missing(mt_eff_date) then do;
+    months_since_open = intck('month', date_opened, mt_eff_date, 'c');
+    /* Bound for 12M horizon */
+    in_m1  = (0 <= months_since_open <= 0);
+    in_m3  = (0 <= months_since_open <= 2);
+    in_m12 = (0 <= months_since_open <= 11);
+  end;
+  else do;
+    months_since_open = .;
+    in_m1  = 0;
+    in_m3  = 0;
+    in_m12 = 0;
+  end;
+run;
+
+/*==========================================================
+  4) ACCOUNT-LEVEL SPEND SUMMARIES (M1 / M3 / M12) + TXN COUNTS
+==========================================================*/
+proc sql;
+  create table work.acct_spend as
+  select acct,
+         /* Sum with guards */
+         sum(case when in_m1  then tran_amt else 0 end)  as M1_spend  format=comma16.2,
+         sum(case when in_m3  then tran_amt else 0 end)  as M3_spend  format=comma16.2,
+         sum(case when in_m12 then tran_amt else 0 end)  as M12_spend format=comma16.2,
+         /* Useful diagnostics */
+         sum(case when in_m12 and not missing(tran_amt) then 1 else 0 end) as txns_12m,
+         sum(case when in_m1  and not missing(tran_amt) then 1 else 0 end) as txns_m1
+  from work.q1_txn_rel
+  group by acct;
+quit;
+
+/* Ensure all cohort accts appear even if no txn */
+proc sql;
+  create table work.acct_spend_full as
+  select a.acct,
+         a.date_opened,
+         coalesce(b.M1_spend ,0) as M1_spend  format=comma16.2,
+         coalesce(b.M3_spend ,0) as M3_spend  format=comma16.2,
+         coalesce(b.M12_spend,0) as M12_spend format=comma16.2,
+         coalesce(b.txns_12m ,0) as txns_12m,
+         coalesce(b.txns_m1  ,0) as txns_m1
+  from work.q1_cohort a
+  left join work.acct_spend b
+    on a.acct = b.acct;
+quit;
+
+/*==========================================================
+  5) FIRST TRANSACTION (DATE, CATEGORY, AMOUNT)
+     - Earliest mt_eff_date per acct within the txn window
+==========================================================*/
+proc sort data=work.q1_txn_rel out=work.q1_txn_sorted;
+  by acct mt_eff_date;
+run;
+
+data work.first_txn(keep=acct first_txn_date first_tran_amt first_category);
+  set work.q1_txn_sorted;
+  by acct;
+  if first.acct then do;
+    if not missing(mt_eff_date) then do;
+      first_txn_date  = mt_eff_date;
+      first_tran_amt  = tran_amt;
+      length first_category $50;
+      first_category  = vvalue(mt_category_code); /* preserve as text */
+      output;
+    end;
+    else do;
+      /* No txn case: keep row with missing first_txn_date for completeness */
+      first_txn_date  = .;
+      first_tran_amt  = .;
+      length first_category $50;
+      first_category  = "";
+      output;
+    end;
+  end;
+run;
+
+/*==========================================================
+  6) FINAL ACCOUNT-LEVEL OUTPUT (merge spend + first txn)
+==========================================================*/
+proc sql;
+  create table work.q1_spend_12m as
+  select a.*,
+         f.first_txn_date format=date9.,
+         f.first_tran_amt format=comma16.2,
+         f.first_category
+  from work.acct_spend_full a
+  left join work.first_txn f
+    on a.acct = f.acct;
+quit;
+
+/*==========================================================
+  7) CATEGORY-LEVEL INSIGHTS
+     - Average 12M spend by first-month category
+     - Also show penetration & average M1 spend
+==========================================================*/
+/* Determine customer’s FIRST-MONTH category: category in months_since_open=0.
+   If multiple in same month, we take earliest by date (already sorted). */
+data work.first_month_txn(keep=acct first_month_cat first_month_amt);
+  set work.q1_txn_sorted;
+  by acct mt_eff_date;
+  if first.acct then do; retain took_cat 0; took_cat = 0; end;
+
+  /* Only consider M1 transactions */
+  if not missing(months_since_open) and months_since_open=0 and took_cat=0 then do;
+    first_month_cat = vvalue(mt_category_code);
+    first_month_amt = tran_amt;
+    took_cat = 1;
+    output;
+  end;
+run;
+
+/* Attach first-month category to account table */
+proc sql;
+  create table work.q1_spend_with_cat as
+  select a.*,
+         c.first_month_cat,
+         c.first_month_amt format=comma16.2
+  from work.q1_spend_12m a
+  left join work.first_month_txn c
+    on a.acct = c.acct;
+quit;
+
+/* Aggregates by first-month category */
+proc sql;
+  create table work.cat_summary as
+  select coalesce(first_month_cat,'(No M1 Txn)') as first_month_cat length=50,
+         count(*)                               as customers format=comma12.,
+         mean(M12_spend)                        as avg_M12_spend format=comma16.2,
+         mean(M1_spend)                         as avg_M1_spend  format=comma16.2,
+         sum(M12_spend)                         as total_M12_spend format=comma16.2
+  from work.q1_spend_with_cat
+  group by calculated first_month_cat
+  order by total_M12_spend desc, customers desc;
+quit;
+
+/*==========================================================
+  8) QA CHECKS
+==========================================================*/
+/* Coverage: every cohort acct should be present */
+proc sql;
+  select 
+    (select count(*) from work.q1_cohort)        as cohort_accts,
+    (select count(*) from work.q1_spend_12m)     as out_accts,
+    (calculated cohort_accts - calculated out_accts) as missing_in_output
+  ;
+quit;
+
+/* Proportion with any 12M txn */
+proc sql;
+  select sum(txns_12m>0)/count(*) format=percent8.2 as pct_with_12m_txn
+  from work.q1_spend_12m;
+quit;
+
+/*==========================================================
+  9) OPTIONAL EXPORTS
+==========================================================*/
+proc export data=work.q1_spend_with_cat
+    outfile="&sysuserhome./q1_spend_12m_by_acct.csv"
+    dbms=csv replace;
+run;
+
+proc export data=work.cat_summary
+    outfile="&sysuserhome./q1_first_month_category_summary.csv"
+    dbms=csv replace;
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*==========================================================
   LIBNAME (set one of these as needed)
 ----------------------------------------------------------*/
 /* Windows example: */
