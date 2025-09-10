@@ -1,3 +1,143 @@
+/*=============================*
+ | CONFIG
+ *=============================*/
+%let SRCLIB = MYLIB;     /* <-- CHANGE to your libref */
+
+/*=============================*
+ | 1) DISCOVER MONTHLY TABLES (>= JAN23)
+ *=============================*/
+proc sql noprint;
+  create table work__cube_list as
+  select  upcase(libname)   as libname length=8,
+          upcase(memname)   as memname length=$32,
+          upcase(scan(memname, 3, '_')) as mmmYY length=$5,
+          /* convert MMMYY to a SAS month date for filtering & ordering */
+          input(upcase(scan(memname, 3, '_')), monyy5.) as mth format=yymmn7.
+  from dictionary.tables
+  where upcase(libname) = upcase("&SRCLIB")
+    and upcase(memname) like 'CUST_CUBE_%_DATA'
+    /* keep months from JAN23 onwards */
+    and calculated mth >= input('JAN23', monyy5.)
+  order by calculated mth;
+quit;
+
+%let _n=0;
+proc sql noprint;
+  select count(*) into :_n from work__cube_list;
+quit;
+
+%if &_n = 0 %then %do;
+  %put ERROR: No source tables found from JAN23 onwards in &SRCLIB with pattern CUST_CUBE_%_DATA.;
+  %return;
+%end;
+
+/*=============================*
+ | 2) UNION FROM JAN23 ONWARD
+ *=============================*/
+proc datasets lib=work nolist; delete cust_cube_all; quit;
+
+/* Create shell for robust APPEND */
+data cust_cube_all;
+  length cust_id $64 ntb_mth $3 final_cust_seg $32 card_mmyy $10 data_mth_char $5;
+  format acquisition_mth yymmn7.;
+  stop;
+run;
+
+data _null_;
+  set work__cube_list end=last;
+  call symputx(cats('tlib',_n_), libname);
+  call symputx(cats('tmem',_n_), memname);
+  call symputx(cats('tmth',_n_), mmmYY);
+  retain _n_ 0;
+  _n_+1;
+  if last then call symputx('_n_tables', _n_);
+run;
+
+%macro append_all;
+  %do i=1 %to &_n_tables;
+    %let _lib = &&tlib&i;
+    %let _mem = &&tmem&i;
+    %let _mmm = &&tmth&i;
+
+    data work__one;
+      set &*_lib..&*_mem(keep=cust_id ntb_mth final_cust_seg card_mmyy);
+      length data_mth_char $5;
+      data_mth_char   = "&_mmm";                     /* e.g., JAN23 */
+      acquisition_mth = input(data_mth_char, monyy5.); /* first day of month */
+      format acquisition_mth yymmn7.;
+    run;
+
+    proc append base=cust_cube_all data=work__one force; run;
+  %end;
+%mend;
+%append_all
+
+/*=============================*
+ | 3) PARSE card_mmyy -> card_mth
+ *=============================*/
+data cust_cube_all_prep;
+  set cust_cube_all;
+  length _c $10;
+  _c = strip(upcase(card_mmyy));
+  card_mth = .;
+
+  if not missing(_c) then do;
+    if prxmatch('/^[A-Z]{3}\d{2}$/', _c) then card_mth = input(_c, monyy5.);      /* JAN25 */
+    else if prxmatch('/^\d{4}$/', _c) then do;                                     /* 0125 -> 2025-01 */
+      card_mth = input(cats('20',substr(_c,3,2),substr(_c,1,2)), yymmn6.);
+    end;
+    else if prxmatch('/^\d{6}$/', _c) then card_mth = input(_c, yymmn6.);          /* 202501 */
+  end;
+
+  format card_mth yymmn7.;
+run;
+
+/*=============================*
+ | 4) FILTER New Premier & months_to_card
+ *=============================*/
+data cust_cube_premier;
+  set cust_cube_all_prep;
+  where upcase(ntb_mth)='YES' and upcase(final_cust_seg)='PREMIER';
+  months_to_card = .;
+  if not missing(card_mth) and not missing(acquisition_mth) then
+    months_to_card = intck('month', acquisition_mth, card_mth);
+run;
+
+/*=============================*
+ | 5) OUTPUTS
+ *=============================*/
+proc sql;
+  /* MoM New Premier */
+  create table out_new_premier_mom as
+  select  put(acquisition_mth, monyy7.) as acquisition_mth label='Acquisition Month',
+          count(distinct cust_id) as new_premier_cust
+  from cust_cube_premier
+  group by acquisition_mth
+  order by min(acquisition_mth);
+
+  /* Frequency: months from acquisition to card */
+  create table out_months_to_card_freq as
+  select  months_to_card,
+          count(distinct cust_id) as cust_count
+  from cust_cube_premier
+  group by months_to_card
+  order by months_to_card;
+quit;
+
+/* Quick peek (optional) */
+title "New Premier Customers (MoM) — From JAN23 Onward";
+proc print data=out_new_premier_mom noobs; run;
+
+title "Frequency: Months from Acquisition to Card — From JAN23 Onward";
+proc print data=out_months_to_card_freq noobs; run;
+title;
+
+
+
+
+
+
+
 I wanted to bring to your attention a challenge we have been facing while running reports. Due to space issues, some of our critical reports are failing and files are not being generated. This requires us to re-run the reports, which takes the same amount of time as the first attempt. At times, this extends our work till late in the evening, and since we have to resume as usual the next day, it does make our schedule a bit difficult to manage.
 
 We have also noticed that the hub refresh time, which earlier used to happen around 12:30 PM, is now happening only after 1:30–2:00 PM. This further delays the process and stretches the BU timelines.
