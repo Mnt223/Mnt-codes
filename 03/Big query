@@ -1,11 +1,11 @@
-/* ===== Setup ===== */
+/* ========== Setup ========== */
 options mprint mlogic symbolgen nocenter validvarname=any;
 ods graphics on;
 
 libname bank "/your/path/here";
 filename outdir ".";
 
-/* ===== Cohort & Transactions ===== */
+/* ========== Cohort & Transactions ========== */
 proc sql;
   create table work.q1_cohort as
   select acct, date_opened
@@ -21,7 +21,7 @@ proc sql;
     on c.acct = t.acct;
 quit;
 
-/* ===== Relative month windows ===== */
+/* ========== Relative month windows ========== */
 data work.q1_txn_rel;
   set work.q1_txn_raw;
   if not missing(mt_eff_date) then do;
@@ -33,7 +33,7 @@ data work.q1_txn_rel;
   else do; in_m1=0; in_m3=0; in_m12=0; end;
 run;
 
-/* ===== Account-level spend ===== */
+/* ========== Account-level spend ========== */
 proc sql;
   create table work.acct_spend as
   select acct,
@@ -58,12 +58,12 @@ proc sql;
   left join work.acct_spend b on a.acct=b.acct;
 quit;
 
-/* ===== First behaviors (M1 earliest merchant + sector) ===== */
+/* ========== First behaviors (M1 earliest merchant & sector) ========== */
 proc sort data=work.q1_txn_rel out=work.q1_txn_sorted;
   by acct mt_eff_date;
 run;
 
-/* First ever txn (overall) */
+/* First ever txn in analysis window (optional context) */
 data work.first_txn_overall;
   set work.q1_txn_sorted;
   by acct;
@@ -76,7 +76,7 @@ data work.first_txn_overall;
   keep acct first_txn_date first_tran_amt first_category;
 run;
 
-/* First-month earliest merchant + sector */
+/* First-month earliest merchant and sector */
 data work.first_M1_both;
   set work.q1_txn_sorted;
   by acct mt_eff_date;
@@ -103,7 +103,7 @@ proc sql;
   left join work.first_M1_both   m on a.acct=m.acct;
 quit;
 
-/* ===== M1 quintile buckets & lift ===== */
+/* ========== M1 quintile buckets & lift ========== */
 proc rank data=work.q1_spend_12m groups=5 out=work.q1_spend_buckets;
   var M1_spend;
   ranks M1_q;
@@ -132,7 +132,7 @@ proc sql;
   order by customers desc;
 quit;
 
-/* ===== Dynamic Good flags (P70) ===== */
+/* ========== Dynamic Good flags (P70) ========== */
 proc means data=work.q1_spend_12m noprint p70;
   var M3_spend M12_spend;
   output out=work.good_cutoffs p70(M3_spend M12_spend)=M3_p70 M12_p70;
@@ -145,39 +145,38 @@ data work.q1_spend_classified;
   Good_M12 = (M12_spend >= M12_p70);
 run;
 
-/* ===== Correlations ===== */
+/* ========== Correlations (sanity) ========== */
 proc corr data=work.q1_spend_classified plots=matrix(histogram);
   var M1_spend M3_spend M12_spend txns_m1 txns_12m;
 run;
 
-/* ===== Sector-level summaries ===== */
+/* ========== Sector & Merchant summaries ========== */
 proc sql;
   create table work.sector_summary as
   select coalesce(first_sector,'Other') as first_sector length=40,
          count(*) as customers,
+         mean(M3_spend)  as avg_M3_spend,
          mean(M12_spend) as avg_M12_spend,
-         mean(Good_M12)  as pct_good12,
-         mean(M3_spend)  as avg_M3_spend
+         mean(Good_M12)  as pct_good12
   from work.q1_spend_classified
   group by calculated first_sector
   order by customers desc;
 quit;
 
-/* ===== Merchant-level summaries ===== */
 proc sql;
   create table work.merchant_summary as
-  select first_merchant,
+  select coalesce(first_merchant,'(No M1 Txn)') as first_merchant length=50,
          count(*) as customers,
+         mean(M3_spend)  as avg_M3_spend,
          mean(M12_spend) as avg_M12_spend,
-         mean(Good_M12)  as pct_good12,
-         mean(M3_spend)  as avg_M3_spend
+         mean(Good_M12)  as pct_good12
   from work.q1_spend_classified
-  group by first_merchant
-  having calculated customers >= 30 /* ignore tiny cells */
+  group by calculated first_merchant
+  having calculated customers >= 30
   order by customers desc, avg_M12_spend desc;
 quit;
 
-/* ===== Build modeling dataset with safe categories ===== */
+/* ========== Modeling dataset with safe categories ========== */
 proc sort data=work.q1_spend_classified out=work._base; by acct; run;
 
 /* Sector safe var */
@@ -187,12 +186,13 @@ data work._sector;
   sector_s = coalescec(first_sector,'(No M1 Txn)');
 run;
 
-/* Merchant: collapse to Top-50 for modeling */
+/* Merchant: collapse to Top-50; rest -> '(Other/No M1)' */
 proc sql;
   create table work._merch_rank as
-  select first_merchant, count(*) as customers
+  select coalesce(first_merchant,'(Other/No M1)') as first_merchant length=60,
+         count(*) as customers
   from work._base
-  group by first_merchant
+  group by calculated first_merchant
   order by customers desc;
 quit;
 
@@ -217,6 +217,7 @@ data work._merchant;
      "&topmerch46","&topmerch47","&topmerch48","&topmerch49","&topmerch50")
   then merchant_s = first_merchant;
   else merchant_s = '(Other/No M1)';
+  if missing(merchant_s) then merchant_s='(Other/No M1)';
 run;
 
 /* Final modeling table */
@@ -228,33 +229,35 @@ proc sql;
   left join work._merchant m on b.acct=m.acct;
 quit;
 
-/* ===== Models (Sector) ===== */
-%let refcat = %str((No M1 Txn));
+/* ========== Models (supported syntax only) ========== */
+%let ref_sector = %str((No M1 Txn));
+%let ref_merch  = %str((Other/No M1));
 
-proc glm data=work.model_in plots=none;
-  class sector_s (ref="&refcat") / param=ref;
-  model M12_spend = M1_spend first_tran_amt txns_m1 sector_s;
-run; quit;
+/* Linear (with reference) — GENMOD */
+proc genmod data=work.model_in;
+  class sector_s (ref="&ref_sector");
+  model M12_spend = M1_spend first_tran_amt txns_m1 sector_s
+        / dist=normal link=identity;
+run;
 
+proc genmod data=work.model_in;
+  class merchant_s (ref="&ref_merch");
+  model M12_spend = M1_spend first_tran_amt txns_m1 merchant_s
+        / dist=normal link=identity;
+run;
+
+/* Binary (Good_M12) — LOGISTIC with reference */
 proc logistic data=work.model_in plots=roc order=internal;
-  class sector_s (ref="&refcat") / param=ref;
+  class sector_s (ref="&ref_sector") / param=ref;
   model Good_M12(event='1') = M1_spend first_tran_amt txns_m1 sector_s;
 run;
 
-/* ===== Models (Merchant Top-50) ===== */
-%let refmer = %str((Other/No M1));
-
-proc glm data=work.model_in plots=none;
-  class merchant_s (ref="&refmer") / param=ref;
-  model M12_spend = M1_spend first_tran_amt txns_m1 merchant_s;
-run; quit;
-
 proc logistic data=work.model_in plots=roc order=internal;
-  class merchant_s (ref="&refmer") / param=ref;
+  class merchant_s (ref="&ref_merch") / param=ref;
   model Good_M12(event='1') = M1_spend first_tran_amt txns_m1 merchant_s;
 run;
 
-/* ===== Retention (by sector) ===== */
+/* ========== Retention (overall & by sector) ========== */
 proc sql;
   create table work.acct_month as
   select acct, months_since_open as rel_month,
@@ -287,7 +290,8 @@ run;
 
 proc sql;
   create table work.acct_month_join as
-  select a.acct, coalesce(b.first_sector,'(No M1 Txn)') as sector_s length=40,
+  select a.acct,
+         coalesce(b.first_sector,'(No M1 Txn)') as sector_s length=40,
          a.rel_month, a.month_spend, a.month_txns, a.active
   from work.acct_month_full a
   left join work.q1_spend_12m b on a.acct=b.acct;
@@ -299,662 +303,7 @@ proc summary data=work.acct_month_join nway;
   output out=work.retention_by_sector mean=;
 run;
 
-/* ===== Executive summaries ===== */
-proc sql;
-  create table work.good_summary as
-  select "M3" as metric, count(*) as total_cust, sum(Good_M3) as good_cust,
-         mean(M3_spend) as avg_all,
-         mean(case when Good_M3=1 then M3_spend end) as avg_good,
-         mean(case when Good_M3=0 then M3_spend end) as avg_rest,
-         calculated avg_good / calculated avg_rest as lift
-  from work.q1_spend_classified
-  union all
-  select "M12", count(*), sum(Good_M12),
-         mean(M12_spend),
-         mean(case when Good_M12=1 then M12_spend end),
-         mean(case when Good_M12=0 then M12_spend end),
-         calculated avg_good / calculated avg_rest
-  from work.q1_spend_classified;
-quit;
-
-/* ===== Exports ===== */
-%macro expo(ds, fn);
-proc export data=&ds outfile="%sysfunc(pathname(outdir))/&fn..csv" dbms=csv replace; run;
-%mend;
-
-%expo(work.q1_spend_12m,                q1_spend_12m_by_acct);
-%expo(work.lift_m1_bucket,              lift_by_m1_bucket);
-%expo(work.good_cutoffs,                good_spend_cutoffs);
-%expo(work.good_summary,                good_spend_summary);
-%expo(work.sector_summary,              first_sector_summary);
-%expo(work.merchant_summary,            first_merchant_summary);
-%expo(work.retention_overall,           retention_overall);
-%expo(work.retention_by_sector,         retention_by_sector);
-%expo(work.model_in,                    model_input_snapshot);
-
-ods graphics off;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-gehejwiwkwkwkwkkwwkkwkwmwne
-
-
-/* ===== Setup ===== */
-options mprint mlogic symbolgen nocenter validvarname=any;
-ods graphics on;
-
-libname bank "/your/path/here";
-filename outdir ".";
-
-/* ===== Cohort & Transactions ===== */
-proc sql;
-  create table work.q1_cohort as
-  select acct, date_opened
-  from bank.premier_card_acq;
-quit;
-
-proc sql;
-  create table work.q1_txn_raw as
-  select c.acct, c.date_opened,
-         t.tran_amt, t.mt_eff_date, t.mt_category_code, t.sector
-  from work.q1_cohort c
-  left join bank.card_tran3 t
-    on c.acct = t.acct;
-quit;
-
-/* ===== Relative month windows ===== */
-data work.q1_txn_rel;
-  set work.q1_txn_raw;
-  if not missing(mt_eff_date) then do;
-    months_since_open = intck('month', date_opened, mt_eff_date, 'c');
-    in_m1  = (months_since_open = 0);
-    in_m3  = (0 <= months_since_open <= 2);
-    in_m12 = (0 <= months_since_open <= 11);
-  end;
-  else do; in_m1=0; in_m3=0; in_m12=0; end;
-run;
-
-/* ===== Account-level spend ===== */
-proc sql;
-  create table work.acct_spend as
-  select acct,
-         sum(case when in_m1  then tran_amt else 0 end)  as M1_spend,
-         sum(case when in_m3  then tran_amt else 0 end)  as M3_spend,
-         sum(case when in_m12 then tran_amt else 0 end)  as M12_spend,
-         sum(case when in_m12 and not missing(tran_amt) then 1 else 0 end) as txns_12m,
-         sum(case when in_m1  and not missing(tran_amt) then 1 else 0 end) as txns_m1
-  from work.q1_txn_rel
-  group by acct;
-quit;
-
-proc sql;
-  create table work.q1_spend_12m as
-  select a.acct, a.date_opened,
-         coalesce(b.M1_spend,0)  as M1_spend,
-         coalesce(b.M3_spend,0)  as M3_spend,
-         coalesce(b.M12_spend,0) as M12_spend,
-         coalesce(b.txns_12m,0)  as txns_12m,
-         coalesce(b.txns_m1,0)   as txns_m1
-  from work.q1_cohort a
-  left join work.acct_spend b on a.acct=b.acct;
-quit;
-
-/* ===== First behaviors (M1 earliest merchant + sector) ===== */
-proc sort data=work.q1_txn_rel out=work.q1_txn_sorted;
-  by acct mt_eff_date;
-run;
-
-/* First ever txn (overall) */
-data work.first_txn_overall;
-  set work.q1_txn_sorted;
-  by acct;
-  if first.acct then do;
-    first_txn_date = mt_eff_date;
-    first_tran_amt = tran_amt;
-    length first_category $50; first_category = vvalue(mt_category_code);
-    output;
-  end;
-  keep acct first_txn_date first_tran_amt first_category;
-run;
-
-/* First-month earliest merchant + sector */
-data work.first_M1_both;
-  set work.q1_txn_sorted;
-  by acct mt_eff_date;
-  retain flag 0;
-  if first.acct then flag=0;
-  if months_since_open=0 and flag=0 then do;
-    length first_merchant $50 first_sector $50;
-    first_merchant = vvalue(mt_category_code);
-    first_sector   = coalescec(sector,'Other');
-    first_month_amt  = tran_amt;
-    first_month_date = mt_eff_date;
-    flag=1; output;
-  end;
-  keep acct first_merchant first_sector first_month_amt first_month_date;
-run;
-
-/* Attach first behavior columns */
-proc sql;
-  create table work.q1_spend_12m as
-  select a.*, f.first_txn_date, f.first_tran_amt, f.first_category,
-         m.first_merchant, m.first_sector, m.first_month_amt, m.first_month_date
-  from work.q1_spend_12m a
-  left join work.first_txn_overall f on a.acct=f.acct
-  left join work.first_M1_both   m on a.acct=m.acct;
-quit;
-
-/* ===== M1 quintile buckets & lift ===== */
-proc rank data=work.q1_spend_12m groups=5 out=work.q1_spend_buckets;
-  var M1_spend;
-  ranks M1_q;
-run;
-
-data work.q1_spend_buckets;
-  set work.q1_spend_buckets;
-  length M1_bucket $20;
-  select (M1_q);
-    when (0) M1_bucket='Q1 (Lowest)';
-    when (1) M1_bucket='Q2';
-    when (2) M1_bucket='Q3';
-    when (3) M1_bucket='Q4';
-    when (4) M1_bucket='Q5 (Highest)';
-    otherwise M1_bucket='Unknown';
-  end;
-run;
-
-proc sql;
-  create table work.lift_m1_bucket as
-  select M1_bucket, count(*) as customers,
-         mean(M1_spend)  as avg_M1_spend,
-         mean(M12_spend) as avg_M12_spend
-  from work.q1_spend_buckets
-  group by M1_bucket
-  order by customers desc;
-quit;
-
-/* ===== Dynamic Good flags (P70) ===== */
-proc means data=work.q1_spend_12m noprint p70;
-  var M3_spend M12_spend;
-  output out=work.good_cutoffs p70(M3_spend M12_spend)=M3_p70 M12_p70;
-run;
-
-data work.q1_spend_classified;
-  if _n_=1 then set work.good_cutoffs(keep=M3_p70 M12_p70);
-  set work.q1_spend_12m;
-  Good_M3  = (M3_spend  >= M3_p70);
-  Good_M12 = (M12_spend >= M12_p70);
-run;
-
-/* ===== Correlations ===== */
-proc corr data=work.q1_spend_classified plots=matrix(histogram);
-  var M1_spend M3_spend M12_spend txns_m1 txns_12m;
-run;
-
-/* ===== Sector-level summaries ===== */
-proc sql;
-  create table work.sector_summary as
-  select coalesce(first_sector,'Other') as first_sector length=40,
-         count(*) as customers,
-         mean(M12_spend) as avg_M12_spend,
-         mean(Good_M12)  as pct_good12,
-         mean(M3_spend)  as avg_M3_spend
-  from work.q1_spend_classified
-  group by calculated first_sector
-  order by customers desc;
-quit;
-
-/* ===== Merchant-level summaries ===== */
-proc sql;
-  create table work.merchant_summary as
-  select first_merchant,
-         count(*) as customers,
-         mean(M12_spend) as avg_M12_spend,
-         mean(Good_M12)  as pct_good12,
-         mean(M3_spend)  as avg_M3_spend
-  from work.q1_spend_classified
-  group by first_merchant
-  having calculated customers >= 30 /* ignore tiny cells */
-  order by customers desc, avg_M12_spend desc;
-quit;
-
-/* ===== Build modeling dataset with safe categories ===== */
-proc sort data=work.q1_spend_classified out=work._base; by acct; run;
-
-/* Sector safe var */
-data work._sector;
-  set work._base(keep=acct first_sector);
-  length sector_s $40;
-  sector_s = coalescec(first_sector,'(No M1 Txn)');
-run;
-
-/* Merchant: collapse to Top-50 for modeling */
-proc sql;
-  create table work._merch_rank as
-  select first_merchant, count(*) as customers
-  from work._base
-  group by first_merchant
-  order by customers desc;
-quit;
-
-proc sql noprint;
-  select first_merchant into :topmerch1-:topmerch50
-  from work._merch_rank(obs=50);
-quit;
-
-data work._merchant;
-  set work._base(keep=acct first_merchant);
-  length merchant_s $60;
-  if first_merchant in
-    ("&topmerch1","&topmerch2","&topmerch3","&topmerch4","&topmerch5",
-     "&topmerch6","&topmerch7","&topmerch8","&topmerch9","&topmerch10",
-     "&topmerch11","&topmerch12","&topmerch13","&topmerch14","&topmerch15",
-     "&topmerch16","&topmerch17","&topmerch18","&topmerch19","&topmerch20",
-     "&topmerch21","&topmerch22","&topmerch23","&topmerch24","&topmerch25",
-     "&topmerch26","&topmerch27","&topmerch28","&topmerch29","&topmerch30",
-     "&topmerch31","&topmerch32","&topmerch33","&topmerch34","&topmerch35",
-     "&topmerch36","&topmerch37","&topmerch38","&topmerch39","&topmerch40",
-     "&topmerch41","&topmerch42","&topmerch43","&topmerch44","&topmerch45",
-     "&topmerch46","&topmerch47","&topmerch48","&topmerch49","&topmerch50")
-  then merchant_s = first_merchant;
-  else merchant_s = '(Other/No M1)';
-run;
-
-/* Final modeling table */
-proc sql;
-  create table work.model_in as
-  select b.*, s.sector_s, m.merchant_s
-  from work._base b
-  left join work._sector   s on b.acct=s.acct
-  left join work._merchant m on b.acct=m.acct;
-quit;
-
-/* ===== Models (Sector) ===== */
-%let refcat = %str((No M1 Txn));
-
-proc glm data=work.model_in plots=none;
-  class sector_s (ref="&refcat") / param=ref;
-  model M12_spend = M1_spend first_tran_amt txns_m1 sector_s;
-run; quit;
-
-proc logistic data=work.model_in plots=roc order=internal;
-  class sector_s (ref="&refcat") / param=ref;
-  model Good_M12(event='1') = M1_spend first_tran_amt txns_m1 sector_s;
-run;
-
-/* ===== Models (Merchant Top-50) ===== */
-%let refmer = %str((Other/No M1));
-
-proc glm data=work.model_in plots=none;
-  class merchant_s (ref="&refmer") / param=ref;
-  model M12_spend = M1_spend first_tran_amt txns_m1 merchant_s;
-run; quit;
-
-proc logistic data=work.model_in plots=roc order=internal;
-  class merchant_s (ref="&refmer") / param=ref;
-  model Good_M12(event='1') = M1_spend first_tran_amt txns_m1 merchant_s;
-run;
-
-/* ===== Retention (by sector) ===== */
-proc sql;
-  create table work.acct_month as
-  select acct, months_since_open as rel_month,
-         sum(tran_amt) as month_spend,
-         sum(case when not missing(tran_amt) then 1 else 0 end) as month_txns
-  from work.q1_txn_rel
-  where 0 <= months_since_open <= 11
-  group by acct, months_since_open;
-quit;
-
-data work.grid; set work.q1_cohort; do rel_month=0 to 11; output; end; run;
-
-proc sql;
-  create table work.acct_month_full as
-  select g.acct, g.rel_month,
-         coalesce(m.month_spend,0) as month_spend,
-         coalesce(m.month_txns,0)  as month_txns
-  from work.grid g
-  left join work.acct_month m
-    on g.acct=m.acct and g.rel_month=m.rel_month;
-quit;
-
-data work.acct_month_full; set work.acct_month_full; active=(month_txns>0); run;
-
-proc summary data=work.acct_month_full nway;
-  class rel_month;
-  var active month_spend;
-  output out=work.retention_overall mean=;
-run;
-
-proc sql;
-  create table work.acct_month_join as
-  select a.acct, coalesce(b.first_sector,'(No M1 Txn)') as sector_s length=40,
-         a.rel_month, a.month_spend, a.month_txns, a.active
-  from work.acct_month_full a
-  left join work.q1_spend_12m b on a.acct=b.acct;
-quit;
-
-proc summary data=work.acct_month_join nway;
-  class sector_s rel_month;
-  var active month_spend;
-  output out=work.retention_by_sector mean=;
-run;
-
-/* ===== Executive summaries ===== */
-proc sql;
-  create table work.good_summary as
-  select "M3" as metric, count(*) as total_cust, sum(Good_M3) as good_cust,
-         mean(M3_spend) as avg_all,
-         mean(case when Good_M3=1 then M3_spend end) as avg_good,
-         mean(case when Good_M3=0 then M3_spend end) as avg_rest,
-         calculated avg_good / calculated avg_rest as lift
-  from work.q1_spend_classified
-  union all
-  select "M12", count(*), sum(Good_M12),
-         mean(M12_spend),
-         mean(case when Good_M12=1 then M12_spend end),
-         mean(case when Good_M12=0 then M12_spend end),
-         calculated avg_good / calculated avg_rest
-  from work.q1_spend_classified;
-quit;
-
-/* ===== Exports ===== */
-%macro expo(ds, fn);
-proc export data=&ds outfile="%sysfunc(pathname(outdir))/&fn..csv" dbms=csv replace; run;
-%mend;
-
-%expo(work.q1_spend_12m,                q1_spend_12m_by_acct);
-%expo(work.lift_m1_bucket,              lift_by_m1_bucket);
-%expo(work.good_cutoffs,                good_spend_cutoffs);
-%expo(work.good_summary,                good_spend_summary);
-%expo(work.sector_summary,              first_sector_summary);
-%expo(work.merchant_summary,            first_merchant_summary);
-%expo(work.retention_overall,           retention_overall);
-%expo(work.retention_by_sector,         retention_by_sector);
-%expo(work.model_in,                    model_input_snapshot);
-
-ods graphics off;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-yfuccicig
-
-
-
-/* ===== Setup ===== */
-options mprint mlogic symbolgen nocenter validvarname=any;
-ods graphics on;
-
-libname bank "/your/path/here";
-filename outdir ".";
-
-/* ===== Cohort & Transactions ===== */
-proc sql;
-  create table work.q1_cohort as
-  select acct, date_opened
-  from bank.premier_card_acq;
-quit;
-
-proc sql;
-  create table work.q1_txn_raw as
-  select c.acct, c.date_opened, t.tran_amt, t.mt_eff_date, t.mt_category_code
-  from work.q1_cohort c
-  left join bank.card_tran3 t
-    on c.acct = t.acct;
-quit;
-
-/* ===== Relative month windows ===== */
-data work.q1_txn_rel;
-  set work.q1_txn_raw;
-  if not missing(mt_eff_date) then do;
-    months_since_open = intck('month', date_opened, mt_eff_date, 'c');
-    in_m1  = (months_since_open = 0);
-    in_m3  = (0 <= months_since_open <= 2);
-    in_m12 = (0 <= months_since_open <= 11);
-  end;
-  else do; in_m1=0; in_m3=0; in_m12=0; end;
-run;
-
-/* ===== Account-level spend ===== */
-proc sql;
-  create table work.acct_spend as
-  select acct,
-         sum(case when in_m1  then tran_amt else 0 end) as M1_spend,
-         sum(case when in_m3  then tran_amt else 0 end) as M3_spend,
-         sum(case when in_m12 then tran_amt else 0 end) as M12_spend,
-         sum(case when in_m12 and not missing(tran_amt) then 1 else 0 end) as txns_12m,
-         sum(case when in_m1  and not missing(tran_amt) then 1 else 0 end) as txns_m1
-  from work.q1_txn_rel
-  group by acct;
-quit;
-
-proc sql;
-  create table work.acct_spend_full as
-  select a.acct, a.date_opened,
-         coalesce(b.M1_spend,0)  as M1_spend,
-         coalesce(b.M3_spend,0)  as M3_spend,
-         coalesce(b.M12_spend,0) as M12_spend,
-         coalesce(b.txns_12m,0)  as txns_12m,
-         coalesce(b.txns_m1,0)   as txns_m1
-  from work.q1_cohort a
-  left join work.acct_spend b on a.acct=b.acct;
-quit;
-
-/* ===== First behaviors ===== */
-proc sort data=work.q1_txn_rel out=work.q1_txn_sorted;
-  by acct mt_eff_date;
-run;
-
-/* First ever txn */
-data work.first_txn_overall;
-  set work.q1_txn_sorted;
-  by acct;
-  if first.acct then do;
-    first_txn_date = mt_eff_date;
-    first_tran_amt = tran_amt;
-    length first_category $50; first_category = vvalue(mt_category_code);
-    output;
-  end;
-  keep acct first_txn_date first_tran_amt first_category;
-run;
-
-/* First-month (M1) earliest txn */
-data work.first_month_txn;
-  set work.q1_txn_sorted;
-  by acct mt_eff_date;
-  retain flag 0;
-  if first.acct then flag=0;
-  if months_since_open=0 and flag=0 then do;
-    first_month_cat  = vvalue(mt_category_code);
-    first_month_amt  = tran_amt;
-    first_month_date = mt_eff_date;
-    flag=1; output;
-  end;
-  keep acct first_month_cat first_month_amt first_month_date;
-run;
-
-proc sql;
-  create table work.q1_spend_12m as
-  select a.*, f.first_txn_date, f.first_tran_amt, f.first_category,
-         m.first_month_cat, m.first_month_amt, m.first_month_date
-  from work.acct_spend_full a
-  left join work.first_txn_overall f on a.acct=f.acct
-  left join work.first_month_txn  m on a.acct=m.acct;
-quit;
-
-/* ===== M1 buckets (quintiles) & lifts ===== */
-proc rank data=work.q1_spend_12m groups=5 out=work.q1_spend_buckets;
-  var M1_spend;
-  ranks M1_q;
-run;
-
-data work.q1_spend_buckets;
-  set work.q1_spend_buckets;
-  length M1_bucket $20;
-  select (M1_q);
-    when (0) M1_bucket='Q1 (Lowest)';
-    when (1) M1_bucket='Q2';
-    when (2) M1_bucket='Q3';
-    when (3) M1_bucket='Q4';
-    when (4) M1_bucket='Q5 (Highest)';
-    otherwise M1_bucket='Unknown';
-  end;
-  M1_cat = coalesce(first_month_cat,'(No M1 Txn)');
-run;
-
-proc sql;
-  create table work.lift_m1_bucket as
-  select M1_bucket, count(*) as customers,
-         mean(M1_spend)  as avg_M1_spend,
-         mean(M12_spend) as avg_M12_spend
-  from work.q1_spend_buckets
-  group by M1_bucket
-  order by customers desc;
-quit;
-
-/* ===== Dynamic Good spend flags (P70) ===== */
-proc univariate data=work.q1_spend_12m noprint;
-  var M3_spend M12_spend;
-  output out=work.good_cutoffs p70=M3_p70 M12_p70;
-run;
-
-data work.q1_spend_classified;
-  if _n_=1 then set work.good_cutoffs;
-  set work.q1_spend_12m;
-  Good_M3  = (M3_spend  >= M3_p70);
-  Good_M12 = (M12_spend >= M12_p70);
-run;
-
-/* Quick sanity */
-proc freq data=work.q1_spend_classified;
-  tables Good_M3 Good_M12;
-run;
-
-/* ===== Correlations & models ===== */
-proc corr data=work.q1_spend_classified plots=matrix(histogram);
-  var M1_spend M3_spend M12_spend txns_m1 txns_12m;
-run;
-
-proc glmselect data=work.q1_spend_buckets plots=all;
-  class M1_cat / param=ref ref='(No M1 Txn)';
-  model M12_spend = M1_spend first_tran_amt txns_m1 M1_cat / selection=none;
-run; quit;
-
-proc logistic data=work.q1_spend_classified plots=roc;
-  class first_month_cat / param=ref ref='(No M1 Txn)';
-  model Good_M12(event='1') = M1_spend first_tran_amt txns_m1 first_month_cat;
-run;
-
-/* ===== Deciles & contribution ===== */
-proc rank data=work.q1_spend_classified groups=10 out=work.deciles;
-  var M12_spend;
-  ranks dec_M12;
-run;
-
-proc summary data=work.deciles nway;
-  class dec_M12;
-  var M1_spend M3_spend M12_spend txns_m1;
-  output out=work.dec_profile mean= / autoname n=customers;
-run;
-
-proc sql;
-  create table work.dec_contrib as
-  select dec_M12, customers, M12_spend_Mean,
-         (customers*M12_spend_Mean) as decile_total
-  from work.dec_profile
-  order by dec_M12 desc;
-quit;
-
-/* ===== Retention tables ===== */
-proc sql;
-  create table work.acct_month as
-  select acct, months_since_open as rel_month,
-         sum(tran_amt) as month_spend,
-         sum(case when not missing(tran_amt) then 1 else 0 end) as month_txns
-  from work.q1_txn_rel
-  where 0 <= months_since_open <= 11
-  group by acct, months_since_open;
-quit;
-
-data work.grid;
-  set work.q1_cohort;
-  do rel_month=0 to 11; output; end;
-run;
-
-proc sql;
-  create table work.acct_month_full as
-  select g.acct, g.rel_month,
-         coalesce(m.month_spend,0) as month_spend,
-         coalesce(m.month_txns,0)  as month_txns
-  from work.grid g
-  left join work.acct_month m
-    on g.acct=m.acct and g.rel_month=m.rel_month;
-quit;
-
-data work.acct_month_full;
-  set work.acct_month_full;
-  active = (month_txns>0);
-run;
-
-proc summary data=work.acct_month_full nway;
-  class rel_month;
-  var active month_spend;
-  output out=work.retention_tbl mean=;
-run;
-
-proc sql;
-  create table work.acct_month_join as
-  select a.acct, b.M1_cat, a.rel_month, a.month_spend, a.month_txns, a.active
-  from work.acct_month_full a
-  left join work.q1_spend_buckets b on a.acct=b.acct;
-quit;
-
-proc summary data=work.acct_month_join nway;
-  class M1_cat rel_month;
-  var active month_spend;
-  output out=work.retention_by_cat mean=;
-run;
-
-/* ===== Executive summaries ===== */
+/* ========== Executive summaries ========== */
 proc sql;
   create table work.good_summary as
   select "M3" as metric,
@@ -966,48 +315,30 @@ proc sql;
          calculated avg_good / calculated avg_rest as lift
   from work.q1_spend_classified
   union all
-  select "M12" as metric,
-         count(*) as total_cust,
-         sum(Good_M12) as good_cust,
-         mean(M12_spend) as avg_all,
-         mean(case when Good_M12=1 then M12_spend end) as avg_good,
-         mean(case when Good_M12=0 then M12_spend end) as avg_rest,
-         calculated avg_good / calculated avg_rest as lift
+  select "M12",
+         count(*),
+         sum(Good_M12),
+         mean(M12_spend),
+         mean(case when Good_M12=1 then M12_spend end),
+         mean(case when Good_M12=0 then M12_spend end),
+         calculated avg_good / calculated avg_rest
   from work.q1_spend_classified;
 quit;
 
-proc sql;
-  create table work.good_summary_cat as
-  select coalesce(first_month_cat,'(No M1 Txn)') as first_month_cat length=50,
-         count(*) as total_cust,
-         sum(Good_M3)  as good3_cust,
-         mean(M3_spend) as avg3_all,
-         mean(case when Good_M3=1 then M3_spend end) as avg3_good,
-         mean(case when Good_M3=0 then M3_spend end) as avg3_rest,
-         calculated avg3_good / calculated avg3_rest as lift3,
-         sum(Good_M12) as good12_cust,
-         mean(M12_spend) as avg12_all,
-         mean(case when Good_M12=1 then M12_spend end) as avg12_good,
-         mean(case when Good_M12=0 then M12_spend end) as avg12_rest,
-         calculated avg12_good / calculated avg12_rest as lift12
-  from work.q1_spend_classified
-  group by calculated first_month_cat
-  order by total_cust desc;
-quit;
-
-/* ===== Exports ===== */
+/* ========== Exports ========== */
 %macro expo(ds, fn);
 proc export data=&ds outfile="%sysfunc(pathname(outdir))/&fn..csv" dbms=csv replace; run;
 %mend;
 
-%expo(work.q1_spend_12m,                q1_spend_12m_by_acct);
-%expo(work.lift_m1_bucket,              lift_by_m1_bucket);
-%expo(work.dec_profile,                 decile_profile);
-%expo(work.dec_contrib,                 decile_contribution);
-%expo(work.retention_tbl,               retention_overall);
-%expo(work.retention_by_cat,            retention_by_first_month_category);
-%expo(work.good_summary,                good_spend_summary);
-%expo(work.good_summary_cat,            good_spend_summary_by_category);
+%expo(work.q1_spend_12m,         q1_spend_12m_by_acct);
+%expo(work.lift_m1_bucket,       lift_by_m1_bucket);
+%expo(work.good_cutoffs,         good_spend_cutoffs_p70);
+%expo(work.good_summary,         good_spend_summary);
+%expo(work.sector_summary,       first_sector_summary);
+%expo(work.merchant_summary,     first_merchant_summary_top);
+%expo(work.model_in,             model_input_snapshot);
+%expo(work.retention_overall,    retention_overall);
+%expo(work.retention_by_sector,  retention_by_sector);
 
 ods graphics off;
 
@@ -1036,705 +367,7 @@ ods graphics off;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*==========================================================
-  0) CONFIG & LIBS
-==========================================================*/
-options mprint mlogic symbolgen nocenter validvarname=any;
-options dtreset formchar="|----|+|---+=|-/\<>*";
-ods graphics on;
-
-libname bank "/your/path/here";  /* TODO: set your path */
-filename outdir ".";             /* exports go to current directory */
-
-/* Cohort and transaction windows */
-%let cohort_start = '01JAN2024'd;
-%let cohort_end   = '31MAR2024'd;
-%let txn_start    = '01JAN2024'd;
-%let txn_end      = '31MAR2025'd;
-
-/* First-month spend buckets (editable) */
-%let m1_low_hi   = 1000;    /* <= this = Low */
-%let m1_mid_hi   = 5000;    /* <= this = Mid */
-%let m1_high_hi  = 15000;   /* <= this = UpperMid; > = High */
-
-/* "Good Spend" method:
-   - PCTL = percentile-based (uses P70 by default)
-   - ABS  = absolute business thresholds (set below)              */
-%let GOOD_METHOD = PCTL;    /* PCTL | ABS */
-%let PCTL_LEVEL  = 70;      /* percentile cutoff, e.g., 70 = top 30% */
-%let GOOD_M3_ABS  = 15000;  /* used only if GOOD_METHOD=ABS */
-%let GOOD_M12_ABS = 50000;  /* used only if GOOD_METHOD=ABS */
-
-/* High spender flag (for logistic model) */
-%let high12_cut = 10000;
-
-/*==========================================================
-  1) BUILD Q1-2024 COHORT
-==========================================================*/
-proc sql;
-  create table work.q1_cohort as
-  select acct, date_opened
-  from bank.premier_card_acq
-  where &cohort_start. <= date_opened <= &cohort_end.;
-quit;
-
-/*==========================================================
-  2) ATTACH TRANSACTIONS (Jan-2024..Mar-2025)
-==========================================================*/
-proc sql;
-  create table work.q1_txn_raw as
-  select c.acct,
-         c.date_opened,
-         t.tran_amt,
-         t.mt_eff_date,
-         t.mt_category_code
-  from work.q1_cohort c
-  left join bank.card_tran3 t
-    on c.acct = t.acct
-   and &txn_start. <= t.mt_eff_date <= &txn_end.;
-quit;
-
-/*==========================================================
-  3) RELATIVE MONTHS SINCE OPEN (M1/M3/M12 flags)
-==========================================================*/
-data work.q1_txn_rel;
-  set work.q1_txn_raw;
-  if not missing(mt_eff_date) then do;
-    months_since_open = intck('month', date_opened, mt_eff_date, 'c'); /* 0..11 */
-    in_m1  = (months_since_open = 0);
-    in_m3  = (0 <= months_since_open <= 2);
-    in_m12 = (0 <= months_since_open <= 11);
-  end;
-  else do;
-    months_since_open = .;
-    in_m1 = 0; in_m3 = 0; in_m12 = 0;
-  end;
-run;
-
-/*==========================================================
-  4) ACCT-LEVEL SUMMARIES (M1/M3/M12) + COUNTS
-==========================================================*/
-proc sql;
-  create table work.acct_spend as
-  select acct,
-         sum(case when in_m1  then tran_amt else 0 end)  as M1_spend  format=comma16.2,
-         sum(case when in_m3  then tran_amt else 0 end)  as M3_spend  format=comma16.2,
-         sum(case when in_m12 then tran_amt else 0 end)  as M12_spend format=comma16.2,
-         sum(case when in_m12 and not missing(tran_amt) then 1 else 0 end) as txns_12m,
-         sum(case when in_m1  and not missing(tran_amt) then 1 else 0 end) as txns_m1
-  from work.q1_txn_rel
-  group by acct;
-quit;
-
-/* Ensure cohort coverage (zero-fill) */
-proc sql;
-  create table work.acct_spend_full as
-  select a.acct, a.date_opened,
-         coalesce(b.M1_spend ,0) as M1_spend  format=comma16.2,
-         coalesce(b.M3_spend ,0) as M3_spend  format=comma16.2,
-         coalesce(b.M12_spend,0) as M12_spend format=comma16.2,
-         coalesce(b.txns_12m ,0) as txns_12m,
-         coalesce(b.txns_m1  ,0) as txns_m1
-  from work.q1_cohort a
-  left join work.acct_spend b
-    on a.acct = b.acct;
-quit;
-
-/*==========================================================
-  5) FIRST TRANSACTION (overall) & FIRST-MONTH CATEGORY
-==========================================================*/
-proc sort data=work.q1_txn_rel out=work.q1_txn_sorted;
-  by acct mt_eff_date;
-run;
-
-/* First ever transaction in the analysis window */
-data work.first_txn_overall(keep=acct first_txn_date first_tran_amt first_category);
-  set work.q1_txn_sorted;
-  by acct;
-  if first.acct then do;
-    if not missing(mt_eff_date) then do;
-      first_txn_date = mt_eff_date;
-      first_tran_amt = tran_amt;
-      length first_category $50; first_category = vvalue(mt_category_code);
-    end;
-    else do; first_txn_date=.; first_tran_amt=.; length first_category $50; first_category=""; end;
-    output;
-  end;
-run;
-
-/* First-MONTH category (earliest txn where months_since_open=0) */
-data work.first_month_txn(keep=acct first_month_cat first_month_amt first_month_date);
-  set work.q1_txn_sorted;
-  by acct mt_eff_date;
-  retain took_cat 0;
-  if first.acct then took_cat=0;
-  if not missing(months_since_open) and months_since_open=0 and took_cat=0 then do;
-    first_month_cat  = vvalue(mt_category_code);
-    first_month_amt  = tran_amt;
-    first_month_date = mt_eff_date;
-    took_cat = 1; output;
-  end;
-run;
-
-/* Merge first behaviors into acct table */
-proc sql;
-  create table work.q1_spend_12m as
-  select a.*,
-         f.first_txn_date  format=date9.,
-         f.first_tran_amt  format=comma16.2,
-         f.first_category,
-         m.first_month_cat,
-         m.first_month_amt format=comma16.2,
-         m.first_month_date format=date9.
-  from work.acct_spend_full a
-  left join work.first_txn_overall f on a.acct=f.acct
-  left join work.first_month_txn  m on a.acct=m.acct;
-quit;
-
-/*==========================================================
-  6) CATEGORY SUMMARY (BY FIRST-MONTH CATEGORY)
-==========================================================*/
-proc sql;
-  create table work.cat_summary as
-  select coalesce(first_month_cat,'(No M1 Txn)') as first_month_cat length=50,
-         count(*)                                 as customers format=comma12.,
-         mean(M1_spend)                           as avg_M1_spend  format=comma16.2,
-         mean(M12_spend)                          as avg_M12_spend format=comma16.2,
-         sum(M12_spend)                           as total_M12_spend format=comma16.2
-  from work.q1_spend_12m
-  group by calculated first_month_cat
-  order by total_M12_spend desc, customers desc;
-quit;
-
-/*==========================================================
-  7) M1 BUCKETS + LIFT TABLES
-==========================================================*/
-data work.q1_spend_buckets;
-  set work.q1_spend_12m;
-  length M1_bucket $20 M1_cat $50;
-  if M1_spend <= &m1_low_hi. then M1_bucket='Low';
-  else if M1_spend <= &m1_mid_hi. then M1_bucket='Mid';
-  else if M1_spend <= &m1_high_hi. then M1_bucket='UpperMid';
-  else M1_bucket='High';
-  M1_cat = coalesce(first_month_cat,'(No M1 Txn)');
-run;
-
-proc sql;
-  /* Lift by M1 bucket */
-  create table work.lift_m1_bucket as
-  select M1_bucket,
-         count(*)        as customers format=comma12.,
-         mean(M1_spend)  as avg_M1_spend  format=comma16.2,
-         mean(M12_spend) as avg_M12_spend format=comma16.2
-  from work.q1_spend_buckets
-  group by M1_bucket
-  order by case M1_bucket when 'Low' then 1 when 'Mid' then 2 when 'UpperMid' then 3 when 'High' then 4 end;
-
-  /* Lift by (M1 bucket × first-month category) */
-  create table work.lift_bucket_cat as
-  select M1_bucket,
-         M1_cat as first_month_cat,
-         count(*)        as customers format=comma12.,
-         mean(M1_spend)  as avg_M1_spend  format=comma16.2,
-         mean(M12_spend) as avg_M12_spend format=comma16.2
-  from work.q1_spend_buckets
-  group by M1_bucket, M1_cat
-  order by customers desc, avg_M12_spend desc;
-quit;
-
-/*==========================================================
-  8) "GOOD SPEND" CLASSIFICATION FOR M3 & M12
-     - Choose percentile-based or absolute thresholds
-==========================================================*/
-
-/* Percentile-based cutoffs (PCTL) */
-%macro build_good_pctl;
-  proc univariate data=work.q1_spend_12m noprint;
-    var M3_spend M12_spend;
-    output out=work.good_cutoffs
-      p&PCTL_LEVEL. = M3_pctl M12_pctl
-      p50 = M3_median M12_median;
-  run;
-
-  data work.q1_spend_classified;
-    if _n_=1 then set work.good_cutoffs;
-    set work.q1_spend_12m;
-    Good_M3  = (M3_spend  >= M3_pctl);
-    Good_M12 = (M12_spend >= M12_pctl);
-  run;
-%mend;
-
-/* Absolute business thresholds (ABS) */
-%macro build_good_abs;
-  data work.q1_spend_classified;
-    set work.q1_spend_12m;
-    Good_M3  = (M3_spend  >= &GOOD_M3_ABS.);
-    Good_M12 = (M12_spend >= &GOOD_M12_ABS.);
-  run;
-
-  /* For reporting, create a synthetic cutoffs table */
-  data work.good_cutoffs;
-    length note $100;
-    M3_pctl = .;  M12_pctl = .;
-    M3_median = .; M12_median = .;
-    note = cats("ABS thresholds: M3>=", &GOOD_M3_ABS., ", M12>=", &GOOD_M12_ABS.);
-  run;
-%mend;
-
-/* Driver */
-%if &GOOD_METHOD.=PCTL %then %build_good_pctl;
-%else %if &GOOD_METHOD.=ABS %then %build_good_abs;
-
-/* Quick distribution of "Good" flags */
-proc freq data=work.q1_spend_classified;
-  tables Good_M3 Good_M12 / nocum;
-run;
-
-/*==========================================================
-  9) CORRELATIONS & MODELS
-==========================================================*/
-ods select PearsonCorr;
-proc corr data=work.q1_spend_classified plots=matrix(histogram);
-  var M1_spend M3_spend M12_spend txns_m1 txns_12m;
-run;
-
-/* Regression: drivers of M12 amount */
-proc glmselect data=work.q1_spend_buckets plots=all;
-  class M1_cat / param=ref ref='(No M1 Txn)';
-  model M12_spend = M1_spend first_tran_amt txns_m1 M1_cat
-        / selection=none;   /* keep full */
-run; quit;
-
-/* Logistic: predict "Good M12" (or use High12 by amount cutoff) */
-data work.model_in;
-  set work.q1_spend_buckets;
-  High12 = (M12_spend >= &high12_cut.);
-run;
-
-proc logistic data=work.model_in plots=roc;
-  class M1_cat / param=ref ref='(No M1 Txn)';
-  model Good_M12(event='1') = M1_spend first_tran_amt txns_m1 M1_cat;
-run;
-
-/*==========================================================
-  10) DECILES ON M12 + PROFILES
-==========================================================*/
-proc rank data=work.q1_spend_classified groups=10 out=work.deciles;
-  var M12_spend;
-  ranks dec_M12;
-run;
-
-proc summary data=work.deciles nway;
-  class dec_M12;
-  var M1_spend M3_spend M12_spend txns_m1;
-  output out=work.dec_profile
-    mean(M1_spend)=avg_M1_spend
-    mean(M3_spend)=avg_M3_spend
-    mean(M12_spend)=avg_M12_spend
-    mean(txns_m1)=avg_txns_m1
-    n()=customers;
-run;
-
-proc sql;
-  create table work.dec_contrib as
-  select dec_M12, customers, avg_M12_spend,
-         (customers*avg_M12_spend) as decile_total format=comma16.2
-  from work.dec_profile
-  order by dec_M12 desc;
-quit;
-
-/*==========================================================
-  11) RETENTION / ACTIVITY TABLES
-==========================================================*/
-/* Month-level rollup per acct (0..11) */
-proc sql;
-  create table work.acct_month as
-  select acct,
-         months_since_open as rel_month,
-         sum(tran_amt) as month_spend format=comma16.2,
-         sum(case when not missing(tran_amt) then 1 else 0 end) as month_txns
-  from work.q1_txn_rel
-  where 0 <= months_since_open <= 11
-  group by acct, months_since_open;
-quit;
-
-/* grid for zero-activity months */
-data work.grid;
-  set work.q1_cohort;
-  do rel_month=0 to 11; output; end;
-run;
-
-proc sql;
-  create table work.acct_month_full as
-  select g.acct, g.rel_month,
-         coalesce(m.month_spend,0) as month_spend format=comma16.2,
-         coalesce(m.month_txns ,0) as month_txns
-  from work.grid g
-  left join work.acct_month m
-    on g.acct=m.acct and g.rel_month=m.rel_month;
-quit;
-
-data work.acct_month_full;
-  set work.acct_month_full;
-  active = (month_txns>0);
-run;
-
-/* Overall retention curve */
-proc summary data=work.acct_month_full nway;
-  class rel_month;
-  var active month_spend;
-  output out=work.retention_tbl
-    mean(active)=pct_active
-    mean(month_spend)=avg_spend_per_cust;
-run;
-
-/* Retention by first-month category (from q1_spend_buckets for M1_cat) */
-proc sql;
-  create table work.acct_month_join as
-  select a.acct, b.M1_cat, a.rel_month, a.month_spend, a.month_txns, a.active
-  from work.acct_month_full a
-  left join work.q1_spend_buckets b
-    on a.acct=b.acct;
-quit;
-
-proc summary data=work.acct_month_join nway;
-  class M1_cat rel_month;
-  var active month_spend;
-  output out=work.retention_by_cat
-    mean(active)=pct_active
-    mean(month_spend)=avg_spend_per_cust;
-run;
-
-/*==========================================================
-  12) QA & COVERAGE (counts + missing list)
-==========================================================*/
-proc sql noprint;
-  select count(*) into :n_cohort from work.q1_cohort;
-  select count(*) into :n_out    from work.q1_spend_12m;
-quit;
-%put NOTE: Cohort=&n_cohort Output=&n_out Missing=%eval(&n_cohort - &n_out);
-
-proc sql;
-  create table work.missing_accts as
-  select a.acct, a.date_opened
-  from work.q1_cohort a
-  left join work.q1_spend_12m b on a.acct=b.acct
-  where b.acct is null;
-quit;
-
-/*==========================================================
-  13) (OPTIONAL) QUICK SGPLOT VISUALS
-==========================================================*/
-proc sgplot data=work.retention_tbl;
-  series x=rel_month y=pct_active;
-  yaxis label="% Active (0-1)";
-  xaxis label="Months Since Open (0..11)";
-  title "Cohort Retention: % Active by Month Since Open";
-run;
-
-proc sgplot data=work.lift_m1_bucket;
-  vbar M1_bucket / response=avg_M12_spend datalabel;
-  title "Avg 12M Spend by M1 Spend Bucket";
-run;
-
-/*==========================================================
-  14) EXPORTS
-==========================================================*/
-%macro expo(ds, fn);
-proc export data=&ds.
-  outfile="%sysfunc(pathname(outdir))/&fn..csv"
-  dbms=csv replace;
-run;
-%mend;
-
-%expo(work.q1_spend_12m,                         q1_spend_12m_by_acct);
-%expo(work.cat_summary,                           q1_first_month_category_summary);
-%expo(work.lift_m1_bucket,                        lift_by_m1_bucket);
-%expo(work.lift_bucket_cat,                       lift_by_bucket_x_category);
-%expo(work.q1_spend_classified,                   spend_with_good_flags);
-%expo(work.dec_profile,                           decile_profile);
-%expo(work.dec_contrib,                           decile_contribution);
-%expo(work.retention_tbl,                         retention_overall);
-%expo(work.retention_by_cat,                      retention_by_first_month_category);
-%expo(work.missing_accts,                         missing_accounts);
-%expo(work.good_cutoffs,                          good_spend_cutoffs_info);
-
-ods graphics off;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*==========================================================
-  CONFIG & LIBS
-==========================================================*/
-options mprint mlogic symbolgen nocenter validvarname=any;
-options dtreset formchar="|----|+|---+=|-/\<>*";
-
-libname bank "/your/path/here";  /* <-- Replace with actual path */
-
-/* Dates */
-%let cohort_start = '01JAN2024'd;
-%let cohort_end   = '31MAR2024'd;
-%let txn_start    = '01JAN2024'd;
-%let txn_end      = '31MAR2025'd;
-
-/*==========================================================
-  1) BUILD Q1-2024 COHORT
-     - Keep only accounts opened Jan–Mar 2024
-==========================================================*/
-proc sql;
-  create table work.q1_cohort as
-  select acct,
-         date_opened
-  from bank.premier_card_acq
-  where &cohort_start. <= date_opened <= &cohort_end.;
-quit;
-
-/* QA: Cohort size */
-proc sql;
-  select count(*) as n_accounts format=comma12.
-  from work.q1_cohort;
-quit;
-
-/*==========================================================
-  2) ATTACH TRANSACTIONS (Jan-2024 to Mar-2025)
-     - Keep txns for the cohort only
-==========================================================*/
-proc sql;
-  create table work.q1_txn_raw as
-  select c.acct,
-         c.date_opened,
-         t.tran_amt,
-         t.mt_eff_date,
-         t.mt_category_code
-  from work.q1_cohort c
-  left join bank.card_tran3 t
-    on c.acct = t.acct
-       and &txn_start. <= t.mt_eff_date <= &txn_end.;
-quit;
-
-/*==========================================================
-  3) RELATIVE MONTHS FROM OPEN DATE
-     - months_since_open = 0 (open month), 1 (next), …, 11 (12th month)
-==========================================================*/
-data work.q1_txn_rel;
-  set work.q1_txn_raw;
-  /* Only compute if txn_date present; keep missing rows for no-transaction accounts */
-  if not missing(mt_eff_date) then do;
-    months_since_open = intck('month', date_opened, mt_eff_date, 'c');
-    /* Bound for 12M horizon */
-    in_m1  = (0 <= months_since_open <= 0);
-    in_m3  = (0 <= months_since_open <= 2);
-    in_m12 = (0 <= months_since_open <= 11);
-  end;
-  else do;
-    months_since_open = .;
-    in_m1  = 0;
-    in_m3  = 0;
-    in_m12 = 0;
-  end;
-run;
-
-/*==========================================================
-  4) ACCOUNT-LEVEL SPEND SUMMARIES (M1 / M3 / M12) + TXN COUNTS
-==========================================================*/
-proc sql;
-  create table work.acct_spend as
-  select acct,
-         /* Sum with guards */
-         sum(case when in_m1  then tran_amt else 0 end)  as M1_spend  format=comma16.2,
-         sum(case when in_m3  then tran_amt else 0 end)  as M3_spend  format=comma16.2,
-         sum(case when in_m12 then tran_amt else 0 end)  as M12_spend format=comma16.2,
-         /* Useful diagnostics */
-         sum(case when in_m12 and not missing(tran_amt) then 1 else 0 end) as txns_12m,
-         sum(case when in_m1  and not missing(tran_amt) then 1 else 0 end) as txns_m1
-  from work.q1_txn_rel
-  group by acct;
-quit;
-
-/* Ensure all cohort accts appear even if no txn */
-proc sql;
-  create table work.acct_spend_full as
-  select a.acct,
-         a.date_opened,
-         coalesce(b.M1_spend ,0) as M1_spend  format=comma16.2,
-         coalesce(b.M3_spend ,0) as M3_spend  format=comma16.2,
-         coalesce(b.M12_spend,0) as M12_spend format=comma16.2,
-         coalesce(b.txns_12m ,0) as txns_12m,
-         coalesce(b.txns_m1  ,0) as txns_m1
-  from work.q1_cohort a
-  left join work.acct_spend b
-    on a.acct = b.acct;
-quit;
-
-/*==========================================================
-  5) FIRST TRANSACTION (DATE, CATEGORY, AMOUNT)
-     - Earliest mt_eff_date per acct within the txn window
-==========================================================*/
-proc sort data=work.q1_txn_rel out=work.q1_txn_sorted;
-  by acct mt_eff_date;
-run;
-
-data work.first_txn(keep=acct first_txn_date first_tran_amt first_category);
-  set work.q1_txn_sorted;
-  by acct;
-  if first.acct then do;
-    if not missing(mt_eff_date) then do;
-      first_txn_date  = mt_eff_date;
-      first_tran_amt  = tran_amt;
-      length first_category $50;
-      first_category  = vvalue(mt_category_code); /* preserve as text */
-      output;
-    end;
-    else do;
-      /* No txn case: keep row with missing first_txn_date for completeness */
-      first_txn_date  = .;
-      first_tran_amt  = .;
-      length first_category $50;
-      first_category  = "";
-      output;
-    end;
-  end;
-run;
-
-/*==========================================================
-  6) FINAL ACCOUNT-LEVEL OUTPUT (merge spend + first txn)
-==========================================================*/
-proc sql;
-  create table work.q1_spend_12m as
-  select a.*,
-         f.first_txn_date format=date9.,
-         f.first_tran_amt format=comma16.2,
-         f.first_category
-  from work.acct_spend_full a
-  left join work.first_txn f
-    on a.acct = f.acct;
-quit;
-
-/*==========================================================
-  7) CATEGORY-LEVEL INSIGHTS
-     - Average 12M spend by first-month category
-     - Also show penetration & average M1 spend
-==========================================================*/
-/* Determine customer’s FIRST-MONTH category: category in months_since_open=0.
-   If multiple in same month, we take earliest by date (already sorted). */
-data work.first_month_txn(keep=acct first_month_cat first_month_amt);
-  set work.q1_txn_sorted;
-  by acct mt_eff_date;
-  if first.acct then do; retain took_cat 0; took_cat = 0; end;
-
-  /* Only consider M1 transactions */
-  if not missing(months_since_open) and months_since_open=0 and took_cat=0 then do;
-    first_month_cat = vvalue(mt_category_code);
-    first_month_amt = tran_amt;
-    took_cat = 1;
-    output;
-  end;
-run;
-
-/* Attach first-month category to account table */
-proc sql;
-  create table work.q1_spend_with_cat as
-  select a.*,
-         c.first_month_cat,
-         c.first_month_amt format=comma16.2
-  from work.q1_spend_12m a
-  left join work.first_month_txn c
-    on a.acct = c.acct;
-quit;
-
-/* Aggregates by first-month category */
-proc sql;
-  create table work.cat_summary as
-  select coalesce(first_month_cat,'(No M1 Txn)') as first_month_cat length=50,
-         count(*)                               as customers format=comma12.,
-         mean(M12_spend)                        as avg_M12_spend format=comma16.2,
-         mean(M1_spend)                         as avg_M1_spend  format=comma16.2,
-         sum(M12_spend)                         as total_M12_spend format=comma16.2
-  from work.q1_spend_with_cat
-  group by calculated first_month_cat
-  order by total_M12_spend desc, customers desc;
-quit;
-
-/*==========================================================
-  8) QA CHECKS
-==========================================================*/
-/* Coverage: every cohort acct should be present */
-proc sql;
-  select 
-    (select count(*) from work.q1_cohort)        as cohort_accts,
-    (select count(*) from work.q1_spend_12m)     as out_accts,
-    (calculated cohort_accts - calculated out_accts) as missing_in_output
-  ;
-quit;
-
-/* Proportion with any 12M txn */
-proc sql;
-  select sum(txns_12m>0)/count(*) format=percent8.2 as pct_with_12m_txn
-  from work.q1_spend_12m;
-quit;
-
-/*==========================================================
-  9) OPTIONAL EXPORTS
-==========================================================*/
-proc export data=work.q1_spend_with_cat
-    outfile="&sysuserhome./q1_spend_12m_by_acct.csv"
-    dbms=csv replace;
-run;
-
-proc export data=work.cat_summary
-    outfile="&sysuserhome./q1_first_month_category_summary.csv"
-    dbms=csv replace;
-run;
+cjkfm no ccfgb
 
 
 
