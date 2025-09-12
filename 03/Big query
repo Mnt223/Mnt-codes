@@ -1,3 +1,52 @@
+/* === Decile Lift & Gain for Logistic Model === */
+proc sort data=work.model_in out=work.scored;
+  by descending pred;   /* pred = predicted probability from logistic */
+run;
+
+/* Assign deciles */
+proc rank data=work.scored groups=10 out=work.deciles;
+  var pred;
+  ranks decile; 
+run;
+
+data work.deciles;
+  set work.deciles;
+  decile = 10 - decile;  /* so Decile 10 = best, 1 = worst */
+run;
+
+/* Summarize by decile */
+proc sql;
+  create table work.decile_summary as
+  select decile,
+         count(*) as customers,
+         sum(Good_M12) as good_customers,
+         mean(Good_M12) as good_rate format=percent8.2,
+         calculated good_customers / (select sum(Good_M12) from work.deciles) as cum_good_pct format=percent8.2
+  from work.deciles
+  group by decile
+  order by decile desc;
+quit;
+
+/* Add lift column */
+data work.decile_summary;
+  set work.decile_summary;
+  overall_good_rate = (select mean(Good_M12) from work.deciles);
+  lift = good_rate / overall_good_rate;
+run;
+
+/* Export for charts */
+proc export data=work.decile_summary
+  outfile="%sysfunc(pathname(outdir))/decile_lift_gain.csv"
+  dbms=csv replace;
+run;
+
+
+
+
+
+
+
+
 Perfect, Boss ✅ — with all these outputs lined up, I’ll put the whole story together for you in a way you can explain to business stakeholders step by step.
 
 ⸻
