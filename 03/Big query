@@ -1,3 +1,104 @@
+/* ========== 1) Premier Acquisition Base ========== */
+data work.premier_base;
+  set bank.premier_card_acq;
+  /* Month keys for 3rd and 12th month */
+  m3_date  = intnx('month', date_opened,  2, 'B');   /* 3rd month */
+  m12_date = intnx('month', date_opened, 11, 'B');   /* 12th month */
+
+  m3_yr  = year(m3_date);   m3_mo  = month(m3_date);
+  m12_yr = year(m12_date);  m12_mo = month(m12_date);
+  format m3_date m12_date yymmn6.;
+run;
+
+
+/* ========== 2) Pull Monthly Snapshots (only required fields) ========== */
+/* KEEP ONLY what your AIF rule needs */
+proc sql;
+  create table work.snap_sub as
+  select
+      acct,
+      yr_dim,
+      mo_dim,
+      chgoff_status,
+      block_code_1,
+      block_code_2,
+      date_closed
+      /* add other fields here if your AIF rule uses them */
+  from gemini.ambs_mo_snap_history
+  where (yr_dim*100 + mo_dim) between 202403 and 202503
+;
+quit;
+
+
+/* ========== 3) Apply AIF Rule ========== */
+/* Replace this macro body with the SAME rule you used to create aif_ind1 in AMBS_BASE */
+%macro AIF_RULE;
+    aif_ind1 = 0;
+    if upcase(coalescec(chgoff_status,'')) not in ('Y','1') and
+       missing(date_closed) and
+       upcase(coalescec(block_code_1,'')) not in ('C','R') and
+       upcase(coalescec(block_code_2,'')) not in ('C','R')
+    then aif_ind1 = 1;
+%mend;
+
+data work.snap_aif;
+  set work.snap_sub;
+  length aif_ind1 8;
+  %AIF_RULE;
+run;
+
+
+/* ========== 4) Extract AIF at 3M and 12M ========== */
+proc sql;
+  create table work.snap_3m as
+  select acct, yr_dim, mo_dim, max(aif_ind1) as AIF_IND_3M
+  from work.snap_aif
+  group by acct, yr_dim, mo_dim;
+
+  create table work.snap_12m as
+  select acct, yr_dim, mo_dim, max(aif_ind1) as AIF_IND_12M
+  from work.snap_aif
+  group by acct, yr_dim, mo_dim;
+quit;
+
+
+/* ========== 5) Join Back to Premier Base ========== */
+proc sql;
+  create table work.premier_with_aif as
+  select p.*,
+         coalesce(s3.AIF_IND_3M,0)  as AIF_IND_3M,
+         coalesce(s12.AIF_IND_12M,0) as AIF_IND_12M
+  from work.premier_base p
+  left join work.snap_3m s3
+    on  s3.acct   = p.acct
+    and s3.yr_dim = p.m3_yr
+    and s3.mo_dim = p.m3_mo
+  left join work.snap_12m s12
+    on  s12.acct   = p.acct
+    and s12.yr_dim = p.m12_yr
+    and s12.mo_dim = p.m12_mo
+;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* ======================== Setup ======================== */
 options mprint mlogic nocenter validvarname=any;
 ods graphics on;
