@@ -1,3 +1,105 @@
+/*==========================================================
+  Build AIF_IND_3M and AIF_IND_12M on Premier acquisition
+  using the SAME AIF rule you shared (INT_STATUS + BLOCK codes).
+  Only required snapshot fields are pulled.
+==========================================================*/
+
+%let SNAP_LIB = gemini;
+%let SNAP_TBL = ambs_mo_snap_history;
+
+/* Allowed block-code set as per your AIF logic screenshot */
+%let OKBLOCKS = A R K M O Q ? H;
+
+/* 1) Premier base with keys for 3rd and 12th months post-open */
+data work.premier_base;
+  set bank.premier_card_acq(keep=acct date_opened card_type1);
+  m3_date  = intnx('month', date_opened,  2, 'B');  /* 3rd month */
+  m12_date = intnx('month', date_opened, 11, 'B');  /* 12th month */
+  m3_yr  = year(m3_date);   m3_mo  = month(m3_date);
+  m12_yr = year(m12_date);  m12_mo = month(m12_date);
+  format m3_date m12_date yymmn6.;
+run;
+
+/* 2) Pull only variables needed for AIF from monthly snapshots
+      Restrict to Mar-2024 .. Mar-2025 as requested              */
+proc sql;
+  create table work.snap_sub as
+  select
+      acct,
+      yr_dim,
+      mo_dim,
+      /* fields used by the AIF rule from your screenshot */
+      int_status, 
+      block_code_1, 
+      block_code_2
+  from &SNAP_LIB..&SNAP_TBL
+  where (yr_dim*100 + mo_dim) between 202403 and 202503
+;
+quit;
+
+/* 3) Apply YOUR AIF rule to each snapshot row
+      (interpreted from your code image):
+      - AIF = 1 when INT_STATUS in ('A','D') AND
+        BLOCK_CODE_1 and BLOCK_CODE_2 are in {A,R,K,M,O,Q,?,H}
+      - Else AIF = 0
+*/
+data work.snap_aif;
+  set work.snap_sub;
+  length aif_ind1 8;
+
+  /* normalize for safe comparisons */
+  _int  = upcase(strip(coalescec(int_status,'')));
+  _bc1  = upcase(strip(compress(coalescec(block_code_1,''))));
+  _bc2  = upcase(strip(compress(coalescec(block_code_2,''))));
+
+  /* treat missing block codes as not in the OK set */
+  aif_ind1 = 0;
+  if _int in ('A','D') then do;
+    if findw("&OKBLOCKS.", _bc1, ' ', 'E')>0 and
+       findw("&OKBLOCKS.", _bc2, ' ', 'E')>0 then aif_ind1 = 1;
+  end;
+
+  drop _int _bc1 _bc2;
+run;
+
+/* 4) Collapse to one row per acct-yr-mo (defensive) */
+proc sql;
+  create table work.snap_aif_3m as
+  select acct, yr_dim, mo_dim, max(aif_ind1) as AIF_IND_3M
+  from work.snap_aif
+  group by acct, yr_dim, mo_dim;
+
+  create table work.snap_aif_12m as
+  select acct, yr_dim, mo_dim, max(aif_ind1) as AIF_IND_12M
+  from work.snap_aif
+  group by acct, yr_dim, mo_dim;
+quit;
+
+/* 5) Join 3M/12M flags back to Premier acquisition table */
+proc sql;
+  create table work.premier_acq_with_aif as
+  select p.*,
+         coalesce(s3.AIF_IND_3M,  0) as AIF_IND_3M,
+         coalesce(s12.AIF_IND_12M, 0) as AIF_IND_12M
+  from work.premier_base p
+  left join work.snap_aif_3m  s3
+    on s3.acct   = p.acct 
+   and s3.yr_dim = p.m3_yr
+   and s3.mo_dim = p.m3_mo
+  left join work.snap_aif_12m s12
+    on s12.acct   = p.acct
+   and s12.yr_dim = p.m12_yr
+   and s12.mo_dim = p.m12_mo
+;
+quit;
+
+
+
+
+
+
+
+
 /* ========== 1) Premier Acquisition Base ========== */
 data work.premier_base;
   set bank.premier_card_acq;
