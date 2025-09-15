@@ -1,3 +1,418 @@
+/* ===================== Setup ===================== */
+options mprint mlogic symbolgen nocenter validvarname=any;
+ods graphics on;
+
+libname bank "/your/path/here";
+
+/* Single Excel workbook for business */
+ods excel file="&saswork./Q1_responders_analysis.xlsx" options(sheet_interval="none");
+
+/* ===================== Cohort & Txns ===================== */
+proc sql;
+  create table work.q1_cohort as
+  select acct, date_opened, card_type1
+  from bank.premier_card_acq;
+quit;
+
+proc sql;
+  /* Bring card_type1 from txns too (if present) and coalesce */
+  create table work.q1_txn_raw as
+  select c.acct,
+         c.date_opened,
+         coalesce(t.card_type1, c.card_type1) as card_type1 length=40,
+         t.tran_amt, t.mt_eff_date, t.mt_category_code, t.sector
+  from work.q1_cohort c
+  left join bank.card_tran3 t
+    on c.acct = t.acct;
+quit;
+
+/* ===================== Relative Windows ===================== */
+data work.q1_txn_rel;
+  set work.q1_txn_raw;
+  if not missing(mt_eff_date) then do;
+    months_since_open = intck('month', date_opened, mt_eff_date, 'c');
+    in_m1  = (months_since_open = 0);
+    in_m3  = (0 <= months_since_open <= 2);
+    in_m12 = (0 <= months_since_open <= 11);
+  end;
+  else do; in_m1=0; in_m3=0; in_m12=0; end;
+run;
+
+/* ===================== Account-level Spend ===================== */
+proc sql;
+  create table work.acct_spend as
+  select acct,
+         sum(case when in_m1  then tran_amt else 0 end)  as M1_spend,
+         sum(case when in_m3  then tran_amt else 0 end)  as M3_spend,
+         sum(case when in_m12 then tran_amt else 0 end)  as M12_spend,
+         sum(case when in_m1  and not missing(tran_amt) then 1 else 0 end) as txns_m1,
+         sum(case when in_m12 and not missing(tran_amt) then 1 else 0 end) as txns_12m
+  from work.q1_txn_rel
+  group by acct;
+quit;
+
+proc sql;
+  create table work.q1_spend as
+  select a.acct, a.date_opened, a.card_type1,
+         coalesce(b.M1_spend,0)  as M1_spend,
+         coalesce(b.M3_spend,0)  as M3_spend,
+         coalesce(b.M12_spend,0) as M12_spend,
+         coalesce(b.txns_m1,0)   as txns_m1,
+         coalesce(b.txns_12m,0)  as txns_12m
+  from work.q1_cohort a
+  left join work.acct_spend b on a.acct=b.acct;
+quit;
+
+/* ===================== First Merchant & Sector in M1 ===================== */
+proc sort data=work.q1_txn_rel out=work.q1_txn_sorted;
+  by acct mt_eff_date;
+run;
+
+data work.first_M1;
+  set work.q1_txn_sorted;
+  by acct mt_eff_date;
+  retain flagged 0;
+  if first.acct then flagged=0;
+  if months_since_open=0 and flagged=0 then do;
+    length first_merchant $60 first_sector $40;
+    first_merchant  = coalescec(vvalue(mt_category_code),'(Other/No M1)');
+    first_sector    = coalescec(sector,'Other');
+    first_tran_amt  = tran_amt;
+    first_tran_date = mt_eff_date;
+    flagged=1; output;
+  end;
+  keep acct first_merchant first_sector first_tran_amt first_tran_date;
+run;
+
+proc sql;
+  create table work.q1_spend_12m as
+  select s.*, m.first_merchant, m.first_sector, m.first_tran_amt, m.first_tran_date
+  from work.q1_spend s
+  left join work.first_M1 m
+    on s.acct=m.acct;
+quit;
+
+/* ===================== Base: 3M Responders ===================== */
+data work.base_resp;
+  set work.q1_spend_12m;
+  if M3_spend>0;            /* 3M responders only */
+  length sector_s $40 merchant_raw $60;
+  sector_s     = coalescec(first_sector,'(No M1 Txn)');  /* safe bucket */
+  merchant_raw = coalescec(first_merchant,'(Other/No M1)');
+run;
+
+/* ===================== Top-50 Merchants for Modeling (stable levels) ===================== */
+proc sql;
+  create table work.merch_rank as
+  select merchant_raw as first_merchant length=60, count(*) as customers
+  from work.base_resp
+  group by merchant_raw
+  order by customers desc;
+quit;
+
+proc sql;
+  create table work.top_merch as
+  select first_merchant from work.merch_rank
+  where calculated first_merchant is not null
+  order by customers desc
+  obs=50;
+quit;
+
+proc sql;
+  create table work.base_resp2 as
+  select a.*,
+         coalesce(t.first_merchant,'(Other/No M1)') as merchant_s length=60
+  from work.base_resp a
+  left join work.top_merch t
+    on a.merchant_raw = t.first_merchant;
+quit;
+
+/* ===================== Cutoffs (Overall / Card / Sector / Merchant) ===================== */
+/* Overall (responders) */
+proc means data=work.base_resp2 noprint p50 p70 p80 p90;
+  var M3_spend M12_spend;
+  output out=work.cutoffs_overall
+    p50(M3_spend)=M3_p50 p70(M3_spend)=M3_p70 p80(M3_spend)=M3_p80 p90(M3_spend)=M3_p90
+    p50(M12_spend)=M12_p50 p70(M12_spend)=M12_p70 p80(M12_spend)=M12_p80 p90(M12_spend)=M12_p90;
+run;
+
+/* By card_type1 */
+proc means data=work.base_resp2 noprint p50 p70 p80 p90;
+  class card_type1;
+  var M3_spend M12_spend;
+  output out=work.cutoffs_by_card
+    p50(M3_spend)=M3_p50 p70(M3_spend)=M3_p70 p80(M3_spend)=M3_p80 p90(M3_spend)=M3_p90
+    p50(M12_spend)=M12_p50 p70(M12_spend)=M12_p70 p80(M12_spend)=M12_p80 p90(M12_spend)=M12_p90;
+run;
+
+/* By sector */
+proc means data=work.base_resp2 noprint p50 p70 p80 p90;
+  class sector_s;
+  var M3_spend M12_spend;
+  output out=work.cutoffs_by_sector
+    p50(M3_spend)=M3_p50 p70(M3_spend)=M3_p70 p80(M3_spend)=M3_p80 p90(M3_spend)=M3_p90
+    p50(M12_spend)=M12_p50 p70(M12_spend)=M12_p70 p80(M12_spend)=M12_p80 p90(M12_spend)=M12_p90;
+run;
+
+/* By Top-50 merchant bucket */
+proc means data=work.base_resp2 noprint p50 p70 p80 p90;
+  class merchant_s;
+  var M3_spend M12_spend;
+  output out=work.cutoffs_by_merch
+    p50(M3_spend)=M3_p50 p70(M3_spend)=M3_p70 p80(M3_spend)=M3_p80 p90(M3_spend)=M3_p90
+    p50(M12_spend)=M12_p50 p70(M12_spend)=M12_p70 p80(M12_spend)=M12_p80 p90(M12_spend)=M12_p90;
+run;
+
+/* ===================== Good Flag (Overall P70 on responders) ===================== */
+data work.base_resp2;
+  if _n_=1 then set work.cutoffs_overall(keep=M3_p70 M12_p70);
+  set work.base_resp2;
+  Good_M3  = (M3_spend  >= M3_p70);
+  Good_M12 = (M12_spend >= M12_p70);
+run;
+
+/* ===================== Business Summaries ===================== */
+ods excel options(sheet_name="Responder_Summary");
+proc sql;
+  create table work.responder_summary as
+  select card_type1,
+         count(*) as responders,
+         mean(M3_spend)  as avg_M3_spend,
+         mean(M12_spend) as avg_M12_spend,
+         mean(Good_M12)  as pct_Good12
+  from work.base_resp2
+  group by card_type1
+  order by responders desc;
+quit;
+proc print data=work.responder_summary label noobs; format _numeric_ comma16.2 percent8.2; run;
+
+ods excel options(sheet_name="Sector_Summary");
+proc sql;
+  create table work.sector_summary as
+  select sector_s as first_sector length=40,
+         count(*) as customers,
+         mean(M3_spend)  as avg_M3_spend,
+         mean(M12_spend) as avg_M12_spend,
+         mean(Good_M12)  as pct_Good12
+  from work.base_resp2
+  group by sector_s
+  order by customers desc;
+quit;
+proc print data=work.sector_summary label noobs; format _numeric_ comma16.2 percent8.2; run;
+
+ods excel options(sheet_name="Merchant_Summary");
+proc sql;
+  create table work.merchant_summary as
+  select merchant_s as first_merchant length=60,
+         count(*) as customers,
+         mean(M3_spend)  as avg_M3_spend,
+         mean(M12_spend) as avg_M12_spend,
+         mean(Good_M12)  as pct_Good12
+  from work.base_resp2
+  group by merchant_s
+  order by customers desc, avg_M12_spend desc;
+quit;
+proc print data=work.merchant_summary label noobs; format _numeric_ comma16.2 percent8.2; run;
+
+/* ===================== Train/Test Split (by month of open) ===================== */
+data work.train work.test;
+  set work.base_resp2;
+  open_month = month(date_opened);
+  if open_month in (1,2) then output work.train;
+  else if open_month=3 then output work.test;
+run;
+
+/* ===================== Modeling ===================== */
+%let ref_sector = %str((No M1 Txn));
+%let ref_merch  = %str((Other/No M1));
+
+/* ---- Linear (GENMOD) on Train, score Test via PLM ---- */
+ods excel options(sheet_name="Linear_Model");
+proc genmod data=work.train;
+  class sector_s (ref="&ref_sector")
+        merchant_s (ref="&ref_merch")
+        card_type1;
+  model M12_spend = M1_spend first_tran_amt txns_m1 sector_s merchant_s card_type1
+        / dist=normal link=identity;
+  output out=work.train_lin_pred pred=pred_m12;
+  store work.genmod_store;   /* for scoring test */
+run;
+
+/* Score Test with PLM */
+proc plm restore=work.genmod_store;
+  score data=work.test out=work.test_lin_pred predicted=pred_m12 / ilink;
+run;
+
+/* ---- Logistic (LOGISTIC) on Train + Score Test ---- */
+ods excel options(sheet_name="Logistic_Model");
+proc logistic data=work.train plots=roc;
+  class sector_s (ref="&ref_sector") merchant_s (ref="&ref_merch") card_type1 / param=ref;
+  model Good_M12(event='1') = M1_spend first_tran_amt txns_m1 sector_s merchant_s card_type1
+        / lackfit;
+  output out=work.train_logit_scored p=pred;
+  score data=work.test out=work.test_logit_scored outroc=work.test_roc;
+run;
+
+/* ===================== Metrics: Brier, KS, Deciles, Gains, PSI ===================== */
+/* Brier */
+ods excel options(sheet_name="Brier_KS");
+proc sql;
+  create table work.brier as
+  select 'Train' as split length=5, mean((Good_M12 - pred)*(Good_M12 - pred)) as brier
+  from work.train_logit_scored
+  union all
+  select 'Test', mean((Good_M12 - P_1)*(Good_M12 - P_1))
+  from work.test_logit_scored;
+quit;
+proc print data=work.brier noobs; format brier 8.5; run;
+
+/* KS Macro */
+%macro ks(in=,score=,y=,out=);
+  proc sort data=&in out=_sc; by descending &score; run;
+  data _sc; set _sc end=last;
+    retain npos nneg 0;
+    if &y=1 then npos+1; else nneg+1;
+    if last then do; call symputx('npos',npos); call symputx('nneg',nneg); end;
+  run;
+  data _cdf; set _sc;
+    retain tp fp 0;
+    if &y=1 then tp+1; else fp+1;
+    tpr = tp/&npos; fpr = fp/&nneg;
+  run;
+  proc sql noprint;
+    select max(abs(tpr - fpr)) into :ks from _cdf;
+  quit;
+  data &out; length split $5; ks=&ks; run;
+%mend;
+
+%ks(in=work.train_logit_scored, score=pred, y=Good_M12, out=work.ks_train);
+data work.ks_train; set work.ks_train; split='Train'; run;
+
+%ks(in=work.test_logit_scored, score=P_1, y=Good_M12, out=work.ks_test);
+data work.ks_test; set work.ks_test; split='Test'; run;
+
+data work.ks_all; set work.ks_train work.ks_test; run;
+proc print data=work.ks_all noobs; run;
+
+/* Decile lift & gain */
+%macro decile(in=,score=,y=,out=);
+  proc rank data=&in groups=10 out=_d; var &score; ranks r; run;
+  data _d; set _d; decile=10-r; run;
+  proc sort data=_d; by descending decile; run;
+  proc sql;
+    create table &out as
+    select decile,
+           count(*) as customers,
+           sum(&y) as good_cust,
+           mean(&y) as good_rate,
+           mean(&score) as avg_pred
+    from _d
+    group by decile
+    order by decile desc;
+  quit;
+  data &out;
+    set &out end=last;
+    retain cum_good 0 total_good 0;
+    if _n_=1 then do;
+      /* get total good */
+      call symputx('totgood',0);
+    end;
+  run;
+%mend;
+
+%decile(in=work.train_logit_scored, score=pred, y=Good_M12, out=work.dec_train);
+%decile(in=work.test_logit_scored,  score=P_1, y=Good_M12, out=work.dec_test);
+
+/* add overall good rate & lift + cumulative capture */
+proc sql noprint;
+  select mean(Good_M12) into :gr_train from work.train_logit_scored;
+  select mean(Good_M12) into :gr_test  from work.test_logit_scored;
+  select sum(good_cust) into :tg_train from work.dec_train;
+  select sum(good_cust) into :tg_test  from work.dec_test;
+quit;
+
+data work.dec_train2;
+  set work.dec_train end=last;
+  retain cum_good 0;
+  cum_good + good_cust;
+  cum_good_pct = cum_good / &tg_train;
+  lift = good_rate / &gr_train;
+run;
+
+data work.dec_test2;
+  set work.dec_test end=last;
+  retain cum_good 0;
+  cum_good + good_cust;
+  cum_good_pct = cum_good / &tg_test;
+  lift = good_rate / &gr_test;
+run;
+
+ods excel options(sheet_name="Decile_Lift_Train");
+proc print data=work.dec_train2 noobs; format good_rate percent8.2 cum_good_pct percent8.2 lift 8.2; run;
+
+ods excel options(sheet_name="Decile_Lift_Test");
+proc print data=work.dec_test2 noobs; format good_rate percent8.2 cum_good_pct percent8.2 lift 8.2; run;
+
+/* PSI Train vs Test (10 bins) */
+proc rank data=work.train_logit_scored groups=10 out=work.train_bins; var pred; ranks bin; run;
+proc rank data=work.test_logit_scored  groups=10 out=work.test_bins;  var P_1;  ranks bin; run;
+
+proc sql;
+  create table work.dist_train as
+  select bin, count(*) as n, calculated n / (select count(*) from work.train_bins) as p
+  from work.train_bins group by bin order by bin;
+  create table work.dist_test as
+  select bin, count(*) as n, calculated n / (select count(*) from work.test_bins) as q
+  from work.test_bins group by bin order by bin;
+quit;
+
+proc sql;
+  create table work.psi as
+  select coalesce(t.bin,s.bin) as bin,
+         t.p, s.q,
+         (t.p - s.q) * log(max(t.p,1e-8)/max(s.q,1e-8)) as psi_comp
+  from work.dist_train t
+  full join work.dist_test s
+    on t.bin = s.bin
+  order by bin;
+  create table work.psi_sum as
+  select sum(psi_comp) as PSI from work.psi;
+quit;
+
+ods excel options(sheet_name="PSI");
+proc print data=work.psi_sum noobs; format PSI 8.4; run;
+
+/* ===================== Correlations (sanity) ===================== */
+ods excel options(sheet_name="Correlations");
+proc corr data=work.base_resp2 plots=none;
+  var M1_spend M3_spend M12_spend txns_m1 txns_12m;
+run;
+
+/* ===================== Cutoff Sheets ===================== */
+ods excel options(sheet_name="Cutoffs_Overall");
+proc print data=work.cutoffs_overall noobs; format _numeric_ comma16.2; run;
+
+ods excel options(sheet_name="Cutoffs_By_Card");
+proc print data=work.cutoffs_by_card noobs; format _numeric_ comma16.2; run;
+
+ods excel options(sheet_name="Cutoffs_By_Sector");
+proc print data=work.cutoffs_by_sector noobs; format _numeric_ comma16.2; run;
+
+ods excel options(sheet_name="Cutoffs_By_Merchant");
+proc print data=work.cutoffs_by_merch noobs; format _numeric_ comma16.2; run;
+
+ods excel close;
+ods graphics off;
+
+
+
+
+
+
+
+
+
+
 /* === Decile Lift & Gain for Logistic Model === */
 proc sort data=work.model_in out=work.scored;
   by descending pred;   /* pred = predicted probability from logistic */
