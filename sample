@@ -1,3 +1,18 @@
+MSD Conversion % :=
+DIVIDE(
+    DISTINCTCOUNTNOBLANK(
+        FILTER(
+            'MsD trigger conversion',
+            'MsD trigger conversion'[ConvertedFlag] = 1
+        )[GA_CustomerID]
+    ),
+    DISTINCTCOUNTNOBLANK ( 'MsD trigger conversion'[GA_CustomerID] ),
+    0
+)
+
+
+
+
 
 I will provide the mapping file by the end of the day. If I receive the mapping by 10th September, I can refresh the dashboard by the 12th.”
 
