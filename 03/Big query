@@ -1,3 +1,220 @@
+/* ================== Data Prep Guardrails ================== */
+data work.base_resp2;
+  set work.base_resp2;
+
+  /* Dates always formatted DATE9 */
+  format date_opened first_tran_date date9.;
+
+  /* Replace blanks / missing */
+  if missing(sector_s)   then sector_s   = 'Unknown';
+  if missing(merchant_s) then merchant_s = 'Unknown';
+  if missing(card_type1) then card_type1 = 'Unknown';
+  if missing(first_merchant) then first_merchant='Unknown';
+  if missing(first_sector)   then first_sector='Unknown';
+
+  if missing(first_tran_amt) then first_tran_amt=0;
+  if missing(M1_spend) then M1_spend=0;
+  if missing(M3_spend) then M3_spend=0;
+  if missing(M12_spend) then M12_spend=0;
+  if missing(txns_m1) then txns_m1=0;
+  if missing(txns_12m) then txns_12m=0;
+run;
+
+/* ================== Train/Test Split ================== */
+data work.train work.test;
+  set work.base_resp2;
+  open_month = month(date_opened);
+  if open_month in (1,2) then output work.train;
+  else if open_month=3 then output work.test;
+run;
+
+/* ================== Dynamic Reference Levels ================== */
+
+/* Sector_s: most frequent */
+proc freq data=work.train noprint;
+  tables sector_s / out=work._sec_freq;
+run;
+proc sort data=work._sec_freq; by descending count; run;
+data _null_;
+  set work._sec_freq(obs=1);
+  call symputx('ref_sector', sector_s, 'G');
+run;
+
+/* Merchant_s: use "Other" if exists, else most frequent */
+proc sql noprint;
+  select count(*) into :has_other
+  from work.train
+  where merchant_s="Other";
+quit;
+%if &has_other=0 %then %do;
+  proc freq data=work.train noprint;
+    tables merchant_s / out=work._mer_freq;
+  run;
+  proc sort data=work._mer_freq; by descending count; run;
+  data _null_;
+    set work._mer_freq(obs=1);
+    call symputx('ref_merch', merchant_s, 'G');
+  run;
+%end;
+%else %do;
+  %let ref_merch=Other;
+%end;
+
+/* Card_type1: most frequent */
+proc freq data=work.train noprint;
+  tables card_type1 / out=work._card_freq;
+run;
+proc sort data=work._card_freq; by descending count; run;
+data _null_;
+  set work._card_freq(obs=1);
+  call symputx('ref_card', card_type1, 'G');
+run;
+
+%put NOTE: References used → sector_s=&ref_sector | merchant_s=&ref_merch | card_type1=&ref_card;
+
+/* ================== Logistic Regression (Good 12M) ================== */
+proc logistic data=work.train plots=roc;
+  class sector_s   (ref="&ref_sector")
+        merchant_s (ref="&ref_merch")
+        card_type1 (ref="&ref_card") / param=ref;
+  model Good_M12(event='1') =
+        M1_spend first_tran_amt txns_m1
+        sector_s merchant_s card_type1
+        / lackfit;
+  output out=work.train_logit_scored p=pred;
+  score data=work.test out=work.test_logit_scored outroc=work.test_roc;
+run;
+
+/* ---- Brier Score ---- */
+proc sql;
+  create table work.brier as
+  select 'Train' as split length=5,
+         mean((Good_M12 - pred)**2) as brier
+  from work.train_logit_scored
+  union all
+  select 'Test',
+         mean((Good_M12 - P_1)**2)
+  from work.test_logit_scored;
+quit;
+
+/* ---- KS Statistic ---- */
+%macro ks(in=,score=,y=,out=);
+  proc sort data=&in out=_sc; by descending &score; run;
+  data _sc; set _sc end=last;
+    retain npos nneg 0;
+    if &y=1 then npos+1; else nneg+1;
+    if last then do; call symputx('npos',npos); call symputx('nneg',nneg); end;
+  run;
+  data _cdf; set _sc;
+    retain tp fp 0;
+    if &y=1 then tp+1; else fp+1;
+    tpr = tp/max(1,&npos); fpr = fp/max(1,&nneg);
+  run;
+  proc sql noprint;
+    select max(abs(tpr-fpr)) into :ks from _cdf;
+  quit;
+  data &out; length split $5; ks=&ks; run;
+%mend;
+%ks(in=work.test_logit_scored, score=P_1, y=Good_M12, out=work.ks_test);
+
+/* ---- Decile Lift (Test) ---- */
+proc rank data=work.test_logit_scored groups=10 out=work.dec_tmp;
+  var P_1;
+  ranks r;
+run;
+data work.dec_test; set work.dec_tmp; decile=10-r; run;
+proc sql;
+  create table work.dec_test2 as
+  select decile,
+         count(*) as customers,
+         sum(Good_M12) as good_cust,
+         mean(Good_M12) as good_rate,
+         mean(P_1) as avg_pred
+  from work.dec_test
+  group by decile
+  order by decile desc;
+  select mean(Good_M12) into :gr_test from work.test_logit_scored;
+  select sum(good_cust) into :tg_test from work.dec_test2;
+quit;
+data work.dec_test2;
+  set work.dec_test2;
+  retain cum_good 0;
+  cum_good + good_cust;
+  cum_good_pct = cum_good / &tg_test;
+  lift = good_rate / &gr_test;
+run;
+
+/* ================== Linear Regression (12M Spend) ================== */
+proc genmod data=work.train;
+  class sector_s   (ref="&ref_sector")
+        merchant_s (ref="&ref_merch")
+        card_type1 (ref="&ref_card");
+  model M12_spend =
+        M1_spend first_tran_amt txns_m1
+        sector_s merchant_s card_type1
+        / dist=normal link=identity;
+  output out=work.train_lin_pred pred=pred_m12;
+  store work.genmod_store;
+run;
+
+proc plm restore=work.genmod_store;
+  score data=work.test out=work.test_lin_pred predicted=pred_m12;
+run;
+
+/* ================== Decision Tree ================== */
+proc hpsplit data=work.train seed=42;
+  class sector_s merchant_s card_type1;
+  model Good_M12(event='1') =
+        M1_spend first_tran_amt txns_m1
+        sector_s merchant_s card_type1;
+  grow gini;
+  prune costcomplexity;
+  code file="&treecode";
+run;
+
+data work.test_tree;
+  set work.test;
+  %include "&treecode";
+run;
+
+/* ================== Random Forest ================== */
+proc hpforest data=work.train seed=42 maxtrees=200;
+  target Good_M12 / level=nominal;
+  input M1_spend first_tran_amt txns_m1 / level=interval;
+  input sector_s merchant_s card_type1 / level=nominal;
+  score data=work.test out=work.test_rf;
+run;
+
+/* ================== Neural Network ================== */
+proc hpneural data=work.train seed=42;
+  target Good_M12 / level=nominal;
+  input M1_spend first_tran_amt txns_m1 / level=interval;
+  input sector_s merchant_s card_type1 / level=nominal;
+  train maxtime=300 maxtiter=50;
+  score data=work.test out=work.test_nn;
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /*==========================================================
   Build AIF_IND_3M and AIF_IND_12M on Premier acquisition
   using the SAME AIF rule you shared (INT_STATUS + BLOCK codes).
