@@ -1,3 +1,29 @@
+Total Xsell :=
+SUMX(
+    GROUPBY(
+        FILTER ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ),
+        'DateDim_MSD'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "v",
+            MAXX(
+                CURRENTGROUP(),
+                COALESCE('MSD Trigger Conversion'[AIF_SALES_VALUE],0) +
+                COALESCE('MSD Trigger Conversion'[CARD_SALES_VALUE],0) +
+                COALESCE('MSD Trigger Conversion'[HML_SALES_VALUE],0) +
+                COALESCE('MSD Trigger Conversion'[INS_SALES_VALUE],0) +
+                COALESCE('MSD Trigger Conversion'[PIL_SALES_VALUE],0) +
+                COALESCE('MSD Trigger Conversion'[PPS_SALES_VALUE],0) +
+                COALESCE('MSD Trigger Conversion'[TMD_SALES_VALUE],0)
+            )
+    ),
+    [v]
+)
+
+
+
+
+
+
 MSD Conversion % :=
 DIVIDE(
     DISTINCTCOUNTNOBLANK(
