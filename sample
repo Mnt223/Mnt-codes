@@ -1,3 +1,34 @@
+TPPC Change (Value) :=
+VAR TPre =
+    SUMMARIZECOLUMNS(
+        'DateDim_MSD'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "vPre",
+            MAXX(
+                FILTER ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[Contacted_Flag] = 1 ),
+                'MSD Trigger Conversion'[PRE_TPPC]
+            )
+    )
+VAR TPost =
+    SUMMARIZECOLUMNS(
+        'DateDim_MSD'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "vPost",
+            MAXX(
+                FILTER ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[Contacted_Flag] = 1 ),
+                'MSD Trigger Conversion'[POST_TPPC]
+            )
+    )
+VAR SumPre  = SUMX ( TPre,  [vPre] )
+VAR SumPost = SUMX ( TPost, [vPost] )
+RETURN
+SumPost - SumPre
+
+
+
+
+
+
 Conversion % (uniq CM) :=
 VAR T =
     SUMMARIZECOLUMNS(
