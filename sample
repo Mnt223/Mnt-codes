@@ -1,3 +1,22 @@
+Conversion % (Monthly Avg, Uniq CM) :=
+AVERAGEX(
+  VALUES('DateDim_MSD'[MonthStart]),
+  VAR T =
+    SUMMARIZECOLUMNS(
+      'DateDim_MSD'[MonthStart],
+      'MSD Trigger Conversion'[GA_CUST_ID],
+      "HasConv", MAX('MSD Trigger Conversion'[ConvertedFlag])   -- 1 if any row=1
+    )
+  VAR Num = COUNTROWS( FILTER(T, [HasConv] = 1) )
+  VAR Den = COUNTROWS(T)
+  RETURN DIVIDE( Num, Den, 0 )
+)
+
+
+
+
+
+
 Conversion % (Monthly Avg) :=
 AVERAGEX (
     VALUES ( 'DateDim_MSD'[MonthStart] ),        -- iterate each month in the selection
