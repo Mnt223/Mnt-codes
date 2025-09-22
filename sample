@@ -1,3 +1,48 @@
+Conversion % (Monthly Avg, Uniq CM + Products) :=
+AVERAGEX (
+    VALUES ( 'DateDim_MSD'[MonthStart] ),            -- compute month by month, then average
+    VAR NumThisMonth :=
+        SUMX(                                        -- sum unique product-count per Cust×Month
+            SUMMARIZECOLUMNS(
+                'DateDim_MSD'[MonthStart],
+                'MSD Trigger Conversion'[GA_CUST_ID],
+                "v",
+                    MAXX(                            -- collapse duplicate rows within month
+                        FILTER(
+                            'MSD Trigger Conversion',
+                            'MSD Trigger Conversion'[Contacted_Flag] = 1
+                        ),
+                          COALESCE('MSD Trigger Conversion'[AIF_SALES_COUNT],0)
+                        + COALESCE('MSD Trigger Conversion'[CARD_SALES_COUNT],0)
+                        + COALESCE('MSD Trigger Conversion'[GI_SALES_COUNT],0)
+                        + COALESCE('MSD Trigger Conversion'[HML_SALES_COUNT],0)
+                        + COALESCE('MSD Trigger Conversion'[INV_SALES_COUNT],0)
+                        + COALESCE('MSD Trigger Conversion'[LIL_SALES_COUNT],0)
+                        + COALESCE('MSD Trigger Conversion'[PIL_SALES_COUNT],0)
+                        + COALESCE('MSD Trigger Conversion'[PMS_SALES_COUNT],0)
+                        + COALESCE('MSD Trigger Conversion'[TMD_SALES_COUNT],0)
+                    )
+            ),
+            [v]
+        )
+    VAR DenThisMonth :=
+        CALCULATE(
+            DISTINCTCOUNT('MSD Trigger Conversion'[GA_CUST_ID]),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1         -- unique contacted customers in that month
+        )
+    RETURN
+        DIVIDE( NumThisMonth, DenThisMonth, 0 )
+)
+
+
+
+
+
+
+
+
+
+
 Conversion % (Monthly Avg, Uniq CM) :=
 AVERAGEX(
   VALUES('DateDim_MSD'[MonthStart]),
