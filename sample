@@ -1,3 +1,23 @@
+
+Monthly Value (uniq-per-cust, summed over months) :=
+SUMX(
+    VALUES('DateDim_MSD'[MonthStart]),                   -- iterate months in selection
+    CALCULATE(
+        SUMX(                                           -- sum unique customer values in this month
+            SUMMARIZE(
+                'MSD Trigger Conversion',
+                'MSD Trigger Conversion'[GA_CUST_ID],
+                "v", MAX( COALESCE('MSD Trigger Conversion'[<ValueColumn>], 0) )
+            ),
+            [v]
+        )
+    )
+)
+
+
+
+
+
 TPPC Change (Value) :=
 VAR TPre =
     SUMMARIZECOLUMNS(
