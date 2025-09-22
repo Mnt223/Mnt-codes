@@ -1,5 +1,33 @@
 Total Xsell :=
 SUMX (
+    SUMMARIZECOLUMNS (
+        'DateDim_MSD'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "v",
+            MAXX (
+                FILTER ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ),
+                  COALESCE ( 'MSD Trigger Conversion'[AIF_SALES_VALUE], 0 )
+                + COALESCE ( 'MSD Trigger Conversion'[CARD_SALES_VALUE], 0 )
+                + COALESCE ( 'MSD Trigger Conversion'[GI_SALES_VALUE], 0 )
+                + COALESCE ( 'MSD Trigger Conversion'[HML_SALES_VALUE], 0 )
+                + COALESCE ( 'MSD Trigger Conversion'[INV_SALES_VALUE], 0 )
+                + COALESCE ( 'MSD Trigger Conversion'[LIL_SALES_VALUE], 0 )
+                + COALESCE ( 'MSD Trigger Conversion'[PIL_SALES_VALUE], 0 )
+                + COALESCE ( 'MSD Trigger Conversion'[PMS_SALES_VALUE], 0 )
+                + COALESCE ( 'MSD Trigger Conversion'[TMD_SALES_VALUE], 0 )
+            )
+    ),
+    [v]
+)
+
+
+
+
+
+
+
+Total Xsell :=
+SUMX (
     VALUES ( 'DateDim_MSD'[MonthStart] ),              -- iterate months in selection
     VAR T =
         SUMMARIZE (
