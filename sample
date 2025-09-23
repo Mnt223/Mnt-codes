@@ -1,3 +1,48 @@
+Conversion % (Summed Across Months) =
+DIVIDE(
+    -- Numerator: sum over months of (sum over customers of product-wise MAX counts)
+    SUMX(
+        VALUES( DateDim_MSD[MonthStart] ),
+        SUMX(
+            SUMMARIZECOLUMNS(
+                DateDim_MSD[MonthStart],
+                'MSD Trigger Conversion'[GA_CUST_ID]
+            ),
+            SUMX(
+                UNION(
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[AIF_SALES_COUNT]),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) )),
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[CARD_SALES_COUNT]), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) )),
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[GI_SALES_COUNT]),   KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) )),
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[HML_SALES_COUNT]),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) )),
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[INV_SALES_COUNT]),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) )),
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[IL_SALES_COUNT]),   KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) )),
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[PIL_SALES_COUNT]),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) )),
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[PMS_SALES_COUNT]),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) )),
+                    ROW("v", CALCULATE( MAX('MSD Trigger Conversion'[TMD_SALES_COUNT]),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ))
+                ),
+                [v]
+            )
+        )
+    ),
+    -- Denominator: sum over months of distinct contacted customers
+    SUMX(
+        VALUES( DateDim_MSD[MonthStart] ),
+        CALCULATE(
+            DISTINCTCOUNT('MSD Trigger Conversion'[GA_CUST_ID]),
+            KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1)
+        )
+    ),
+    0
+)
+
+
+
+
+
+
+
+
+
 Total Xsell (Prod MAX per Cust per Month) =
 SUMX (
     SUMMARIZECOLUMNS (
