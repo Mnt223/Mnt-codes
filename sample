@@ -1,3 +1,38 @@
+
+Conversion % :=
+VAR CustsContacted =
+    CALCULATETABLE(
+        VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+        KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 )
+    )
+VAR Numerator =
+    SUMX (
+        CustsContacted,
+        VAR MaxPerCust =
+            MAXX (
+                {
+                    ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[AIF_SALES_COUNT] ), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ) ),
+                    ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[CARD_SALES_COUNT] ), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ) ),
+                    ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[HIL_SALES_COUNT] ), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ) ),
+                    ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[IMI_SALES_COUNT] ), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ) ),
+                    ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[LIL_SALES_COUNT] ), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ) ),
+                    ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[PIL_SALES_COUNT] ), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ) ),
+                    ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[TMO_SALES_COUNT] ), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ) )
+                },
+                [v]
+            )
+        RETURN MaxPerCust
+    )
+VAR Denominator =
+    COUNTROWS ( CustsContacted )
+RETURN
+    DIVIDE ( Numerator, Denominator )
+
+
+
+
+
+
 Conversion % (Summed Across Months) =
 DIVIDE(
     -- Numerator: sum over months of (sum over customers of product-wise MAX counts)
