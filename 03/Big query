@@ -1,3 +1,381 @@
+# ============================================
+# Q1 Responders Modeling (Python, Spyder)
+# Linear (M12_spend), Decision Tree + Random Forest (Good_M12)
+# Author: you
+# ============================================
+
+import os
+import math
+import json
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import (
+    mean_squared_error, mean_absolute_error, r2_score,
+    roc_auc_score, roc_curve, confusion_matrix, classification_report
+)
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeClassifier, export_text, plot_tree
+from sklearn.ensemble import RandomForestClassifier
+
+# ------------- User paths -------------
+OUTDIR = r"C:\path\to\your\exports"  # <- update to your folder
+TRAIN_CSV = os.path.join(OUTDIR, "model_in_train.csv")
+TEST_CSV  = os.path.join(OUTDIR, "model_in_test.csv")
+EXCEL_OUT = os.path.join(OUTDIR, "Python_Model_Summary.xlsx")
+TREE_PNG  = os.path.join(OUTDIR, "decision_tree_chart.png")
+RULES_TXT = os.path.join(OUTDIR, "decision_tree_rules.txt")
+
+# ------------- Helpers -------------
+def ensure_dir(path):
+    if not os.path.isdir(path):
+        os.makedirs(path, exist_ok=True)
+
+def ks_stat(y_true, y_score):
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    return float(np.max(tpr - fpr))
+
+def decile_table(y_true, y_score, groups=10):
+    df = pd.DataFrame({"y": y_true, "p": y_score}).copy()
+    # safer rank: negative prob so decile 10 is highest prob
+    df["decile"] = pd.qcut(-df["p"], q=groups, labels=list(range(1, groups+1)))
+    tab = df.groupby("decile", as_index=False).agg(
+        customers=("y", "size"),
+        good_cust=("y", "sum"),
+        good_rate=("y", "mean"),
+        avg_pred=("p", "mean")
+    ).sort_values("decile", ascending=False)
+    tab["cum_good"] = tab["good_cust"].cumsum()
+    tab["cum_good_pct"] = tab["cum_good"] / tab["good_cust"].sum()
+    base = df["y"].mean() if df["y"].mean() > 0 else 1e-9
+    tab["lift"] = tab["good_rate"] / base
+    return tab
+
+def ohe_feature_names(ct: ColumnTransformer):
+    """
+    Retrieve transformed feature names from a fitted ColumnTransformer
+    that contains OneHotEncoder and possibly numeric passthrough/scaler.
+    """
+    names = []
+    for name, trans, cols in ct.transformers_:
+        if name == "num":
+            # if StandardScaler, it has no feature_names_out; use original
+            if isinstance(cols, list):
+                names.extend(cols)
+            else:
+                names.extend(list(cols))
+        elif name == "cat":
+            ohe = trans
+            ohe_names = list(ohe.get_feature_names_out(cols))
+            names.extend(ohe_names)
+    return names
+
+# ------------- Load data -------------
+ensure_dir(OUTDIR)
+
+# Read train/test (created by SAS)
+train = pd.read_csv(TRAIN_CSV)
+test  = pd.read_csv(TEST_CSV)
+
+# Defensive cleaning (SAS should already have done this)
+for c in ["sector_s", "merchant_s", "card_type1"]:
+    train[c] = train[c].fillna("Unknown").astype(str)
+    test[c]  = test[c].fillna("Unknown").astype(str)
+
+for c in ["M1_spend", "first_tran_amt", "txns_m1", "M12_spend", "Good_M12"]:
+    if c in train.columns:
+        train[c] = train[c].fillna(0)
+    if c in test.columns:
+        test[c]  = test[c].fillna(0)
+
+# Targets and features
+num_cols = ["M1_spend", "first_tran_amt", "txns_m1"]
+cat_cols = ["sector_s", "merchant_s", "card_type1"]
+
+# Split X/y
+X_train = train[num_cols + cat_cols].copy()
+X_test  = test[num_cols + cat_cols].copy()
+
+y_train_reg = train["M12_spend"].astype(float)
+y_test_reg  = test["M12_spend"].astype(float)
+
+y_train_bin = train["Good_M12"].astype(int)
+y_test_bin  = test["Good_M12"].astype(int)
+
+# ============================================
+# A) Linear Regression (target: M12_spend)
+# ============================================
+
+preproc_lin = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), num_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+    ],
+    remainder="drop"
+)
+
+lin_model = Pipeline(steps=[
+    ("prep", preproc_lin),
+    ("model", LinearRegression())
+])
+
+lin_model.fit(X_train, y_train_reg)
+y_pred_lin = lin_model.predict(X_test)
+
+rmse_lin = mean_squared_error(y_test_reg, y_pred_lin, squared=False)
+mae_lin  = mean_absolute_error(y_test_reg, y_pred_lin)
+r2_lin   = r2_score(y_test_reg, y_pred_lin)
+
+print("Linear Regression (M12_spend) -> RMSE={:.2f}, MAE={:.2f}, R2={:.3f}".format(
+    rmse_lin, mae_lin, r2_lin
+))
+
+# Save scored test for linear
+scored_linear = test.copy()
+scored_linear["pred_M12_spend"] = y_pred_lin
+scored_linear.to_csv(os.path.join(OUTDIR, "scored_linear_M12.csv"), index=False)
+
+# ============================================
+# B) Decision Tree (target: Good_M12)
+# ============================================
+
+preproc_cls = ColumnTransformer(
+    transformers=[
+        # trees do not need scaling; pass numeric as-is
+        ("num", "passthrough", num_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+    ],
+    remainder="drop"
+)
+
+tree_clf = Pipeline(steps=[
+    ("prep", preproc_cls),
+    ("model", DecisionTreeClassifier(
+        criterion="gini",
+        max_depth=6,
+        min_samples_leaf=100,
+        random_state=42
+    ))
+])
+
+tree_clf.fit(X_train, y_train_bin)
+proba_tree = tree_clf.predict_proba(X_test)[:, 1]
+
+auc_tree = roc_auc_score(y_test_bin, proba_tree)
+ks_tree  = ks_stat(y_test_bin, proba_tree)
+print("Decision Tree -> AUC={:.3f}, KS={:.3f}".format(auc_tree, ks_tree))
+
+# thresholding (0.5 and Youden J for comparison)
+fpr_t, tpr_t, thr_t = roc_curve(y_test_bin, proba_tree)
+youden_idx = int(np.argmax(tpr_t - fpr_t))
+best_thr = float(thr_t[youden_idx])
+
+pred_tree_05 = (proba_tree >= 0.5).astype(int)
+pred_tree_best = (proba_tree >= best_thr).astype(int)
+
+cm_tree_05 = confusion_matrix(y_test_bin, pred_tree_05)
+cm_tree_bt = confusion_matrix(y_test_bin, pred_tree_best)
+
+# save scored outputs
+scored_tree = test.copy()
+scored_tree["pred_good12_p"] = proba_tree
+scored_tree["pred_good12_0p5"] = pred_tree_05
+scored_tree["pred_good12_bestT"] = pred_tree_best
+scored_tree.to_csv(os.path.join(OUTDIR, "scored_tree_good12.csv"), index=False)
+
+# Feature names for tree and plotting
+fitted_tree = tree_clf.named_steps["model"]
+tree_feature_names = ohe_feature_names(tree_clf.named_steps["prep"])
+
+# Plot tree (limit depth for readability in PNG)
+plt.figure(figsize=(24, 12))
+plot_tree(
+    fitted_tree,
+    feature_names=tree_feature_names,
+    class_names=["Bad", "Good"],
+    filled=True,
+    max_depth=4,
+    fontsize=10
+)
+plt.savefig(TREE_PNG, dpi=300, bbox_inches="tight")
+plt.close()
+
+# Export tree rules to text
+rules_text = export_text(fitted_tree, feature_names=tree_feature_names, decimals=2)
+with open(RULES_TXT, "w", encoding="utf-8") as f:
+    f.write(rules_text)
+
+# ============================================
+# C) Random Forest (target: Good_M12)
+# ============================================
+
+rf_clf = Pipeline(steps=[
+    ("prep", preproc_cls),
+    ("model", RandomForestClassifier(
+        n_estimators=300,
+        max_depth=None,
+        min_samples_leaf=50,
+        n_jobs=-1,
+        random_state=42,
+        class_weight="balanced"  # helps when classes are imbalanced
+    ))
+])
+
+rf_clf.fit(X_train, y_train_bin)
+proba_rf = rf_clf.predict_proba(X_test)[:, 1]
+
+auc_rf = roc_auc_score(y_test_bin, proba_rf)
+ks_rf  = ks_stat(y_test_bin, proba_rf)
+print("Random Forest -> AUC={:.3f}, KS={:.3f}".format(auc_rf, ks_rf))
+
+# thresholds
+fpr_r, tpr_r, thr_r = roc_curve(y_test_bin, proba_rf)
+youden_idx_rf = int(np.argmax(tpr_r - fpr_r))
+best_thr_rf = float(thr_r[youden_idx_rf])
+
+pred_rf_05 = (proba_rf >= 0.5).astype(int)
+pred_rf_best = (proba_rf >= best_thr_rf).astype(int)
+
+cm_rf_05 = confusion_matrix(y_test_bin, pred_rf_05)
+cm_rf_bt = confusion_matrix(y_test_bin, pred_rf_best)
+
+# save scored outputs
+scored_rf = test.copy()
+scored_rf["pred_good12_p"] = proba_rf
+scored_rf["pred_good12_0p5"] = pred_rf_05
+scored_rf["pred_good12_bestT"] = pred_rf_best
+scored_rf.to_csv(os.path.join(OUTDIR, "scored_rf_good12.csv"), index=False)
+
+# RF feature importance (after OHE)
+# Get fitted encoder
+ohe = rf_clf.named_steps["prep"].named_transformers_["cat"]
+rf_feature_names = ohe_feature_names(rf_clf.named_steps["prep"])
+
+rf_model = rf_clf.named_steps["model"]
+rf_importances = pd.DataFrame({
+    "feature": rf_feature_names,
+    "importance": rf_model.feature_importances_
+}).sort_values("importance", ascending=False)
+
+rf_importances.to_csv(os.path.join(OUTDIR, "rf_feature_importance.csv"), index=False)
+
+# ============================================
+# Summaries to Excel
+# ============================================
+
+# Metrics tables
+lin_metrics = pd.DataFrame([{
+    "model": "Linear (M12_spend)",
+    "RMSE": rmse_lin,
+    "MAE": mae_lin,
+    "R2": r2_lin
+}])
+
+tree_metrics = pd.DataFrame([{
+    "model": "Decision Tree (Good_M12)",
+    "AUC": auc_tree,
+    "KS": ks_tree,
+    "Best_Threshold": best_thr
+}])
+
+rf_metrics = pd.DataFrame([{
+    "model": "Random Forest (Good_M12)",
+    "AUC": auc_rf,
+    "KS": ks_rf,
+    "Best_Threshold": best_thr_rf
+}])
+
+# Decile tables (use RF by default, usually strongest)
+dec_rf = decile_table(y_test_bin, proba_rf, groups=10)
+
+# Confusion matrices to small dataframes
+def cm_df(cm, labels=("0","1")):
+    return pd.DataFrame(cm, index=[f"Actual_{labels[0]}", f"Actual_{labels[1]}"],
+                           columns=[f"Pred_{labels[0]}", f"Pred_{labels[1]}"])
+
+cm_tree_05_df = cm_df(cm_tree_05)
+cm_tree_bt_df = cm_df(cm_tree_bt)
+cm_rf_05_df   = cm_df(cm_rf_05)
+cm_rf_bt_df   = cm_df(cm_rf_bt)
+
+# Write Excel (prefer xlsxwriter; fallback to openpyxl)
+engine = "xlsxwriter"
+try:
+    with pd.ExcelWriter(EXCEL_OUT, engine=engine) as xw:
+        lin_metrics.to_excel(xw, sheet_name="Linear_Metrics", index=False)
+        tree_metrics.to_excel(xw, sheet_name="Tree_Metrics", index=False)
+        rf_metrics.to_excel(xw, sheet_name="RF_Metrics", index=False)
+
+        dec_rf.to_excel(xw, sheet_name="RF_Deciles", index=False)
+        rf_importances.head(100).to_excel(xw, sheet_name="RF_Top100_Importance", index=False)
+
+        cm_tree_05_df.to_excel(xw, sheet_name="CM_Tree_0p5")
+        cm_tree_bt_df.to_excel(xw, sheet_name="CM_Tree_BestT")
+        cm_rf_05_df.to_excel(xw, sheet_name="CM_RF_0p5")
+        cm_rf_bt_df.to_excel(xw, sheet_name="CM_RF_BestT")
+
+        # sample of scored rows to inspect
+        scored_linear.head(200).to_excel(xw, sheet_name="Scored_Linear_Sample", index=False)
+        scored_tree.head(200).to_excel(xw, sheet_name="Scored_Tree_Sample", index=False)
+        scored_rf.head(200).to_excel(xw, sheet_name="Scored_RF_Sample", index=False)
+
+        # note sheet with file references
+        notes = pd.DataFrame({
+            "file": [
+                os.path.basename(TREE_PNG),
+                os.path.basename(RULES_TXT),
+                "scored_linear_M12.csv",
+                "scored_tree_good12.csv",
+                "scored_rf_good12.csv",
+                "rf_feature_importance.csv"
+            ],
+            "location": [OUTDIR]*6
+        })
+        notes.to_excel(xw, sheet_name="Files", index=False)
+except Exception as e:
+    print("Excel write failed with xlsxwriter; trying openpyxl. Error:", str(e))
+    with pd.ExcelWriter(EXCEL_OUT, engine="openpyxl") as xw:
+        lin_metrics.to_excel(xw, sheet_name="Linear_Metrics", index=False)
+        tree_metrics.to_excel(xw, sheet_name="Tree_Metrics", index=False)
+        rf_metrics.to_excel(xw, sheet_name="RF_Metrics", index=False)
+        dec_rf.to_excel(xw, sheet_name="RF_Deciles", index=False)
+        rf_importances.head(100).to_excel(xw, sheet_name="RF_Top100_Importance", index=False)
+        cm_tree_05_df.to_excel(xw, sheet_name="CM_Tree_0p5")
+        cm_tree_bt_df.to_excel(xw, sheet_name="CM_Tree_BestT")
+        cm_rf_05_df.to_excel(xw, sheet_name="CM_RF_0p5")
+        cm_rf_bt_df.to_excel(xw, sheet_name="CM_RF_BestT")
+        scored_linear.head(200).to_excel(xw, sheet_name="Scored_Linear_Sample", index=False)
+        scored_tree.head(200).to_excel(xw, sheet_name="Scored_Tree_Sample", index=False)
+        scored_rf.head(200).to_excel(xw, sheet_name="Scored_RF_Sample", index=False)
+
+print("All outputs saved in:", OUTDIR)
+print("Tree chart:", TREE_PNG)
+print("Rules text:", RULES_TXT)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* ===== Setup (latin1 to avoid transcoding issues) ===== */
 options mprint mlogic nocenter validvarname=any encoding="latin1" locale=en_US;
 ods graphics on;
