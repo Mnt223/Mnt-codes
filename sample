@@ -1,3 +1,33 @@
+
+Total Xsell (Prod MAX per Cust per Month) =
+SUMX (
+    SUMMARIZECOLUMNS (
+        DateDim_MSD[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID]
+    ),
+    MAXX (
+        {
+            ( "AIF", CALCULATE ( MAX ( 'MSD Trigger Conversion'[AIF_SALES_VALUE] ), 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) ),
+            ( "CARD", CALCULATE ( MAX ( 'MSD Trigger Conversion'[CARD_SALES_VALUE] ), 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) ),
+            ( "GI",   CALCULATE ( MAX ( 'MSD Trigger Conversion'[GI_SALES_VALUE] ),   'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) ),
+            ( "HML",  CALCULATE ( MAX ( 'MSD Trigger Conversion'[HML_SALES_VALUE] ),  'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) ),
+            ( "INV",  CALCULATE ( MAX ( 'MSD Trigger Conversion'[INV_SALES_VALUE] ),  'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) ),
+            ( "IL",   CALCULATE ( MAX ( 'MSD Trigger Conversion'[IL_SALES_VALUE] ),   'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) ),
+            ( "PIL",  CALCULATE ( MAX ( 'MSD Trigger Conversion'[PIL_SALES_VALUE] ),  'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) ),
+            ( "PMS",  CALCULATE ( MAX ( 'MSD Trigger Conversion'[PMS_SALES_VALUE] ),  'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) ),
+            ( "TMD",  CALCULATE ( MAX ( 'MSD Trigger Conversion'[TMD_SALES_VALUE] ),  'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ) )
+        },
+        [Value]
+    )
+)
+
+
+
+
+
+
+
+
 Conversion % (Monthly Avg, Uniq CM + Products) :=
 AVERAGEX (
     VALUES ( 'DateDim_MSD'[MonthStart] ),            -- compute month by month, then average
