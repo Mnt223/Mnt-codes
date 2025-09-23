@@ -1,4 +1,32 @@
 
+Conversion % :=
+VAR CustsContacted =
+    CALCULATETABLE (
+        VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+        KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 )
+    )
+VAR Numerator :=
+    SUMX (
+        CustsContacted,
+        VAR aif  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[AIF_SALES_COUNT] ),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )
+        VAR card = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[CARD_SALES_COUNT] ), KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )
+        VAR gi   = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[GI_SALES_COUNT] ),   KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )
+        VAR hml  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[HML_SALES_COUNT] ),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )
+        VAR inv  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[IMI_SALES_COUNT] ),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )  -- use INV_SALES_COUNT if that's your column
+        VAR li   = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[LIL_SALES_COUNT] ),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )  -- use LI_SALES_COUNT if that's your column
+        VAR pil  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[PIL_SALES_COUNT] ),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )
+        VAR pms  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[PMS_SALES_COUNT] ),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )
+        VAR tmd  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[TMD_SALES_COUNT] ),  KEEPFILTERS('MSD Trigger Conversion'[CONTACTED_FLAG]=1) ), 0 )
+        RETURN aif + card + gi + hml + inv + li + pil + pms + tmd
+    )
+VAR Denominator := COUNTROWS ( CustsContacted )
+RETURN DIVIDE ( Numerator, Denominator )
+
+
+
+
+
+
 Conversion % Monthwise :=
 AVERAGEX (
     SUMMARIZE (
