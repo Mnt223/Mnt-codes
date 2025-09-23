@@ -1,3 +1,40 @@
+def decile_table(y_true: np.ndarray, y_score: np.ndarray, groups: int = 10) -> pd.DataFrame:
+    df = pd.DataFrame({"y": y_true, "p": y_score}).copy()
+
+    # Force labels to match number of bins, handle duplicate edges
+    df["decile"] = pd.qcut(
+        -df["p"], 
+        q=groups, 
+        labels=False, 
+        duplicates="drop"
+    ) + 1   # gives 1..10
+
+    tab = (
+        df.groupby("decile", as_index=False)
+          .agg(customers=("y", "size"),
+               good_cust=("y", "sum"),
+               good_rate=("y", "mean"),
+               avg_pred=("p", "mean"))
+          .sort_values("decile", ascending=False)
+    )
+    tab["cum_good"] = tab["good_cust"].cumsum()
+    total_good = tab["good_cust"].sum()
+    tab["cum_good_pct"] = tab["cum_good"] / (total_good if total_good > 0 else 1)
+    base = df["y"].mean() if df["y"].mean() > 0 else 1e-9
+    tab["lift"] = tab["good_rate"] / base
+    return tab
+
+
+
+
+
+
+
+
+
+
+
+
 # ============================================
 # Q1 Responders Modeling (Python, Spyder)
 # Linear (M12_spend), Decision Tree + Random Forest (Good_M12)
