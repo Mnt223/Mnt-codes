@@ -1,3 +1,45 @@
+Conversion % (MonthStart summarized) :=
+VAR PerMonthTable =
+    SUMMARIZECOLUMNS(
+        'DateDim_MSD'[MonthStart],
+        "ConvPct",
+            VAR CustsContacted =
+                CALCULATETABLE(
+                    VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+                    KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 )
+                )
+            VAR Numerator =
+                SUMX(
+                    CustsContacted,
+                    VAR aif  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[AIF_SALES_COUNT] ) ), 0 )
+                    VAR card = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[CARD_SALES_COUNT] ) ), 0 )
+                    VAR gi   = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[GI_SALES_COUNT] ) ), 0 )
+                    VAR hml  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[HML_SALES_COUNT] ) ), 0 )
+                    VAR inv  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[INV_SALES_COUNT] ) ), 0 )  -- rename if IMI_SALES_COUNT
+                    VAR li   = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[LI_SALES_COUNT] ) ), 0 )   -- rename if LIL_SALES_COUNT
+                    VAR pil  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[PIL_SALES_COUNT] ) ), 0 )
+                    VAR pms  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[PMS_SALES_COUNT] ) ), 0 )
+                    VAR tmd  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[TMD_SALES_COUNT] ) ), 0 )
+                    RETURN aif + card + gi + hml + inv + li + pil + pms + tmd
+                )
+            VAR Denominator = COUNTROWS ( CustsContacted )   -- month-wise DISTINCT customers contacted
+            RETURN DIVIDE ( Numerator, Denominator )
+    )
+RETURN
+IF(
+    ISINSCOPE( 'DateDim_MSD'[MonthStart] ),
+    -- Month on axis: return that month’s % only
+    VAR ThisMonth = SELECTEDVALUE( 'DateDim_MSD'[MonthStart] )
+    VAR OneRow = FILTER( PerMonthTable, 'DateDim_MSD'[MonthStart] = ThisMonth )
+    RETURN MAXX( OneRow, [ConvPct] ),
+    -- No Month on axis: average of the selected months' % (not a sum)
+    AVERAGEX( PerMonthTable, [ConvPct] )
+)
+
+
+
+
+
 
 Conversion % :=
 VAR CustsContacted =
