@@ -1,3 +1,224 @@
+/* ===== Setup (latin1 to avoid transcoding issues) ===== */
+options mprint mlogic nocenter validvarname=any encoding="latin1" locale=en_US;
+ods graphics on;
+
+libname bank "C:\path\to\your\SASData";
+%let outdir = C:\path\to\your\exports;
+
+/* ===== Cohort (Q1-24) + all txns Jan-24..Mar-25 ===== */
+proc sql;
+  create table work.q1_cohort as
+  select acct, date_opened format=date9., card_type1
+  from bank.premier_card_acq;
+quit;
+
+proc sql;
+  create table work.txn_raw as
+  select c.acct,
+         c.date_opened format=date9.,
+         coalesce(t.card_type1, c.card_type1) as card_type1 length=40,
+         t.tran_amt,
+         t.mt_eff_date format=date9.,
+         t.mt_category_code,
+         t.sector
+  from work.q1_cohort c
+  left join bank.card_tran3 t
+    on c.acct = t.acct;
+quit;
+
+data work.txn_raw;
+  set work.txn_raw;
+  sector = strip(sector);
+  if missing(sector) then sector = 'Unknown';
+run;
+
+/* ===== Relative month windows from open ===== */
+data work.txn_rel;
+  set work.txn_raw;
+  if not missing(mt_eff_date) then do;
+    months_since_open = intck('month', date_opened, mt_eff_date, 'c');
+    in_m1  = (months_since_open = 0);
+    in_m3  = (0 <= months_since_open <= 2);
+    in_m12 = (0 <= months_since_open <= 11);
+  end;
+  else do; in_m1=0; in_m3=0; in_m12=0; end;
+run;
+
+/* ===== Spend & txn counts at account level ===== */
+proc sql;
+  create table work.acct_spend as
+  select acct,
+         sum(case when in_m1  then tran_amt else 0 end)  as M1_spend,
+         sum(case when in_m3  then tran_amt else 0 end)  as M3_spend,
+         sum(case when in_m12 then tran_amt else 0 end)  as M12_spend,
+         sum(case when in_m1  and not missing(tran_amt) then 1 else 0 end) as txns_m1,
+         sum(case when in_m12 and not missing(tran_amt) then 1 else 0 end) as txns_12m
+  from work.txn_rel
+  group by acct;
+quit;
+
+proc sql;
+  create table work.spends as
+  select a.acct, a.date_opened format=date9., a.card_type1,
+         coalesce(b.M1_spend,0)  as M1_spend,
+         coalesce(b.M3_spend,0)  as M3_spend,
+         coalesce(b.M12_spend,0) as M12_spend,
+         coalesce(b.txns_m1,0)   as txns_m1,
+         coalesce(b.txns_12m,0)  as txns_12m
+  from work.q1_cohort a
+  left join work.acct_spend b on a.acct=b.acct;
+quit;
+
+/* ===== First merchant/sector in Month 1 ===== */
+proc sort data=work.txn_rel out=work.txn_sorted; by acct mt_eff_date; run;
+
+data work.first_m1;
+  set work.txn_sorted;
+  by acct mt_eff_date;
+  retain flagged 0;
+  if first.acct then flagged=0;
+
+  if months_since_open=0 and flagged=0 then do;
+    length first_merchant $60 first_sector $40;
+    first_merchant  = strip(vvalue(mt_category_code));
+    if missing(first_merchant) then first_merchant='Unknown';
+    first_sector    = coalescec(strip(sector),'Unknown');
+    first_tran_amt  = tran_amt;
+    first_tran_date = mt_eff_date;
+    flagged=1; output;
+  end;
+  keep acct first_merchant first_sector first_tran_amt first_tran_date;
+  format first_tran_date date9.;
+run;
+
+proc sql;
+  create table work.base0 as
+  select s.*,
+         coalesce(m.first_merchant,'Unknown') as first_merchant length=60,
+         coalesce(m.first_sector,'Unknown')   as first_sector   length=40,
+         coalesce(m.first_tran_amt,0)         as first_tran_amt,
+         m.first_tran_date format=date9.
+  from work.spends s
+  left join work.first_m1 m
+    on s.acct=m.acct;
+quit;
+
+/* ===== 3M responders only; bucket missing M1 activity ===== */
+data work.base_resp;
+  set work.base0;
+  if M3_spend>0;
+
+  length sector_s $40 merchant_s $60;
+  sector_s   = coalescec(strip(first_sector),'Unknown');
+  merchant_s = coalescec(strip(first_merchant),'Unknown');
+  if M1_spend<=0 then do;
+    sector_s='(No M1 Spnd)'; merchant_s='(No M1 Spnd)'; first_tran_amt=0;
+  end;
+  if missing(card_type1) then card_type1='Unknown';
+run;
+
+/* ===== Collapse long-tail merchants to 'Other' (top-50 kept) ===== */
+proc sql;
+  create table work.merch_rank as
+  select merchant_s as first_merchant length=60, count(*) as customers
+  from work.base_resp
+  group by merchant_s
+  order by customers desc;
+quit;
+
+proc sql outobs=50;
+  create table work.top_merch as
+  select first_merchant from work.merch_rank
+  where first_merchant is not null
+  order by customers desc;
+quit;
+
+proc sql;
+  create table work.base_resp2 as
+  select a.*, t.first_merchant as merch_top length=60
+  from work.base_resp a
+  left join work.top_merch t
+    on a.merchant_s=t.first_merchant;
+quit;
+
+data work.base_resp2;
+  set work.base_resp2;
+  if missing(merch_top) and merchant_s ne '(No M1 Spnd)' then merchant_s='Other';
+  else if not missing(merch_top) then merchant_s=merch_top;
+  drop merch_top;
+
+  if missing(merchant_s) then merchant_s='Unknown';
+  if missing(sector_s)   then sector_s='Unknown';
+  if missing(card_type1) then card_type1='Unknown';
+  if missing(first_tran_amt) then first_tran_amt=0;
+
+  format date_opened first_tran_date date9.;
+run;
+
+/* ===== P70 cutoffs and Good flags ===== */
+proc means data=work.base_resp2 noprint p70;
+  var M3_spend M12_spend;
+  output out=work.cutoffs_overall
+    p70(M3_spend)=M3_p70
+    p70(M12_spend)=M12_p70;
+run;
+
+data work.model_in;
+  if _n_=1 then set work.cutoffs_overall(keep=M3_p70 M12_p70);
+  set work.base_resp2;
+  Good_M3  = (M3_spend  >= M3_p70);
+  Good_M12 = (M12_spend >= M12_p70);
+
+  /* Train/Test split flag for Python (Jan/Feb = train, Mar = test) */
+  open_month = month(date_opened);
+  split = ifn(open_month in (1,2),'train', 'test');
+run;
+
+/* ===== Export CSVs for Python ===== */
+proc export data=work.model_in
+  outfile="&outdir.\model_in_all.csv" dbms=csv replace;
+  putnames=yes;
+run;
+
+proc export data=work.model_in(where=(split='train'))
+  outfile="&outdir.\model_in_train.csv" dbms=csv replace;
+  putnames=yes;
+run;
+
+proc export data=work.model_in(where=(split='test'))
+  outfile="&outdir.\model_in_test.csv" dbms=csv replace;
+  putnames=yes;
+run;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* ================== Data Prep Guardrails ================== */
 data work.base_resp2;
   set work.base_resp2;
