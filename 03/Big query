@@ -1,3 +1,462 @@
+# ============================================
+# Q1 Responders Modeling (Python, Spyder)
+# Linear (M12_spend), Decision Tree + Random Forest (Good_M12)
+# Includes: Tree chart PNG + Ranked Rules + Excel summary
+# ============================================
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from typing import List, Optional, Tuple
+
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import (
+    mean_squared_error, mean_absolute_error, r2_score,
+    roc_auc_score, roc_curve, confusion_matrix, classification_report
+)
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeClassifier, export_text, plot_tree
+from sklearn.ensemble import RandomForestClassifier
+
+# ------------------ Paths ------------------
+OUTDIR = r"C:\path\to\your\exports"  # <<< UPDATE THIS FOLDER
+TRAIN_CSV = os.path.join(OUTDIR, "model_in_train.csv")
+TEST_CSV  = os.path.join(OUTDIR, "model_in_test.csv")
+EXCEL_OUT = os.path.join(OUTDIR, "Python_Model_Summary.xlsx")
+TREE_PNG  = os.path.join(OUTDIR, "decision_tree_chart.png")
+RULES_TXT = os.path.join(OUTDIR, "decision_tree_rules.txt")
+RULES_CSV = os.path.join(OUTDIR, "decision_tree_rules.csv")
+
+# ------------------ Helpers ------------------
+def ensure_dir(path: str):
+    if not os.path.isdir(path):
+        os.makedirs(path, exist_ok=True)
+
+def ks_stat(y_true: np.ndarray, y_score: np.ndarray) -> float:
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    return float(np.max(tpr - fpr))
+
+def decile_table(y_true: np.ndarray, y_score: np.ndarray, groups: int = 10) -> pd.DataFrame:
+    df = pd.DataFrame({"y": y_true, "p": y_score}).copy()
+    # Highest prob in decile 10
+    df["decile"] = pd.qcut(-df["p"], q=groups, labels=list(range(1, groups + 1)))
+    tab = (
+        df.groupby("decile", as_index=False)
+          .agg(customers=("y", "size"),
+               good_cust=("y", "sum"),
+               good_rate=("y", "mean"),
+               avg_pred=("p", "mean"))
+          .sort_values("decile", ascending=False)
+    )
+    tab["cum_good"] = tab["good_cust"].cumsum()
+    total_good = tab["good_cust"].sum()
+    tab["cum_good_pct"] = tab["cum_good"] / (total_good if total_good > 0 else 1)
+    base = df["y"].mean() if df["y"].mean() > 0 else 1e-9
+    tab["lift"] = tab["good_rate"] / base
+    return tab
+
+def ohe_feature_names(ct: ColumnTransformer) -> List[str]:
+    """Return transformed feature names from a fitted ColumnTransformer."""
+    names = []
+    for name, trans, cols in ct.transformers_:
+        if name == "num":
+            names.extend(list(cols) if isinstance(cols, (list, tuple, np.ndarray)) else [cols])
+        elif name == "cat":
+            ohe = trans
+            names.extend(list(ohe.get_feature_names_out(cols)))
+    return names
+
+# ---------- Rule extractor for Decision Tree ----------
+def extract_tree_rules_ranked(
+    clf: DecisionTreeClassifier,
+    feature_names: List[str],
+    class_names: Optional[List[str]] = None,
+    sort_desc: bool = True,
+    round_decimals: int = 6,
+) -> Tuple[pd.DataFrame, List[str]]:
+    if not hasattr(clf, "tree_"):
+        raise ValueError("Classifier must be fitted before extracting rules.")
+    tree = clf.tree_
+    children_left, children_right = tree.children_left, tree.children_right
+    feature, threshold, impurity, value = tree.feature, tree.threshold, tree.impurity, tree.value
+    n_node_samples = tree.n_node_samples
+    n_total = float(n_node_samples[0])
+    n_classes = value.shape[-1]
+    gini_max = 1.0 - (1.0 / n_classes) if n_classes > 0 else 1.0
+
+    if class_names is None:
+        class_names = [f"class_{i}" for i in range(n_classes)]
+
+    leaves = []
+    stack = [(0, [], 0)]  # node_id, conditions, depth
+
+    while stack:
+        node, conds, depth = stack.pop()
+        is_leaf = (children_left[node] == children_right[node])
+
+        if is_leaf:
+            counts = value[node][0]
+            total = counts.sum()
+            pred_idx = int(np.argmax(counts))
+            pred_name = class_names[pred_idx]
+            proba = float(counts[pred_idx] / total) if total > 0 else 0.0
+
+            leaf_gini = float(impurity[node])
+            purity = 1.0 - (leaf_gini / gini_max) if gini_max > 0 else 1.0
+            support = float(n_node_samples[node]) / (n_total if n_total > 0 else 1.0)
+            score = support * purity
+
+            rule_text = " AND ".join(conds) if conds else "(all rows)"
+            pos = int(counts[1]) if n_classes >= 2 else int(counts[pred_idx])
+            neg = int(counts[0]) if n_classes >= 2 else int(total - counts[pred_idx])
+
+            leaves.append({
+                "rule": rule_text,
+                "predicted_class": pred_name,
+                "predicted_proba": round(proba, 4),
+                "samples": int(n_node_samples[node]),
+                "support": round(support, 4),
+                "gini": round(leaf_gini, 4),
+                "purity": round(purity, 4),
+                "score": round(score, 6),
+                "depth": depth,
+                "pos": pos,
+                "neg": neg,
+            })
+        else:
+            f_idx = feature[node]
+            f_name = feature_names[f_idx] if f_idx >= 0 else f"feature_{f_idx}"
+            thr = round(float(threshold[node]), round_decimals)
+            left_conds  = conds + [f"{f_name} <= {thr}"]
+            right_conds = conds + [f"{f_name} > {thr}"]
+            stack.append((children_right[node], right_conds, depth + 1))
+            stack.append((children_left[node],  left_conds,  depth + 1))
+
+    df = pd.DataFrame(leaves)
+    if not df.empty:
+        df = df.sort_values(
+            by=["score", "support", "predicted_proba", "purity"],
+            ascending=[not sort_desc]*4
+        ).reset_index(drop=True)
+        df.insert(0, "rank", df.index + 1)
+
+    pretty = [
+        f"{int(r.rank)}. IF {r.rule} THEN class={r.predicted_class} "
+        f"[proba={r.predicted_proba:.3f}, support={r.support:.3f}, score={r.score:.6f}, depth={r.depth}]"
+        for r in df.itertuples()
+    ]
+    return df, pretty
+
+# ------------------ Load Data ------------------
+ensure_dir(OUTDIR)
+
+train = pd.read_csv(TRAIN_CSV)
+test  = pd.read_csv(TEST_CSV)
+
+# Robust NA handling (SAS already handled, this is a guard)
+for c in ["sector_s", "merchant_s", "card_type1"]:
+    train[c] = train[c].fillna("Unknown").astype(str)
+    test[c]  = test[c].fillna("Unknown").astype(str)
+
+for c in ["M1_spend", "first_tran_amt", "txns_m1", "M12_spend", "Good_M12"]:
+    if c in train.columns: train[c] = train[c].fillna(0)
+    if c in test.columns:  test[c]  = test[c].fillna(0)
+
+# Features/targets
+num_cols = ["M1_spend", "first_tran_amt", "txns_m1"]
+cat_cols = ["sector_s", "merchant_s", "card_type1"]
+
+X_train = train[num_cols + cat_cols].copy()
+X_test  = test[num_cols + cat_cols].copy()
+
+y_train_reg = train["M12_spend"].astype(float)
+y_test_reg  = test["M12_spend"].astype(float)
+
+y_train_bin = train["Good_M12"].astype(int)
+y_test_bin  = test["Good_M12"].astype(int)
+
+# ============================================
+# A) Linear Regression (M12_spend)
+# ============================================
+preproc_lin = ColumnTransformer(
+    transformers=[
+        ("num", StandardScaler(), num_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+    ],
+    remainder="drop"
+)
+lin_model = Pipeline(steps=[
+    ("prep", preproc_lin),
+    ("model", LinearRegression())
+])
+lin_model.fit(X_train, y_train_reg)
+y_pred_lin = lin_model.predict(X_test)
+
+rmse_lin = mean_squared_error(y_test_reg, y_pred_lin, squared=False)
+mae_lin  = mean_absolute_error(y_test_reg, y_pred_lin)
+r2_lin   = r2_score(y_test_reg, y_pred_lin)
+print(f"Linear Regression -> RMSE={rmse_lin:.2f}, MAE={mae_lin:.2f}, R2={r2_lin:.3f}")
+
+scored_linear = test.copy()
+scored_linear["pred_M12_spend"] = y_pred_lin
+scored_linear.to_csv(os.path.join(OUTDIR, "scored_linear_M12.csv"), index=False)
+
+# ============================================
+# B) Decision Tree (Good_M12) + Rules + Charts
+# ============================================
+preproc_cls = ColumnTransformer(
+    transformers=[
+        ("num", "passthrough", num_cols),  # trees don't need scaling
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+    ],
+    remainder="drop"
+)
+tree_clf = Pipeline(steps=[
+    ("prep", preproc_cls),
+    ("model", DecisionTreeClassifier(
+        criterion="gini",
+        max_depth=6,
+        min_samples_leaf=100,
+        random_state=42
+    ))
+])
+tree_clf.fit(X_train, y_train_bin)
+proba_tree = tree_clf.predict_proba(X_test)[:, 1]
+
+auc_tree = roc_auc_score(y_test_bin, proba_tree)
+ks_tree  = ks_stat(y_test_bin, proba_tree)
+print(f"Decision Tree -> AUC={auc_tree:.3f}, KS={ks_tree:.3f}")
+
+# Thresholds (0.5 and Youden J best threshold)
+fpr_t, tpr_t, thr_t = roc_curve(y_test_bin, proba_tree)
+youden_idx = int(np.argmax(tpr_t - fpr_t))
+best_thr_tree = float(thr_t[youden_idx])
+
+pred_tree_05   = (proba_tree >= 0.5).astype(int)
+pred_tree_best = (proba_tree >= best_thr_tree).astype(int)
+
+cm_tree_05 = confusion_matrix(y_test_bin, pred_tree_05)
+cm_tree_bt = confusion_matrix(y_test_bin, pred_tree_best)
+
+scored_tree = test.copy()
+scored_tree["pred_good12_p"] = proba_tree
+scored_tree["pred_good12_0p5"] = pred_tree_05
+scored_tree["pred_good12_bestT"] = pred_tree_best
+scored_tree.to_csv(os.path.join(OUTDIR, "scored_tree_good12.csv"), index=False)
+
+# Extract feature names post-encoding
+tree_feature_names = ohe_feature_names(tree_clf.named_steps["prep"])
+fitted_tree = tree_clf.named_steps["model"]
+
+# ---- Ranked rules ----
+rules_df, pretty_lines = extract_tree_rules_ranked(
+    fitted_tree, feature_names=tree_feature_names, class_names=["Bad","Good"]
+)
+rules_df.to_csv(RULES_CSV, index=False)
+with open(RULES_TXT, "w", encoding="utf-8") as f:
+    f.write("\n".join(pretty_lines))
+print("Top 10 rules:\n" + "\n".join(pretty_lines[:10]))
+
+# ---- Feature importance (barh) ----
+importances = fitted_tree.feature_importances_
+imp_df = pd.DataFrame({"feature": tree_feature_names, "importance": importances})
+imp_df = imp_df.sort_values("importance", ascending=True)  # ascending for barh
+
+plt.figure(figsize=(10, 8))
+plt.barh(imp_df["feature"].tail(30), imp_df["importance"].tail(30))  # top 30 for readability
+plt.title("Decision Tree - Top Feature Importance")
+plt.xlabel("Importance")
+plt.tight_layout()
+plt.show()
+
+# ---- Decision tree chart (PNG, truncated depth for clarity) ----
+plt.figure(figsize=(24, 12))
+plot_tree(
+    fitted_tree,
+    feature_names=tree_feature_names,
+    class_names=["Bad", "Good"],
+    filled=True,
+    rounded=True,
+    max_depth=4,
+    fontsize=10
+)
+plt.title("Decision Tree Visualization (Depth<=4)")
+plt.savefig(TREE_PNG, dpi=300, bbox_inches="tight")
+plt.close()
+
+# ---- Rule impact scatter (Support vs Purity) ----
+if not rules_df.empty:
+    plt.figure(figsize=(8, 6))
+    plt.scatter(rules_df["support"], rules_df["purity"],
+                s=rules_df["score"]*2000, alpha=0.6)
+    for i, row in rules_df.head(5).iterrows():
+        plt.text(row["support"], row["purity"], f"R{row['rank']}", fontsize=9)
+    plt.xlabel("Support")
+    plt.ylabel("Purity")
+    plt.title("Rule Impact (Support vs Purity)")
+    plt.tight_layout()
+    plt.show()
+
+# ============================================
+# C) Random Forest (Good_M12)
+# ============================================
+rf_clf = Pipeline(steps=[
+    ("prep", preproc_cls),
+    ("model", RandomForestClassifier(
+        n_estimators=300,
+        max_depth=None,
+        min_samples_leaf=50,
+        n_jobs=-1,
+        random_state=42,
+        class_weight="balanced"
+    ))
+])
+rf_clf.fit(X_train, y_train_bin)
+proba_rf = rf_clf.predict_proba(X_test)[:, 1]
+
+auc_rf = roc_auc_score(y_test_bin, proba_rf)
+ks_rf  = ks_stat(y_test_bin, proba_rf)
+print(f"Random Forest -> AUC={auc_rf:.3f}, KS={ks_rf:.3f}")
+
+fpr_r, tpr_r, thr_r = roc_curve(y_test_bin, proba_rf)
+youden_idx_rf = int(np.argmax(tpr_r - fpr_r))
+best_thr_rf = float(thr_r[youden_idx_rf])
+
+pred_rf_05   = (proba_rf >= 0.5).astype(int)
+pred_rf_best = (proba_rf >= best_thr_rf).astype(int)
+
+cm_rf_05 = confusion_matrix(y_test_bin, pred_rf_05)
+cm_rf_bt = confusion_matrix(y_test_bin, pred_rf_best)
+
+scored_rf = test.copy()
+scored_rf["pred_good12_p"] = proba_rf
+scored_rf["pred_good12_0p5"] = pred_rf_05
+scored_rf["pred_good12_bestT"] = pred_rf_best
+scored_rf.to_csv(os.path.join(OUTDIR, "scored_rf_good12.csv"), index=False)
+
+# RF feature importance (OneHot expanded)
+rf_ohe_names = ohe_feature_names(rf_clf.named_steps["prep"])
+rf_model = rf_clf.named_steps["model"]
+rf_importances = pd.DataFrame({
+    "feature": rf_ohe_names,
+    "importance": rf_model.feature_importances_
+}).sort_values("importance", ascending=False)
+rf_importances.to_csv(os.path.join(OUTDIR, "rf_feature_importance.csv"), index=False)
+
+# ============================================
+# Excel Summary
+# ============================================
+lin_metrics = pd.DataFrame([{
+    "model": "Linear (M12_spend)",
+    "RMSE": rmse_lin,
+    "MAE": mae_lin,
+    "R2": r2_lin
+}])
+
+tree_metrics = pd.DataFrame([{
+    "model": "Decision Tree (Good_M12)",
+    "AUC": auc_tree,
+    "KS": ks_tree,
+    "Best_Threshold": best_thr_tree
+}])
+
+rf_metrics = pd.DataFrame([{
+    "model": "Random Forest (Good_M12)",
+    "AUC": auc_rf,
+    "KS": ks_rf,
+    "Best_Threshold": best_thr_rf
+}])
+
+# Deciles using RF by default (often best calibrated)
+dec_rf = decile_table(y_test_bin, proba_rf, groups=10)
+
+def cm_df(cm, labels=("0","1")):
+    return pd.DataFrame(cm,
+                        index=[f"Actual_{labels[0]}", f"Actual_{labels[1]}"],
+                        columns=[f"Pred_{labels[0]}", f"Pred_{labels[1]}"])
+
+cm_tree_05_df = cm_df(cm_tree_05)
+cm_tree_bt_df = cm_df(cm_tree_bt)
+cm_rf_05_df   = cm_df(cm_rf_05)
+cm_rf_bt_df   = cm_df(cm_rf_bt)
+
+# Write Excel (xlsxwriter preferred; fallback to openpyxl)
+engine = "xlsxwriter"
+try:
+    with pd.ExcelWriter(EXCEL_OUT, engine=engine) as xw:
+        lin_metrics.to_excel(xw, sheet_name="Linear_Metrics", index=False)
+        tree_metrics.to_excel(xw, sheet_name="Tree_Metrics", index=False)
+        rf_metrics.to_excel(xw, sheet_name="RF_Metrics", index=False)
+
+        dec_rf.to_excel(xw, sheet_name="RF_Deciles", index=False)
+        rf_importances.head(100).to_excel(xw, sheet_name="RF_Top100_Importance", index=False)
+
+        cm_tree_05_df.to_excel(xw, sheet_name="CM_Tree_0p5")
+        cm_tree_bt_df.to_excel(xw, sheet_name="CM_Tree_BestT")
+        cm_rf_05_df.to_excel(xw, sheet_name="CM_RF_0p5")
+        cm_rf_bt_df.to_excel(xw, sheet_name="CM_RF_BestT")
+
+        # Samples (quick sanity views)
+        scored_linear.head(200).to_excel(xw, sheet_name="Scored_Linear_Sample", index=False)
+        scored_tree.head(200).to_excel(xw, sheet_name="Scored_Tree_Sample", index=False)
+        scored_rf.head(200).to_excel(xw, sheet_name="Scored_RF_Sample", index=False)
+
+        # Rules table to Excel (top 200)
+        if not rules_df.empty:
+            rules_df.head(200).to_excel(xw, sheet_name="Tree_Rules_Top200", index=False)
+
+        files = pd.DataFrame({
+            "file": [
+                os.path.basename(TREE_PNG),
+                os.path.basename(RULES_TXT),
+                "scored_linear_M12.csv",
+                "scored_tree_good12.csv",
+                "scored_rf_good12.csv",
+                "rf_feature_importance.csv"
+            ],
+            "location": [OUTDIR]*6
+        })
+        files.to_excel(xw, sheet_name="Files", index=False)
+except Exception as e:
+    print("Excel write failed with xlsxwriter; trying openpyxl. Error:", str(e))
+    with pd.ExcelWriter(EXCEL_OUT, engine="openpyxl") as xw:
+        lin_metrics.to_excel(xw, sheet_name="Linear_Metrics", index=False)
+        tree_metrics.to_excel(xw, sheet_name="Tree_Metrics", index=False)
+        rf_metrics.to_excel(xw, sheet_name="RF_Metrics", index=False)
+        dec_rf.to_excel(xw, sheet_name="RF_Deciles", index=False)
+        rf_importances.head(100).to_excel(xw, sheet_name="RF_Top100_Importance", index=False)
+        cm_tree_05_df.to_excel(xw, sheet_name="CM_Tree_0p5")
+        cm_tree_bt_df.to_excel(xw, sheet_name="CM_Tree_BestT")
+        cm_rf_05_df.to_excel(xw, sheet_name="CM_RF_0p5")
+        cm_rf_bt_df.to_excel(xw, sheet_name="CM_RF_BestT")
+        scored_linear.head(200).to_excel(xw, sheet_name="Scored_Linear_Sample", index=False)
+        scored_tree.head(200).to_excel(xw, sheet_name="Scored_Tree_Sample", index=False)
+        scored_rf.head(200).to_excel(xw, sheet_name="Scored_RF_Sample", index=False)
+        if not rules_df.empty:
+            rules_df.head(200).to_excel(xw, sheet_name="Tree_Rules_Top200", index=False)
+
+print("All outputs saved in:", OUTDIR)
+print("Tree chart:", TREE_PNG)
+print("Rules (txt):", RULES_TXT)
+print("Rules (csv):", RULES_CSV)
+print("Excel summary:", EXCEL_OUT)
+
+
+
+
+
+
+bansnskdkfmdmdmdndmd
+
+
+
+
+
+
 # =============================
 # Decision Tree with Rule Extraction & Charts
 # =============================
