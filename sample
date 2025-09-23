@@ -1,4 +1,41 @@
 
+Conversion % Monthwise :=
+AVERAGEX (
+    SUMMARIZE (
+        'DateDim_MSD',
+        'DateDim_MSD'[MonthStart],
+        "Conv%",
+            VAR CustsContacted =
+                CALCULATETABLE (
+                    VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+                    'MSD Trigger Conversion'[CONTACTED_FLAG] = 1
+                )
+            VAR Numerator =
+                SUMX (
+                    CustsContacted,
+                    MAXX (
+                        {
+                            ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[AIF_SALES_COUNT] ) ) ),
+                            ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[CARD_SALES_COUNT] ) ) ),
+                            ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[HIL_SALES_COUNT] ) ) ),
+                            ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[IMI_SALES_COUNT] ) ) ),
+                            ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[LIL_SALES_COUNT] ) ) ),
+                            ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[PIL_SALES_COUNT] ) ) ),
+                            ROW ( "v", CALCULATE ( MAX ( 'MSD Trigger Conversion'[TMO_SALES_COUNT] ) ) )
+                        },
+                        [v]
+                    )
+                )
+            VAR Denominator = COUNTROWS ( CustsContacted )
+            RETURN DIVIDE ( Numerator, Denominator )
+    ),
+    [Conv%]
+)
+
+
+
+
+
 Conversion % :=
 VAR CustsContacted =
     CALCULATETABLE(
