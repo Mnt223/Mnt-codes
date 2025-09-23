@@ -1,3 +1,174 @@
+# =============================
+# Decision Tree with Rule Extraction & Charts
+# =============================
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+
+# ========== RULE EXTRACTOR FUNCTION ==========
+from typing import List, Optional, Tuple
+
+def extract_tree_rules_ranked(
+    clf: DecisionTreeClassifier,
+    feature_names: List[str],
+    class_names: Optional[List[str]] = None,
+    sort_desc: bool = True,
+    round_decimals: int = 6,
+) -> Tuple[pd.DataFrame, list[str]]:
+    if not hasattr(clf, "tree_"):
+        raise ValueError("Classifier must be fitted before extracting rules.")
+    tree = clf.tree_
+    children_left, children_right = tree.children_left, tree.children_right
+    feature, threshold, impurity, value = tree.feature, tree.threshold, tree.impurity, tree.value
+    n_node_samples = tree.n_node_samples
+    n_total = float(n_node_samples[0])
+    n_classes = value.shape[-1]
+    gini_max = 1.0 - (1.0 / n_classes)
+
+    if class_names is None:
+        class_names = [f"class_{i}" for i in range(n_classes)]
+
+    leaves = []
+    stack = [(0, [], 0)]  # node_id, conditions, depth
+
+    while stack:
+        node, conds, depth = stack.pop()
+        is_leaf = (children_left[node] == children_right[node])
+
+        if is_leaf:
+            counts = value[node][0]
+            total = counts.sum()
+            pred_idx = int(np.argmax(counts))
+            pred_name = class_names[pred_idx]
+            proba = float(counts[pred_idx] / total) if total > 0 else 0.0
+
+            leaf_gini = float(impurity[node])
+            purity = 1.0 - (leaf_gini / gini_max) if gini_max > 0 else 1.0
+            support = float(n_node_samples[node]) / n_total if n_total > 0 else 0.0
+            score = support * purity
+
+            rule_text = " AND ".join(conds) if conds else "(all rows)"
+            pos = int(counts[1]) if n_classes >= 2 else int(counts[pred_idx])
+            neg = int(counts[0]) if n_classes >= 2 else int(total - counts[pred_idx])
+
+            leaves.append({
+                "rule": rule_text,
+                "predicted_class": pred_name,
+                "predicted_proba": round(proba, 4),
+                "samples": int(n_node_samples[node]),
+                "support": round(support, 4),
+                "gini": round(leaf_gini, 4),
+                "purity": round(purity, 4),
+                "score": round(score, 6),
+                "depth": depth,
+                "pos": pos,
+                "neg": neg,
+            })
+        else:
+            f_idx = feature[node]
+            f_name = feature_names[f_idx] if f_idx >= 0 else f"feature_{f_idx}"
+            thr = round(float(threshold[node]), round_decimals)
+            left_conds  = conds + [f"{f_name} <= {thr}"]
+            right_conds = conds + [f"{f_name} > {thr}"]
+            stack.append((children_right[node], right_conds, depth + 1))
+            stack.append((children_left[node],  left_conds,  depth + 1))
+
+    df = pd.DataFrame(leaves)
+    df = df.sort_values(
+        by=["score", "support", "predicted_proba", "purity"],
+        ascending=[not sort_desc]*4
+    ).reset_index(drop=True)
+    df.insert(0, "rank", df.index + 1)
+
+    pretty = [
+        f"{int(r.rank)}. IF {r.rule} THEN class={r.predicted_class} "
+        f"[proba={r.predicted_proba:.3f}, support={r.support:.3f}, score={r.score:.6f}, depth={r.depth}]"
+        for r in df.itertuples()
+    ]
+    return df, pretty
+
+# ========== DATA PREPARATION (replace with your dataset) ==========
+# Example: random dataset for demo
+from sklearn.datasets import make_classification
+X, y = make_classification(
+    n_samples=5000, n_features=6, n_informative=4, 
+    n_classes=2, random_state=1992
+)
+feature_names = [f"feat_{i}" for i in range(X.shape[1])]
+class_names = ["Bad","Good"]
+
+X = pd.DataFrame(X, columns=feature_names)
+
+# Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, stratify=y, random_state=1992
+)
+
+# ========== DECISION TREE MODEL ==========
+clf = DecisionTreeClassifier(max_depth=5, random_state=1992)
+clf.fit(X_train, y_train)
+
+# ========== EXTRACT RULES ==========
+rules_df, pretty_lines = extract_tree_rules_ranked(
+    clf, feature_names=feature_names, class_names=class_names
+)
+
+print("\n".join(pretty_lines[:15]))  # top 15 rules in console
+print("\nSaved full rules in DataFrame")
+
+# ========== VISUALIZATIONS ==========
+# Feature Importance
+importances = clf.feature_importances_
+plt.figure(figsize=(8,5))
+plt.barh(feature_names, importances)
+plt.title("Feature Importance")
+plt.xlabel("Importance")
+plt.ylabel("Features")
+plt.show()
+
+# Decision Tree Plot
+plt.figure(figsize=(20,10))
+plot_tree(
+    clf, feature_names=feature_names, class_names=class_names, 
+    filled=True, rounded=True, fontsize=10
+)
+plt.title("Decision Tree Visualization")
+plt.show()
+
+# Rule Scores Heatmap-like (scatter)
+plt.figure(figsize=(8,5))
+plt.scatter(rules_df["support"], rules_df["purity"], 
+            s=rules_df["score"]*2000, alpha=0.6)
+for i,row in rules_df.head(5).iterrows():
+    plt.text(row["support"], row["purity"], f"R{row['rank']}", fontsize=9)
+plt.xlabel("Support")
+plt.ylabel("Purity")
+plt.title("Rule Impact (Support vs Purity)")
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+uguviv
+
+
+
 # ============================================
 # Q1 Responders Modeling (Python, Spyder)
 # Linear (M12_spend), Decision Tree + Random Forest (Good_M12)
