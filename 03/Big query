@@ -1,3 +1,46 @@
+import numpy as np
+import pandas as pd
+
+def decile_table(y_true: np.ndarray, y_score: np.ndarray, groups: int = 10) -> pd.DataFrame:
+    df = pd.DataFrame({"y": y_true, "p": y_score}).copy()
+
+    # Unique, deterministic rank (break ties by row order), highest prob = rank 1
+    df["rank"] = df["p"].rank(method="first", ascending=False)
+
+    n = len(df)
+    g = min(groups, max(1, n))        # guard: if very small n
+    bin_size = n / g
+
+    # Integer math deciles: 1..g (no qcut, no label mismatch)
+    df["decile"] = np.ceil(df["rank"] / bin_size).astype(int)
+    df["decile"] = df["decile"].clip(1, g)
+
+    tab = (
+        df.groupby("decile", as_index=False)
+          .agg(customers=("y", "size"),
+               good_cust=("y", "sum"),
+               good_rate=("y", "mean"),
+               avg_pred=("p", "mean"))
+          .sort_values("decile", ascending=False)
+    )
+    tab["cum_good"] = tab["good_cust"].cumsum()
+    total_good = tab["good_cust"].sum()
+    tab["cum_good_pct"] = tab["cum_good"] / (total_good if total_good > 0 else 1)
+    base = df["y"].mean() if df["y"].mean() > 0 else 1e-9
+    tab["lift"] = tab["good_rate"] / base
+    return tab
+
+
+
+
+
+
+
+
+
+
+
+
 def decile_table(y_true: np.ndarray, y_score: np.ndarray, groups: int = 10) -> pd.DataFrame:
     df = pd.DataFrame({"y": y_true, "p": y_score}).copy()
 
