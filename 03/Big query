@@ -1,3 +1,150 @@
+/*===========================
+  Final Summary — Robust Version
+  (Logic preserved, duplicates neutralized)
+===========================*/
+
+/*--- 0) Source table location ---*/
+%let SRC_LIB   = WORK;                  /* change if different */
+%let SRC_TABLE = DBMI_PLANNER_METRICS;  /* change if different */
+
+/*--- 1) Keys (your reporting grain) ---*/
+%let gb_keys =
+  PEOPLE_SOFT_ID
+  Planner_Name
+  Planner_Ext_Email_ID
+  Role
+  DOM_NR
+  CUST_CATEGORY
+  Final_Branch
+  BRANCH_NAME
+  Final_Cluster
+  Final_Channel
+  prod_BRANCH
+  prod_CLUSTER
+  prod_CHANNEL
+  prod_Role
+  plan_Channel
+  plan_Branch
+  plan_Cluster
+  SM_PEOPLESOFT_ID
+  SM_Name
+  SM_Role
+  SM_Ext_Email_ID
+  Group
+  Month_text
+;
+
+/*--- 2) Helpers ---*/
+/* Quote each token for use in SQL IN (...) */
+%macro qlist(list);
+  %local i v out;
+  %let i=1; %let v=%scan(&list,&i,%str( ));
+  %do %while(%length(&v));
+    %if &i>1 %then %let out=&out.,;
+    %let out=&out."%upcase(&v)";
+    %let i=%eval(&i+1); %let v=%scan(&list,&i,%str( ));
+  %end; &out.
+%mend;
+
+/* Build SUM(var) AS var list */
+%macro sum_list(list);
+  %local i v out; %let i=1; %let v=%scan(&list,&i,%str( ));
+  %do %while(%length(&v));
+    %if &i>1 %then %let out=&out., ;
+    %let out=&out.sum(&v) as &v;
+    %let i=%eval(&i+1); %let v=%scan(&list,&i,%str( ));
+  %end; &out.
+%mend;
+
+/*--- 3) Collect all numeric metric columns except keys ---*/
+proc sql noprint;
+  select name
+    into :num_vars separated by ' '
+  from dictionary.columns
+  where upcase(libname) = "%upcase(&SRC_LIB)"
+    and upcase(memname) = "%upcase(&SRC_TABLE)"
+    and type = 'num'
+    and upcase(name) not in ( %qlist(&gb_keys) )
+  ;
+quit;
+
+/*--- 4) Normalize to planner grain (remove intra-planner dupes) ---*/
+proc summary data=&SRC_LIB..&SRC_TABLE nway;
+  class &gb_keys.;
+  var &num_vars.;
+  output out=DBMI_planner_metrics_norm(drop=_type_ _freq_) max=;
+run;
+
+/*--- 5) Final summary (same logic; safer IDs; no inflation) ---*/
+proc sql;
+  create table DBMI_SUMMARY_&MTD_DT as
+  select
+    /* ID/name standardization — treat placeholders as Unmapped */
+    case
+      when missing(PEOPLE_SOFT_ID) then 'Unmapped'
+      when upcase(PEOPLE_SOFT_ID) in ('-','INM','Z_CPD','TBA') then 'Unmapped'
+      else PEOPLE_SOFT_ID
+    end                                         as PEOPLE_SOFT_ID,
+    case when missing(Planner_Name)         then 'Unmapped' else Planner_Name         end as Planner_Name,
+    case when missing(Planner_Ext_Email_ID) then 'Unmapped' else Planner_Ext_Email_ID end as Planner_Ext_Email_ID,
+    case when missing(Role)                  then 'Unmapped' else Role                  end as Role,
+    case when missing(DOM_NR)                then 'Unmapped' else DOM_NR                end as DOM_NR,
+    case when missing(CUST_CATEGORY)         then 'Unmapped' else CUST_CATEGORY         end as CUST_CATEGORY,
+
+    case when missing(Final_Branch)  then 'Unmapped' else Final_Branch  end as Final_Branch,
+    BRANCH_NAME,
+    case when missing(Final_Cluster) then 'Unmapped' else Final_Cluster end as Final_Cluster,
+    case when missing(Final_Channel) then 'Unmapped' else Final_Channel end as Final_Channel,
+
+    /* keep these dims as in your output */
+    prod_BRANCH, prod_CLUSTER, prod_CHANNEL, prod_Role,
+    plan_Channel, plan_Branch, plan_Cluster,
+    SM_PEOPLESOFT_ID, SM_Name, SM_Role, SM_Ext_Email_ID,
+    'Group'n,                        /* GROUP is reserved word */
+    Month_text,
+
+    /* Metrics: sum over deduped rows (no inflation) */
+    %sum_list(&num_vars.)
+
+  from DBMI_planner_metrics_norm
+  group by
+    PEOPLE_SOFT_ID, Planner_Name, Planner_Ext_Email_ID, Role, DOM_NR, CUST_CATEGORY,
+    Final_Branch, BRANCH_NAME, Final_Cluster, Final_Channel,
+    prod_BRANCH, prod_CLUSTER, prod_CHANNEL, prod_Role,
+    plan_Channel, plan_Branch, plan_Cluster,
+    SM_PEOPLESOFT_ID, SM_Name, SM_Role, SM_Ext_Email_ID,
+    'Group'n, Month_text
+  ;
+quit;
+
+/*--- 6) Optional quick validation for TBA / Unmapped ---*/
+/* proc means data=DBMI_SUMMARY_&MTD_DT sum; where PEOPLE_SOFT_ID='Unmapped'; var &num_vars.; run; */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* === 0) Keys you already group by in the final summary === */
 %let gb_keys =
   PEOPLE_SOFT_ID
