@@ -1,3 +1,61 @@
+/* Row counts per ID on each side */
+proc sql;
+  create table _cntA as
+  select people_soft_id,
+         count(*) as nA,
+         count(distinct cats(plan_branch,'|',plan_cluster,'|',plan_channel)) as ctxA
+  from DBMI_PLANNER1
+  group by people_soft_id;
+
+  create table _cntB as
+  select people_soft_id,
+         count(*) as nB,
+         count(distinct cats(prod_branch,'|',prod_cluster,'|',prod_channel)) as ctxB
+  from DBMI_remblank
+  group by people_soft_id;
+
+  /* Fan-out indicator */
+  create table _fanout as
+  select coalesce(a.people_soft_id,b.people_soft_id) as people_soft_id,
+         a.nA, a.ctxA, b.nB, b.ctxB
+  from _cntA a full join _cntB b
+    on a.people_soft_id=b.people_soft_id;
+quit;
+
+/* How bad is it for TBA vs a TBD sample? */
+proc sql;
+  select *
+  from _fanout
+  where upcase(people_soft_id) in ('TBA','TBD_A22','TBD_A98');  /* adjust any TBD_* you have */
+quit;
+
+/* After your join, how many rows per ID? */
+proc sql;
+  select people_soft_id, count(*) as nJoined
+  from DBMI_planner_metrics
+  group by people_soft_id
+  having upcase(people_soft_id)='TBA';
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /*===========================
   Final Summary — Robust Version
   (Logic preserved, duplicates neutralized)
