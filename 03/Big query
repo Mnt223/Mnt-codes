@@ -1,3 +1,129 @@
+/* === 0) Keys you already group by in the final summary === */
+%let gb_keys =
+  PEOPLE_SOFT_ID
+  Planner_Name
+  Planner_Ext_Email_ID
+  Role
+  DOM_NR
+  CUST_CATEGORY
+  Final_Branch
+  BRANCH_NAME
+  Final_Cluster
+  Final_Channel
+  prod_BRANCH
+  prod_CLUSTER
+  prod_CHANNEL
+  prod_Role
+  plan_Channel
+  plan_Branch
+  plan_Cluster
+  SM_PEOPLESOFT_ID
+  SM_Name
+  SM_Role
+  SM_Ext_Email_ID
+  Group
+  Month_text   /* keep if you had month in your summary */
+;
+
+/* === 1) Collect numeric metric columns dynamically (everything numeric except keys) === */
+proc sql noprint;
+  /* Adjust libname/memname if DBMI_planner_metrics lives outside WORK */
+  select name
+    into :num_vars separated by ' '
+  from dictionary.columns
+  where upcase(libname) = 'WORK'
+    and upcase(memname) = 'DBMI_PLANNER_METRICS'
+    and type = 'num'
+    and upcase(name) not in (%upcase(%sysfunc(tranwrd(&gb_keys,%str( ),%str(',')))))
+  ;
+quit;
+
+/* Helper to print SUM(var) AS var list later */
+%macro sum_list(list);
+  %local i v out;
+  %let i=1;
+  %let v=%scan(&list,&i,%str( ));
+  %do %while(%length(&v));
+    %if &i>1 %then %let out=&out., ;
+    %let out=&out. sum(&v) as &v;
+    %let i=%eval(&i+1);
+    %let v=%scan(&list,&i,%str( ));
+  %end;
+  &out.
+%mend;
+
+/* === 2) Normalize planner grain to remove intra-planner duplication ===
+   Use MAX for each metric so one planner’s metric stays as-is even if
+   the row appeared multiple times due to joins. */
+proc summary data=DBMI_planner_metrics nway;
+  class &gb_keys.;
+  var &num_vars.;
+  output out=DBMI_planner_metrics_norm(drop=_type_ _freq_) max=;
+run;
+
+/* === 3) Final summary (same output logic; only input is deduped) === */
+proc sql;
+  create table DBMI_SUMMARY_&MTD_DT as
+  select
+    /* Your existing CASE standardization for IDs/names/roles… */
+    case
+      when missing(people_soft_id) then 'Unmapped'
+      when upcase(people_soft_id) in ('-','INM','Z_CPD','TBA') then 'Unmapped'
+      else people_soft_id
+    end                                         as PEOPLE_SOFT_ID,
+    case when missing(Planner_Name) then 'Unmapped' else Planner_Name end as Planner_Name,
+    case when missing(Planner_Ext_Email_ID) then 'Unmapped' else Planner_Ext_Email_ID end as Planner_Ext_Email_ID,
+    case when missing(Role) then 'Unmapped' else Role end as Role,
+    case when missing(DOM_NR) then 'Unmapped' else DOM_NR end as DOM_NR,
+    case when missing(CUST_CATEGORY) then 'Unmapped' else CUST_CATEGORY end as CUST_CATEGORY,
+
+    /* Keep the same “final” dims you already output */
+    case when missing(Final_Branch) then 'Unmapped' else Final_Branch end as Final_Branch,
+    BRANCH_NAME,
+    case when missing(Final_Cluster) then 'Unmapped' else Final_Cluster end as Final_Cluster,
+    case when missing(Final_Channel) then 'Unmapped' else Final_Channel end as Final_Channel,
+
+    /* Keep prod_* / plan_* / SM_* if they’re part of your output */
+    prod_BRANCH, prod_CLUSTER, prod_CHANNEL, prod_Role,
+    plan_Channel, plan_Branch, plan_Cluster,
+    SM_PEOPLESOFT_ID, SM_Name, SM_Role, SM_Ext_Email_ID,
+    Group,
+    Month_text,
+
+    /* === Metrics: same as before, but summed from the deduped table === */
+    %sum_list(&num_vars.)
+
+  from DBMI_planner_metrics_norm
+  group by
+    PEOPLE_SOFT_ID, Planner_Name, Planner_Ext_Email_ID, Role, DOM_NR, CUST_CATEGORY,
+    Final_Branch, BRANCH_NAME, Final_Cluster, Final_Channel,
+    prod_BRANCH, prod_CLUSTER, prod_CHANNEL, prod_Role,
+    plan_Channel, plan_Branch, plan_Cluster,
+    SM_PEOPLESOFT_ID, SM_Name, SM_Role, SM_Ext_Email_ID,
+    Group, Month_text
+  ;
+quit;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 
