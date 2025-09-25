@@ -1,3 +1,399 @@
+/* ======================== Setup ======================== */
+options mprint mlogic nocenter validvarname=any encoding="latin1" locale=en_US;
+ods graphics on;
+
+libname bank "C:\path\to\your\SASData";   /* << update */
+%let out_xlsx = C:\path\to\your\exports\Q1_SpendRules.xlsx;  /* << update */
+
+/* ================== Cohort & Transactions ================== */
+proc sql;
+  create table work.q1_cohort as
+  select acct,
+         date_opened format=date9.,
+         card_type1
+  from bank.premier_card_acq;
+quit;
+
+proc sql;
+  create table work.txn_raw as
+  select c.acct,
+         c.date_opened format=date9.,
+         coalesce(t.card_type1, c.card_type1) as card_type1 length=40,
+         t.tran_amt,
+         t.mt_eff_date format=date9.,
+         t.mt_category_code,
+         t.sector
+  from work.q1_cohort c
+  left join bank.card_tran3 t
+    on c.acct = t.acct;
+quit;
+
+data work.txn_raw;
+  set work.txn_raw;
+  if missing(sector) then sector='Unknown';
+run;
+
+/* ================== Relative Month Windows ================== */
+data work.txn_rel;
+  set work.txn_raw;
+  if not missing(mt_eff_date) then do;
+    months_since_open = intck('month', date_opened, mt_eff_date, 'c');
+    in_m1  = (months_since_open=0);
+    in_m3  = (0 <= months_since_open <= 2);
+    in_m12 = (0 <= months_since_open <= 11);
+  end;
+  else do; in_m1=0; in_m3=0; in_m12=0; end;
+run;
+
+/* ================== Account-level Spend ================== */
+proc sql;
+  create table work.acct_spend as
+  select acct,
+         sum(case when in_m1  then tran_amt else 0 end)  as M1_spend,
+         sum(case when in_m3  then tran_amt else 0 end)  as M3_spend,
+         sum(case when in_m12 then tran_amt else 0 end)  as M12_spend,
+         sum(case when in_m1  and not missing(tran_amt) then 1 else 0 end) as txns_m1,
+         sum(case when in_m12 and not missing(tran_amt) then 1 else 0 end) as txns_12m
+  from work.txn_rel
+  group by acct;
+quit;
+
+proc sql;
+  create table work.spends as
+  select a.acct,
+         a.date_opened format=date9.,
+         a.card_type1,
+         coalesce(b.M1_spend,0)  as M1_spend,
+         coalesce(b.M3_spend,0)  as M3_spend,
+         coalesce(b.M12_spend,0) as M12_spend,
+         coalesce(b.txns_m1,0)   as txns_m1,
+         coalesce(b.txns_12m,0)  as txns_12m
+  from work.q1_cohort a
+  left join work.acct_spend b
+    on a.acct=b.acct;
+quit;
+
+/* ============== First Merchant & Sector in M1 ============== */
+proc sort data=work.txn_rel out=work.txn_sorted;
+  by acct mt_eff_date;
+run;
+
+data work.first_m1;
+  set work.txn_sorted;
+  by acct mt_eff_date;
+  retain flagged 0;
+  if first.acct then flagged=0;
+
+  if months_since_open=0 and flagged=0 then do;
+    length first_merchant $60 first_sector $40;
+    first_merchant  = coalescec(strip(mt_category_code),'Unknown');
+    first_sector    = coalescec(strip(sector),'Unknown');
+    first_tran_amt  = coalesce(tran_amt,0);
+    first_tran_date = mt_eff_date;
+    flagged=1; output;
+  end;
+
+  keep acct first_merchant first_sector first_tran_amt first_tran_date;
+  format first_tran_date date9.;
+run;
+
+proc sql;
+  create table work.base0 as
+  select s.*,
+         coalesce(m.first_merchant,'Unknown') as first_merchant length=60,
+         coalesce(m.first_sector,'Unknown')   as first_sector   length=40,
+         coalesce(m.first_tran_amt,0)         as first_tran_amt,
+         m.first_tran_date format=date9.
+  from work.spends s
+  left join work.first_m1 m
+    on s.acct=m.acct;
+quit;
+
+/* ============== 3M responders (guardrails) ============== */
+data work.base_resp;
+  set work.base0;
+  if M3_spend>0;
+  if missing(card_type1) then card_type1='Unknown';
+  if M1_spend<=0 then do;
+    first_merchant='(No M1 Spnd)';
+    first_sector  ='(No M1 Spnd)';
+    first_tran_amt=0;
+  end;
+run;
+
+/* ============== Collapse merchants to Top 50 + Other ============== */
+proc sql;
+  create table work.merch_rank as
+  select first_merchant, count(*) as customers
+  from work.base_resp
+  group by first_merchant
+  order by customers desc;
+quit;
+
+proc sql outobs=50;
+  create table work.top_merch as
+  select first_merchant from work.merch_rank order by customers desc;
+quit;
+
+proc sql;
+  create table work.base_resp2 as
+  select a.*, t.first_merchant as merch_top
+  from work.base_resp a
+  left join work.top_merch t
+    on a.first_merchant = t.first_merchant;
+quit;
+
+data work.base_resp2;
+  set work.base_resp2;
+  if missing(merch_top) and first_merchant ne '(No M1 Spnd)' then first_merchant='Other';
+  drop merch_top;
+run;
+
+/* ================== Cutoffs & Good flags ================== */
+proc means data=work.base_resp2 noprint p70;
+  var M3_spend M12_spend;
+  output out=work.cutoffs_overall
+    p70(M3_spend)=M3_p70
+    p70(M12_spend)=M12_p70;
+run;
+
+data work.base_resp2;
+  if _n_=1 then set work.cutoffs_overall(keep=M3_p70 M12_p70);
+  set work.base_resp2;
+  Good_M3  = (M3_spend  >= M3_p70);
+  Good_M12 = (M12_spend >= M12_p70);
+run;
+
+/* ================== Activity snapshots ================== */
+proc sql;
+  create table work.active_overall as
+  select count(*) as total_customers,
+         sum(M3_spend>0)  as active_3m,
+         sum(M12_spend>0) as active_12m,
+         calculated active_3m / calculated total_customers  as pct_active_3m,
+         calculated active_12m / calculated total_customers as pct_active_12m
+  from work.base0;
+quit;
+
+/* ================== Business summaries ================== */
+proc sql;
+  create table work.summary_card as
+  select card_type1,
+         count(*) as customers,
+         mean(M3_spend)  as avg_M3_spend,
+         mean(M12_spend) as avg_M12_spend,
+         mean(Good_M12)  as pct_Good12
+  from work.base_resp2
+  group by card_type1
+  order by customers desc;
+quit;
+
+proc sql;
+  create table work.summary_sector as
+  select first_sector,
+         count(*) as customers,
+         mean(M3_spend)  as avg_M3_spend,
+         mean(M12_spend) as avg_M12_spend,
+         mean(Good_M12)  as pct_Good12
+  from work.base_resp2
+  group by first_sector
+  order by customers desc;
+quit;
+
+proc sql;
+  create table work.summary_merchant as
+  select first_merchant,
+         count(*) as customers,
+         mean(M3_spend)  as avg_M3_spend,
+         mean(M12_spend) as avg_M12_spend,
+         mean(Good_M12)  as pct_Good12
+  from work.base_resp2
+  group by first_merchant
+  order by customers desc;
+quit;
+
+/* ================== Univariate Rules ================== */
+proc rank data=work.base_resp2 groups=10 out=work.uni_m1_dec;
+  var M1_spend;
+  ranks decile_M1;
+run;
+
+proc sql;
+  create table work.uni_m1_summary as
+  select (decile_M1+1) as decile,
+         min(M1_spend) as min_amt,
+         max(M1_spend) as max_amt,
+         count(*)      as customers,
+         mean(Good_M12) as good_rate
+  from work.uni_m1_dec
+  group by decile
+  order by decile;
+quit;
+
+proc rank data=work.base_resp2 groups=3 out=work.uni_txn3;
+  var txns_m1;
+  ranks bucket_txn;
+run;
+
+data work.uni_txn3;
+  set work.uni_txn3;
+  length bucket_txn_lbl $10;
+  if bucket_txn=0 then bucket_txn_lbl='Low';
+  else if bucket_txn=1 then bucket_txn_lbl='Medium';
+  else bucket_txn_lbl='High';
+run;
+
+proc sql;
+  create table work.uni_txn_summary as
+  select bucket_txn_lbl,
+         min(txns_m1) as min_txn,
+         max(txns_m1) as max_txn,
+         count(*)     as customers,
+         mean(Good_M12) as good_rate
+  from work.uni_txn3
+  group by bucket_txn_lbl;
+quit;
+
+/* ================== Bivariate Rules ================== */
+proc rank data=work.base_resp2 groups=3 out=work.bivar_base;
+  var M1_spend;
+  ranks bucket_M1;
+run;
+
+data work.bivar_base;
+  set work.bivar_base;
+  length M1_bucket $10;
+  if bucket_M1=0 then M1_bucket='Low';
+  else if bucket_M1=1 then M1_bucket='Medium';
+  else M1_bucket='High';
+run;
+
+proc sql;
+  create table work.bivar_m1_sector as
+  select M1_bucket, first_sector,
+         count(*) as customers,
+         mean(Good_M12) as good_rate
+  from work.bivar_base
+  group by M1_bucket, first_sector;
+quit;
+
+proc sql;
+  create table work.bivar_m1_card as
+  select M1_bucket, card_type1,
+         count(*) as customers,
+         mean(Good_M12) as good_rate
+  from work.bivar_base
+  group by M1_bucket, card_type1;
+quit;
+
+/* Top 20 merchants */
+proc sql;
+  create table work.top20_merch as
+  select first_merchant, count(*) as c
+  from work.base_resp2
+  group by first_merchant
+  order by c desc;
+quit;
+
+proc sql outobs=20;
+  create table work.top20_merch_only as
+  select first_merchant from work.top20_merch order by c desc;
+quit;
+
+proc sql;
+  create table work.bivar_m1_merch as
+  select b.M1_bucket, a.first_merchant,
+         count(*) as customers,
+         mean(Good_M12) as good_rate
+  from work.bivar_base b
+  inner join work.top20_merch_only t
+    on b.first_merchant = t.first_merchant
+  inner join work.base_resp2 a
+    on b.acct=a.acct
+  group by b.M1_bucket, a.first_merchant;
+quit;
+
+/* ================== 3M → 12M Rules ================== */
+proc sql;
+  create table work.rule_3m_overall as
+  select sum(M3_spend>0) as responders_3m,
+         mean(Good_M12)  as pct_good12
+  from work.base_resp2;
+quit;
+
+proc rank data=work.base_resp2 groups=3 out=work.rule_3m_sector;
+  var M3_spend;
+  ranks M3_bucket;
+run;
+
+data work.rule_3m_sector;
+  set work.rule_3m_sector;
+  length M3_bucket_lbl $10;
+  if M3_bucket=0 then M3_bucket_lbl='Low';
+  else if M3_bucket=1 then M3_bucket_lbl='Medium';
+  else M3_bucket_lbl='High';
+run;
+
+proc sql;
+  create table work.rule_3m_sector_summary as
+  select M3_bucket_lbl, first_sector,
+         count(*) as customers,
+         mean(Good_M12) as good_rate
+  from work.rule_3m_sector
+  group by M3_bucket_lbl, first_sector;
+quit;
+
+proc sql;
+  create table work.rule_3m_merch_summary as
+  select b.M3_bucket, a.first_merchant,
+         count(*) as customers,
+         mean(Good_M12) as good_rate
+  from work.rule_3m_sector b
+  inner join work.top20_merch_only t
+    on b.first_merchant = t.first_merchant
+  inner join work.base_resp2 a
+    on b.acct=a.acct
+  group by b.M3_bucket, a.first_merchant;
+quit;
+
+/* ================== Excel Export ================== */
+ods excel file="&out_xlsx" options(sheet_interval="none");
+
+ods excel options(sheet_name="Cutoffs");          proc print data=work.cutoffs_overall noobs; run;
+ods excel options(sheet_name="Active_Overall");   proc print data=work.active_overall noobs; run;
+ods excel options(sheet_name="Summary_Card");     proc print data=work.summary_card noobs; run;
+ods excel options(sheet_name="Summary_Sector");   proc print data=work.summary_sector noobs; run;
+ods excel options(sheet_name="Summary_Merchant"); proc print data=work.summary_merchant noobs; run;
+ods excel options(sheet_name="UNI_M1");           proc print data=work.uni_m1_summary noobs; run;
+ods excel options(sheet_name="UNI_Txns");         proc print data=work.uni_txn_summary noobs; run;
+ods excel options(sheet_name="BIVAR_M1_Sector");  proc print data=work.bivar_m1_sector noobs; run;
+ods excel options(sheet_name="BIVAR_M1_Card");    proc print data=work.bivar_m1_card noobs; run;
+ods excel options(sheet_name="BIVAR_M1_Merch");   proc print data=work.bivar_m1_merch noobs; run;
+ods excel options(sheet_name="RULE_3M_Overall");  proc print data=work.rule_3m_overall noobs; run;
+ods excel options(sheet_name="RULE_3M_Sector");   proc print data=work.rule_3m_sector_summary noobs; run;
+ods excel options(sheet_name="RULE_3M_Merch");    proc print data=work.rule_3m_merch_summary noobs; run;
+
+ods excel close;
+ods graphics off;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* Row counts per ID on each side */
 proc sql;
   create table _cntA as
