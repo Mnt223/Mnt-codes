@@ -1,3 +1,57 @@
+
+Conversion % :=
+VAR MonthsSelected =
+    VALUES ( 'DateDim_MSD'[MonthStart] )
+
+/* Build a per-month table with Numerator & Denominator at month-grain */
+VAR PerMonthTable =
+    ADDCOLUMNS (
+        MonthsSelected,
+        "CustsContacted",
+            CALCULATETABLE (
+                VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+                KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 )
+            ),
+        "Numerator",
+            VAR C = [CustsContacted]
+            RETURN
+                SUMX (
+                    C,
+                    VAR aif = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[AIF_SALES_COUNT] ) ), 0 )
+                    VAR card = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[CARD_SALES_COUNT] ) ), 0 )
+                    VAR gi = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[GI_SALES_COUNT] ) ), 0 )
+                    VAR hml = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[HML_SALES_COUNT] ) ), 0 )
+                    VAR inv = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[INV_SALES_COUNT] ) ), 0 )
+                    VAR li  = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[LI_SALES_COUNT] ) ), 0 )
+                    VAR pil = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[PIL_SALES_COUNT] ) ), 0 )
+                    VAR pms = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[PMS_SALES_COUNT] ) ), 0 )
+                    VAR tmd = COALESCE ( CALCULATE ( MAX ( 'MSD Trigger Conversion'[TMD_SALES_COUNT] ) ), 0 )
+                    RETURN aif + card + gi + hml + inv + li + pil + pms + tmd
+                ),
+        "Denominator",
+            COUNTROWS ( [CustsContacted] )   -- month-wise DISTINCT contacted customers
+    )
+
+/* If MonthStart is on the axis, return that month's % only */
+RETURN
+IF (
+    ISINSCOPE ( 'DateDim_MSD'[MonthStart] ),
+    VAR OneMonth =
+        FILTER ( PerMonthTable, 'DateDim_MSD'[MonthStart] = SELECTEDVALUE ( 'DateDim_MSD'[MonthStart] ) )
+    RETURN
+        DIVIDE ( MAXX ( OneMonth, [Numerator] ), MAXX ( OneMonth, [Denominator] ) ),
+    /* Otherwise (e.g., card with June+July selected), return one overall %:
+       (sum of monthly numerators) / (sum of monthly denominators) */
+    VAR NumTotal = SUMX ( PerMonthTable, [Numerator] )
+    VAR DenTotal = SUMX ( PerMonthTable, [Denominator] )
+    RETURN DIVIDE ( NumTotal, DenTotal )
+)
+
+
+
+
+
+
 Conversion % (MonthStart summarized) :=
 VAR PerMonthTable =
     SUMMARIZECOLUMNS(
