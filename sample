@@ -2,6 +2,53 @@ TPPC Change :=
 VAR PerMonth =
     SUMMARIZECOLUMNS (
         'DateDim_MSD'[MonthStart],
+        "PostAvg",
+            CALCULATE (
+                AVERAGE ( 'MSD Trigger Conversion'[Post_TPPC] ),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            ),
+        "PreAvg",
+            CALCULATE (
+                AVERAGE ( 'MSD Trigger Conversion'[PRE_TPPC] ),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            )
+    )
+
+-- Average across the selected months (no AVERAGEX used)
+VAR AvgPostAcrossMonths = DIVIDE ( SUMX ( PerMonth, [PostAvg] ), COUNTROWS ( PerMonth ) )
+VAR AvgPreAcrossMonths  = DIVIDE ( SUMX ( PerMonth, [PreAvg] ),  COUNTROWS ( PerMonth ) )
+VAR DiffAvg             = AvgPostAcrossMonths - AvgPreAcrossMonths
+VAR PctAvg              = DIVIDE ( DiffAvg, AvgPreAcrossMonths )
+
+RETURN
+IF (
+    ISINSCOPE ( 'DateDim_MSD'[MonthStart] ),
+    -- Month on axis → single month only
+    VAR Post1 =
+        CALCULATE (
+            AVERAGE ( 'MSD Trigger Conversion'[Post_TPPC] ),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        )
+    VAR Pre1  =
+        CALCULATE (
+            AVERAGE ( 'MSD Trigger Conversion'[PRE_TPPC] ),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        )
+    VAR Diff1 = Post1 - Pre1
+    VAR Pct1  = DIVIDE ( Diff1, Pre1 )
+    RETURN FORMAT ( Diff1, "0.0#" ) & " (" & FORMAT ( Pct1, "0.0%" ) & ")",
+    -- No month on axis → averaged across selected months
+    FORMAT ( DiffAvg, "0.0#" ) & " (" & FORMAT ( PctAvg, "0.0%" ) & ")"
+)
+
+
+
+
+
+TPPC Change :=
+VAR PerMonth =
+    SUMMARIZECOLUMNS (
+        'DateDim_MSD'[MonthStart],
         "PostM",
             CALCULATE (
                 SUMX (
