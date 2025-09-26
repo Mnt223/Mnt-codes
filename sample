@@ -1,3 +1,69 @@
+
+TPPC Change :=
+VAR PerMonth =
+    SUMMARIZECOLUMNS (
+        'DateDim_MSD'[MonthStart],
+        "PostVal",
+            CALCULATE (
+                AVERAGE (
+                    CALCULATE (
+                        MAX ( 'MSD Trigger Conversion'[Post_TPPC] ),
+                        ALLEXCEPT ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[GA_CUST_ID] )
+                    )
+                ),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            ),
+        "PreVal",
+            CALCULATE (
+                AVERAGE (
+                    CALCULATE (
+                        MAX ( 'MSD Trigger Conversion'[PRE_TPPC] ),
+                        ALLEXCEPT ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[GA_CUST_ID] )
+                    )
+                ),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            )
+    )
+
+-- average across selected months
+VAR AvgPost = AVERAGE ( SELECTCOLUMNS ( PerMonth, "x", [PostVal] ) )
+VAR AvgPre  = AVERAGE ( SELECTCOLUMNS ( PerMonth, "x", [PreVal] ) )
+VAR Diff    = AvgPost - AvgPre
+VAR Pct     = DIVIDE ( Diff, AvgPre )
+
+RETURN
+IF (
+    ISINSCOPE ( 'DateDim_MSD'[MonthStart] ),
+    -- Month on axis → single-month calc
+    VAR Post1 =
+        CALCULATE (
+            AVERAGE (
+                CALCULATE (
+                    MAX ( 'MSD Trigger Conversion'[Post_TPPC] ),
+                    ALLEXCEPT ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[GA_CUST_ID] )
+                )
+            ),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        )
+    VAR Pre1 =
+        CALCULATE (
+            AVERAGE (
+                CALCULATE (
+                    MAX ( 'MSD Trigger Conversion'[PRE_TPPC] ),
+                    ALLEXCEPT ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[GA_CUST_ID] )
+                )
+            ),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        )
+    VAR Diff1 = Post1 - Pre1
+    VAR Pct1  = DIVIDE ( Diff1, Pre1 )
+    RETURN FORMAT ( Diff1, "0.0#" ) & "
+
+
+
+
+
+
 TPPC Change :=
 VAR PerMonth =
     SUMMARIZECOLUMNS (
