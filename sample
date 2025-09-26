@@ -1,5 +1,56 @@
 TPPC Change :=
 VAR BaseFilter =
+    FILTER ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[Contacted_Flag] = 1 )
+
+VAR MonthsSelected = VALUES ( 'DateDim_MSD'[MonthStart] )
+
+VAR PerMonthTable =
+    ADDCOLUMNS (
+        MonthsSelected,
+        "PostM",
+            CALCULATE (
+                SUMX (
+                    VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),   -- one row per customer
+                    MAX ( 'MSD Trigger Conversion'[Post_TPPC] )       -- collapse duplicates per customer
+                ),
+                BaseFilter
+            ),
+        "PreM",
+            CALCULATE (
+                SUMX (
+                    VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+                    MAX ( 'MSD Trigger Conversion'[PRE_TPPC] )
+                ),
+                BaseFilter
+            )
+    )
+
+VAR PostTotal = SUMX ( PerMonthTable, [PostM] )
+VAR PreTotal  = SUMX ( PerMonthTable, [PreM] )
+VAR DiffTotal = PostTotal - PreTotal
+VAR PctTotal  = DIVIDE ( DiffTotal, PreTotal )
+
+RETURN
+IF (
+    ISINSCOPE ( 'DateDim_MSD'[MonthStart] ),
+    VAR m   = SELECTEDVALUE ( 'DateDim_MSD'[MonthStart] )
+    VAR row = FILTER ( PerMonthTable, 'DateDim_MSD'[MonthStart] = m )
+    VAR Post1 = MAXX ( row, [PostM] )
+    VAR Pre1  = MAXX ( row, [PreM] )
+    VAR Diff1 = Post1 - Pre1
+    VAR Pct1  = DIVIDE ( Diff1, Pre1 )
+    RETURN FORMAT ( Diff1, "0.0#" ) & "  ( " & FORMAT ( Pct1, "0.0%" ) & " )",
+    FORMAT ( DiffTotal, "0.0#" ) & "  ( " & FORMAT ( PctTotal, "0.0%" ) & " )"
+)
+
+
+
+
+
+
+
+TPPC Change :=
+VAR BaseFilter =
     FILTER (
         'MSD Trigger Conversion',
         'MSD Trigger Conversion'[Contacted_Flag] = 1
