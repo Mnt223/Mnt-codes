@@ -2,6 +2,72 @@ TPPC Change :=
 VAR PerMonth =
     SUMMARIZECOLUMNS (
         'DateDim_MSD'[MonthStart],
+        "PostVal",
+            CALCULATE (
+                AVERAGE (
+                    CALCULATE (
+                        MAX ( 'MSD Trigger Conversion'[Post_TPPC] ),
+                        ALLEXCEPT ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[GA_CUST_ID] )
+                    )
+                ),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            ),
+        "PreVal",
+            CALCULATE (
+                AVERAGE (
+                    CALCULATE (
+                        MAX ( 'MSD Trigger Conversion'[PRE_TPPC] ),
+                        ALLEXCEPT ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[GA_CUST_ID] )
+                    )
+                ),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            )
+    )
+
+-- average across months
+VAR AvgPost = AVERAGE ( SELECTCOLUMNS ( PerMonth, "v", [PostVal] ) )
+VAR AvgPre  = AVERAGE ( SELECTCOLUMNS ( PerMonth, "v", [PreVal] ) )
+VAR Diff    = AvgPost - AvgPre
+VAR Pct     = DIVIDE ( Diff, AvgPre )
+
+RETURN
+IF (
+    ISINSCOPE ( 'DateDim_MSD'[MonthStart] ),
+    -- show that month’s values directly
+    VAR Post1 =
+        CALCULATE (
+            AVERAGE (
+                CALCULATE (
+                    MAX ( 'MSD Trigger Conversion'[Post_TPPC] ),
+                    ALLEXCEPT ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[GA_CUST_ID] )
+                )
+            ),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        )
+    VAR Pre1 =
+        CALCULATE (
+            AVERAGE (
+                CALCULATE (
+                    MAX ( 'MSD Trigger Conversion'[PRE_TPPC] ),
+                    ALLEXCEPT ( 'MSD Trigger Conversion', 'MSD Trigger Conversion'[GA_CUST_ID] )
+                )
+            ),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        )
+    VAR Diff1 = Post1 - Pre1
+    VAR Pct1  = DIVIDE ( Diff1, Pre1 )
+    RETURN FORMAT ( Diff1, "0.0#" ) & " (" & FORMAT ( Pct1, "0.0%" ) & ")",
+    -- else: average across all selected months
+    FORMAT ( Diff, "0.0#" ) & " (" & FORMAT ( Pct, "0.0%" ) & ")"
+)
+
+
+
+
+TPPC Change :=
+VAR PerMonth =
+    SUMMARIZECOLUMNS (
+        'DateDim_MSD'[MonthStart],
         "PostAvg",
             CALCULATE (
                 AVERAGE ( 'MSD Trigger Conversion'[Post_TPPC] ),
