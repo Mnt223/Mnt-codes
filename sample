@@ -1,3 +1,61 @@
+TPPC Change :=
+VAR BaseFilter =
+    FILTER (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[Contacted_Flag] = 1
+    )
+
+-- Selected months in current filter context
+VAR MonthsSelected =
+    VALUES ( 'DateDim_MSD'[MonthStart] )
+
+-- Per-month Post & Pre using MAX, then we can sum across months
+VAR PerMonthTable =
+    ADDCOLUMNS (
+        MonthsSelected,
+        "PostM",
+            CALCULATE (
+                MAX ( 'MSD Trigger Conversion'[Post_TPPC] ),
+                BaseFilter
+            ),
+        "PreM",
+            CALCULATE (
+                MAX ( 'MSD Trigger Conversion'[PRE_TPPC] ),
+                BaseFilter
+            )
+    )
+
+-- Totals across all selected months (June + July, etc.)
+VAR PostTotal = SUMX ( PerMonthTable, [PostM] )
+VAR PreTotal  = SUMX ( PerMonthTable, [PreM] )
+VAR DiffTotal = PostTotal - PreTotal
+VAR PctTotal  = DIVIDE ( DiffTotal, PreTotal )
+
+RETURN
+IF (
+    ISINSCOPE ( 'DateDim_MSD'[MonthStart] ),
+    -- Month on axis: compute for that single month only
+    VAR ThisMonth = SELECTEDVALUE ( 'DateDim_MSD'[MonthStart] )
+    VAR OneRow    = FILTER ( PerMonthTable, 'DateDim_MSD'[MonthStart] = ThisMonth )
+    VAR Post1     = MAXX ( OneRow, [PostM] )
+    VAR Pre1      = MAXX ( OneRow, [PreM] )
+    VAR Diff1     = Post1 - Pre1
+    VAR Pct1      = DIVIDE ( Diff1, Pre1 )
+    RETURN
+        FORMAT ( Diff1, "0.0#" ) & "  ( " & FORMAT ( Pct1, "0.0%" ) & " )",
+    -- No month on axis: sum over selected months
+    FORMAT ( DiffTotal, "0.0#" ) & "  ( " & FORMAT ( PctTotal, "0.0%" ) & " )"
+)
+
+
+
+
+
+
+
+
+
+
 Conversion % :=
 VAR PerMonthTable =
     SUMMARIZECOLUMNS(
