@@ -1,4 +1,64 @@
 TPPC Change :=
+VAR PerMonth =
+    SUMMARIZECOLUMNS (
+        'DateDim_MSD'[MonthStart],
+        "PostM",
+            CALCULATE (
+                SUMX (
+                    VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+                    MAX ( 'MSD Trigger Conversion'[Post_TPPC] )
+                ),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            ),
+        "PreM",
+            CALCULATE (
+                SUMX (
+                    VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+                    MAX ( 'MSD Trigger Conversion'[PRE_TPPC] )
+                ),
+                'MSD Trigger Conversion'[Contacted_Flag] = 1
+            )
+    )
+
+VAR PostTot = SUMX ( PerMonth, [PostM] )
+VAR PreTot  = SUMX ( PerMonth, [PreM] )
+VAR DiffTot = PostTot - PreTot
+VAR PctTot  = DIVIDE ( DiffTot, PreTot )
+
+RETURN
+IF (
+    ISINSCOPE ( 'DateDim_MSD'[MonthStart] ),
+    -- Month on axis → calculate directly for that one month
+    VAR Post1 =
+        CALCULATE (
+            SUMX (
+                VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+                MAX ( 'MSD Trigger Conversion'[Post_TPPC] )
+            ),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        )
+    VAR Pre1 =
+        CALCULATE (
+            SUMX (
+                VALUES ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+                MAX ( 'MSD Trigger Conversion'[PRE_TPPC] )
+            ),
+            'MSD Trigger Conversion'[Contacted_Flag] = 1
+        )
+    VAR Diff1 = Post1 - Pre1
+    VAR Pct1  = DIVIDE ( Diff1, Pre1 )
+    RETURN FORMAT ( Diff1, "0.0#" ) & " (" & FORMAT ( Pct1, "0.0%" ) & ")",
+    -- No month on axis → return totals across all selected months
+    FORMAT ( DiffTot, "0.0#" ) & " (" & FORMAT ( PctTot, "0.0%" ) & ")"
+)
+
+
+
+
+
+
+
+TPPC Change :=
 VAR Base = KEEPFILTERS ( 'MSD Trigger Conversion'[Contacted_Flag] = 1 )
 
 /* Per-month totals: sum over DISTINCT customers of MAX Post/Pre */
