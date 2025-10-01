@@ -1,3 +1,32 @@
+Hi Souvik and Gennari,
+
+Like every month, we’re again hitting a storage bottleneck that blocks our digital code runs. The two key datasets involved are large—~200+ GB and ~100+ GB—and the available space keeps getting exhausted mid-run. As a result, I’m repeatedly freeing space and re-running jobs, but by the time they progress, the space is occupied again. This is turning a simple scheduled run into multiple retries and delays.
+
+Impact
+	•	Monthly processing is delayed or fails due to insufficient space.
+	•	Execution has to be restarted multiple times, increasing run time and operational effort.
+	•	Downstream visibility and timelines slip.
+
+Request
+	1.	Provision additional disk space (persistent) sufficient to accommodate at least ~350–400 GB working headroom for these runs.
+	2.	If persistent expansion isn’t possible immediately, please provide a temporary quota increase or a dedicated high-capacity scratch/work area for this month’s cycle.
+	3.	(Optional but helpful) Set up an automated cleanup/retention policy for stale temp files in our workspace so reclaimed space stays available during the run window.
+
+Timing
+We need this before the upcoming monthly execution window so the code can complete on time without repeated restarts.
+
+Please confirm the feasible option and ETA so I can align the run schedule.
+
+
+
+
+
+
+
+
+
+
+
 TPPC Change :=
 VAR PerMonth =
     SUMMARIZECOLUMNS (
