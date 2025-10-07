@@ -1,3 +1,48 @@
+Inc TRB Lift :=
+VAR SummaryTable =
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'Day Dim MSD'[Month Start],
+        "PostTRB", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] ),
+        "PreTRB",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] ),
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+
+VAR A_Post =
+    DIVIDE(
+        SUMX ( FILTER ( SummaryTable, [Contacted] = 1 ), [PostTRB] ),
+        COUNTROWS ( FILTER ( SummaryTable, [Contacted] = 1 ) )
+    )
+VAR A_Pre  =
+    DIVIDE(
+        SUMX ( FILTER ( SummaryTable, [Contacted] = 1 ), [PreTRB] ),
+        COUNTROWS ( FILTER ( SummaryTable, [Contacted] = 1 ) )
+    )
+VAR A = A_Post - A_Pre
+
+VAR B_Post =
+    DIVIDE(
+        SUMX ( FILTER ( SummaryTable, [Contacted] <> 1 ), [PostTRB] ),
+        COUNTROWS ( FILTER ( SummaryTable, [Contacted] <> 1 ) )
+    )
+VAR B_Pre  =
+    DIVIDE(
+        SUMX ( FILTER ( SummaryTable, [Contacted] <> 1 ), [PreTRB] ),
+        COUNTROWS ( FILTER ( SummaryTable, [Contacted] <> 1 ) )
+    )
+VAR B = B_Post - B_Pre
+
+VAR ContactedCount =
+    COUNTROWS ( FILTER ( SummaryTable, [Contacted] = 1 ) )
+
+RETURN IF ( ContactedCount > 0, (A - B) * ContactedCount )
+
+
+
+
+
+
 
 Inc TRB Lift :=
 VAR SummaryTable =
