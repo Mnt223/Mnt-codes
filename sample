@@ -1,4 +1,50 @@
 Inc TRB Lift :=
+VAR SelMonths =
+    VALUES ( 'Date'[Month Start] )   -- slicer from Date table
+
+VAR SummaryTable =
+    SUMMARIZE (
+        CALCULATETABLE (
+            'MSD Trigger Conversion',
+            TREATAS ( SelMonths, 'MSD Trigger Conversion'[MONTH_START] )
+        ),
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'MSD Trigger Conversion'[MONTH_START],
+        "PostTRB", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] ),
+        "PreTRB",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] ),
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+
+VAR A =
+    CALCULATE (
+        AVERAGE ( [PostTRB] - [PreTRB] ),
+        FILTER ( SummaryTable, [Contacted] = 1 )
+    )
+
+VAR B =
+    CALCULATE (
+        AVERAGE ( [PostTRB] - [PreTRB] ),
+        FILTER ( SummaryTable, [Contacted] <> 1 )
+    )
+
+VAR ContactedCount =
+    COUNTROWS ( FILTER ( SummaryTable, [Contacted] = 1 ) )
+
+RETURN
+IF (
+    ContactedCount > 0,
+    "₹ " &
+    FORMAT ( MAX ( 0, ( A - B ) * ContactedCount ) / 10000000, "0.00" ) & " Cr"
+)
+
+
+
+
+
+
+
+
+Inc TRB Lift :=
 VAR SummaryTable =
     SUMMARIZE(
         'MSD Trigger Conversion',
