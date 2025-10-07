@@ -1,5 +1,110 @@
 Inc TRB Lift :=
 VAR SelMonths =
+    VALUES ( 'Date'[Month Start] )
+
+VAR SummaryTable =
+    SUMMARIZE (
+        CALCULATETABLE (
+            'MSD Trigger Conversion',
+            TREATAS ( SelMonths, 'MSD Trigger Conversion'[MONTH_START] )
+        ),
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'MSD Trigger Conversion'[MONTH_START],
+        "PostTRB", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] ),
+        "PreTRB",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] ),
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+
+-- Variable A: contacted customers
+VAR A_Post =
+    CALCULATE ( AVERAGE ( [PostTRB] ), FILTER ( SummaryTable, [Contacted] = 1 ) )
+VAR A_Pre  =
+    CALCULATE ( AVERAGE ( [PreTRB] ),  FILTER ( SummaryTable, [Contacted] = 1 ) )
+VAR A = A_Post - A_Pre
+
+-- Variable B: non-contacted customers
+VAR B_Post =
+    CALCULATE ( AVERAGE ( [PostTRB] ), FILTER ( SummaryTable, [Contacted] <> 1 ) )
+VAR B_Pre  =
+    CALCULATE ( AVERAGE ( [PreTRB] ),  FILTER ( SummaryTable, [Contacted] <> 1 ) )
+VAR B = B_Post - B_Pre
+
+-- Denominator: distinct contacted customers
+VAR ContactedCount =
+    CALCULATE (
+        DISTINCTCOUNT ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+        FILTER ( SummaryTable, [Contacted] = 1 )
+    )
+
+RETURN
+IF ( ContactedCount > 0, ( A - B ) * ContactedCount )
+
+
+
+
+
+
+
+
+Inc TRB Lift :=
+VAR SelMonths =
+    VALUES ( 'Date'[Month Start] )   -- picks June, July, or both
+
+-- Step 1: collapse to unique customer × month
+VAR SummaryTable =
+    SUMMARIZE (
+        CALCULATETABLE (
+            'MSD Trigger Conversion',
+            TREATAS ( SelMonths, 'MSD Trigger Conversion'[MONTH_START] )
+        ),
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'MSD Trigger Conversion'[MONTH_START],
+        "PostTRB", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] ),
+        "PreTRB",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] ),
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+
+-- Step 2: Variable A (Contacted customers)
+VAR A =
+    CALCULATE (
+        AVERAGEX ( VALUES ( 'MSD Trigger Conversion'[MONTH_START] ),
+            AVERAGE ( FILTER ( SummaryTable, [Contacted] = 1 )[PostTRB] )
+            - 
+            AVERAGE ( FILTER ( SummaryTable, [Contacted] = 1 )[PreTRB] )
+        )
+    )
+
+-- Step 3: Variable B (Non-contacted customers)
+VAR B =
+    CALCULATE (
+        AVERAGEX ( VALUES ( 'MSD Trigger Conversion'[MONTH_START] ),
+            AVERAGE ( FILTER ( SummaryTable, [Contacted] <> 1 )[PostTRB] )
+            - 
+            AVERAGE ( FILTER ( SummaryTable, [Contacted] <> 1 )[PreTRB] )
+        )
+    )
+
+-- Step 4: Denominator = distinct contacted customers
+VAR ContactedCount =
+    CALCULATE (
+        DISTINCTCOUNT ( 'MSD Trigger Conversion'[GA_CUST_ID] ),
+        FILTER ( SummaryTable, [Contacted] = 1 )
+    )
+
+RETURN
+IF (
+    ContactedCount > 0,
+    ( A - B ) * ContactedCount
+)
+
+
+
+
+
+
+
+Inc TRB Lift :=
+VAR SelMonths =
     VALUES ( 'Date'[Month Start] )   -- slicer from Date table
 
 VAR SummaryTable =
