@@ -1,3 +1,59 @@
+Inc_TRB_Lift_NoOutlier :=
+VAR pLow  = 0.002     -- bottom 0.2%
+VAR pHigh = 0.998     -- top 99.8%
+
+-- Step 1: Collapse to customer × month
+VAR CustMonth =
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'Day Dim MSD'[Month Start],
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] ),
+        "PostTRB",  MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] ),
+        "PreTRB",   MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] )
+    )
+
+-- Step 2: Add TRB difference
+VAR WithDiff =
+    ADDCOLUMNS ( CustMonth, "TRB_Diff", [PostTRB] - [PreTRB] )
+
+-- Step 3: Iterate month-by-month
+VAR ResultPerMonthSum =
+    SUMX (
+        VALUES ( 'Day Dim MSD'[Month Start] ),
+        VAR m = 'Day Dim MSD'[Month Start]
+        VAR MonthTbl = FILTER ( WithDiff, 'Day Dim MSD'[Month Start] = m )
+
+        /* Contacted group */
+        VAR C_Tbl = FILTER ( MonthTbl, [Contacted] = 1 )
+        VAR C_Low  = PERCENTILEX.INC ( C_Tbl, [TRB_Diff], pLow )
+        VAR C_High = PERCENTILEX.INC ( C_Tbl, [TRB_Diff], pHigh )
+        VAR C_Trim =
+            FILTER ( C_Tbl, [TRB_Diff] >= C_Low && [TRB_Diff] <= C_High )
+        VAR C_TrimCnt = COUNTROWS ( C_Trim )
+        VAR C_AvgDiff = DIVIDE ( SUMX ( C_Trim, [TRB_Diff] ), C_TrimCnt )
+
+        /* Non-contacted group */
+        VAR NC_Tbl = FILTER ( MonthTbl, [Contacted] <> 1 )
+        VAR NC_Low  = PERCENTILEX.INC ( NC_Tbl, [TRB_Diff], pLow )
+        VAR NC_High = PERCENTILEX.INC ( NC_Tbl, [TRB_Diff], pHigh )
+        VAR NC_Trim =
+            FILTER ( NC_Tbl, [TRB_Diff] >= NC_Low && [TRB_Diff] <= NC_High )
+        VAR NC_AvgDiff = DIVIDE ( SUMX ( NC_Trim, [TRB_Diff] ), COUNTROWS ( NC_Trim ) )
+
+        /* Month-level Lift */
+        VAR MonthLift =
+            IF ( C_TrimCnt > 0, ( C_AvgDiff - NC_AvgDiff ) * C_TrimCnt )
+        RETURN MonthLift
+    )
+
+-- Step 4: Return final lift across all selected months
+RETURN ResultPerMonthSum
+
+
+
+
+
 
 Inc_TRB_Lift_NoOutlier :=
 VAR SummaryTable =
