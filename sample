@@ -1,3 +1,65 @@
+Inc_TMD_Lift_NoOutlier :=
+VAR pLow  = 0.02     -- 2nd percentile
+VAR pHigh = 0.98     -- 98th percentile
+
+-- 1) Collapse to customer × month
+VAR CustMonth =
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'DateDim_MSD'[MonthStart],
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] ),
+        "PostTMD",  MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+        "PreTMD",   MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] )
+    )
+
+-- 2) Add difference column
+VAR WithDiff =
+    ADDCOLUMNS ( CustMonth, "TMD_DIFF", [PostTMD] - [PreTMD] )
+
+-- 3) Compute lift month by month
+VAR ResultPerMonthSum =
+    SUMX (
+        VALUES ( 'DateDim_MSD'[MonthStart] ),
+        VAR m = 'DateDim_MSD'[MonthStart]
+        VAR MonthTbl = FILTER ( WithDiff, 'DateDim_MSD'[MonthStart] = m )
+
+        /* Contacted */
+        VAR C_Tbl = FILTER ( MonthTbl, [Contacted] = 1 )
+        VAR PercLow_C  = PERCENTILEX.INC ( C_Tbl, [TMD_DIFF], pLow )
+        VAR PercHigh_C = PERCENTILEX.INC ( C_Tbl, [TMD_DIFF], pHigh )
+        VAR Trim_C = FILTER ( C_Tbl, [TMD_DIFF] >= PercLow_C && [TMD_DIFF] <= PercHigh_C )
+        VAR Sum_C = SUMX ( Trim_C, [TMD_DIFF] )
+        VAR Cnt_C = COUNTROWS ( Trim_C )
+        VAR Avg_C = DIVIDE ( Sum_C, Cnt_C )
+
+        /* Non-contacted */
+        VAR NC_Tbl = FILTER ( MonthTbl, [Contacted] <> 1 )
+        VAR PercLow_NC  = PERCENTILEX.INC ( NC_Tbl, [TMD_DIFF], pLow )
+        VAR PercHigh_NC = PERCENTILEX.INC ( NC_Tbl, [TMD_DIFF], pHigh )
+        VAR Trim_NC = FILTER ( NC_Tbl, [TMD_DIFF] >= PercLow_NC && [TMD_DIFF] <= PercHigh_NC )
+        VAR Sum_NC = SUMX ( Trim_NC, [TMD_DIFF] )
+        VAR Cnt_NC = COUNTROWS ( Trim_NC )
+        VAR Avg_NC = DIVIDE ( Sum_NC, Cnt_NC )
+
+        /* Use total contacted count (untrimmed) for scaling */
+        VAR ContactedCount = COUNTROWS ( C_Tbl )
+
+        /* Month-level Lift */
+        VAR MonthLift =
+            IF ( ContactedCount > 0, ( MAX ( 0, Avg_C - Avg_NC ) ) * ContactedCount )
+        RETURN MonthLift
+    )
+
+-- 4) Return final lift across selected months
+RETURN ResultPerMonthSum
+
+
+
+
+
+
+
 Inc_TRB_Lift_NoOutlier :=
 VAR pLow  = 0.002     -- bottom 0.2%
 VAR pHigh = 0.998     -- top 99.8%
