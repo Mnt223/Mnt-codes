@@ -1,3 +1,52 @@
+
+Inc_TRB_Lift_NoOutlier :=
+VAR SummaryTable =
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'Day Dim MSD'[Month Start],
+        "PostTRB", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] ),
+        "PreTRB",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] ),
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] ),
+        "TRB_Diff", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TRB] )
+                     - MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TRB] )
+    )
+
+-- Contacted customers: trim outliers
+VAR ContactedTable = FILTER ( SummaryTable, [Contacted] = 1 )
+VAR Pct_Low_C = PERCENTILEX.INC ( ContactedTable, [TRB_Diff], 0.002 )
+VAR Pct_High_C = PERCENTILEX.INC ( ContactedTable, [TRB_Diff], 0.998 )
+VAR Trimmed_C =
+    FILTER ( ContactedTable,
+        [TRB_Diff] >= Pct_Low_C
+        && [TRB_Diff] <= Pct_High_C
+    )
+VAR Avg_C = DIVIDE ( SUMX ( Trimmed_C, [TRB_Diff] ), COUNTROWS ( Trimmed_C ) )
+VAR Count_C = COUNTROWS ( Trimmed_C )
+
+-- Non-contacted customers: trim outliers
+VAR NonContactedTable = FILTER ( SummaryTable, [Contacted] <> 1 )
+VAR Pct_Low_NC = PERCENTILEX.INC ( NonContactedTable, [TRB_Diff], 0.002 )
+VAR Pct_High_NC = PERCENTILEX.INC ( NonContactedTable, [TRB_Diff], 0.998 )
+VAR Trimmed_NC =
+    FILTER ( NonContactedTable,
+        [TRB_Diff] >= Pct_Low_NC
+        && [TRB_Diff] <= Pct_High_NC
+    )
+VAR Avg_NC = DIVIDE ( SUMX ( Trimmed_NC, [TRB_Diff] ), COUNTROWS ( Trimmed_NC ) )
+
+-- Final Lift
+RETURN
+IF (
+    Count_C > 0,
+    ( Avg_C - Avg_NC ) * Count_C
+)
+
+
+
+
+
+
 Inc TRB Lift :=
 VAR SummaryTable =
     SUMMARIZE (
