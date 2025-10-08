@@ -1,3 +1,60 @@
+Xsell Product Sales Value Cr =
+VAR SelectedProduct =
+    SELECTEDVALUE ( 'PRODUCT SELECTOR'[Metric] )
+
+/* Keep only contacted rows */
+VAR BaseTable =
+    CALCULATETABLE (
+        'MSD Trigger Conversion',
+        KEEPFILTERS ( 'MSD Trigger Conversion'[Contacted_Flag] = 1 )
+    )
+
+/* Collapse to Customer × Month with MAX value at that grain */
+VAR CustMonthAgg =
+    SUMMARIZE (
+        BaseTable,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[Customer_ID],
+        "Val",
+            SWITCH (
+                TRUE(),
+                SelectedProduct = "TMD",
+                    MAX ( 'MSD Trigger Conversion'[TMD_SALES_VALUE] ),
+                SelectedProduct = "INV",
+                    MAX ( 'MSD Trigger Conversion'[INV_SALES_VALUE] ),
+                SelectedProduct = "LI/GI",
+                    MAX ( 'MSD Trigger Conversion'[LI_GI_SALES_VALUE] ),
+                SelectedProduct = "PIL",
+                    MAX ( 'MSD Trigger Conversion'[PIL_SALES_VALUE] ),
+                SelectedProduct = "AIF/PMS",
+                    MAX ( 'MSD Trigger Conversion'[AIF_PMS_SALES_VALUE] ),
+                SelectedProduct = "HML",
+                    MAX ( 'MSD Trigger Conversion'[HML_SALES_VALUE] ),
+                SelectedProduct = "CARD",
+                    MAX ( 'MSD Trigger Conversion'[CARD_SALES_VALUE] ),
+                SelectedProduct = "PREM CARD",
+                    MAX ( 'MSD Trigger Conversion'[PREMIER_CARD_SALES_VALUE] ),
+                0
+            )
+    )
+
+/* Sum across the selected months (e.g., June + July) */
+VAR RawValue = SUMX ( CustMonthAgg, [Val] )
+
+/* Convert to Crore */
+VAR FinalValue = DIVIDE ( RawValue, 10000000 )
+
+RETURN
+    IF (
+        ISBLANK ( FinalValue ) || FinalValue <= 0,
+        "₹0 Cr",
+        "₹" & FORMAT ( FinalValue, "0.00" ) & " Cr"
+    )
+
+
+
+
+
 
 Xsell Product Sales Count =
 VAR SelectedProduct =
