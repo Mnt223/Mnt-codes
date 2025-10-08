@@ -1,3 +1,83 @@
+Inc_TMD_lift_no_outlier =
+/* ---------- Build contacted customer–month table ---------- */
+VAR ContactedBase =
+    CALCULATETABLE (
+        'MSD Trigger Conversion',
+        KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 )
+    )
+
+VAR CustMonth_Contacted =
+    ADDCOLUMNS (
+        SUMMARIZE (
+            ContactedBase,
+            'Datedim_msd'[MonthStart],
+            'MSD Trigger Conversion'[GA_CUST_ID],
+            "Post", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+            "Pre",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] )
+        ),
+        "TMD_DIFF", [Post] - [Pre]
+    )
+
+/* Trim contacted by 2%–98% */
+VAR Perc10_C = PERCENTILEX.INC ( CustMonth_Contacted, [TMD_DIFF], 0.02 )
+VAR Perc95_C = PERCENTILEX.INC ( CustMonth_Contacted, [TMD_DIFF], 0.98 )
+VAR Trimmed_C =
+    FILTER ( CustMonth_Contacted, [TMD_DIFF] >= Perc10_C && [TMD_DIFF] <= Perc95_C )
+
+VAR SumDiff_C   = SUMX ( Trimmed_C, [TMD_DIFF] )
+VAR Cnt_C       = COUNTROWS ( Trimmed_C )
+VAR AvgDiff_C   = DIVIDE ( SumDiff_C, Cnt_C )
+
+/* ---------- Build non-contacted customer–month table ---------- */
+VAR NonContactedBase =
+    CALCULATETABLE (
+        'MSD Trigger Conversion',
+        KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 0 )
+    )
+
+VAR CustMonth_NC =
+    ADDCOLUMNS (
+        SUMMARIZE (
+            NonContactedBase,
+            'Datedim_msd'[MonthStart],
+            'MSD Trigger Conversion'[GA_CUST_ID],
+            "Post", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+            "Pre",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] )
+        ),
+        "TMD_DIFF", [Post] - [Pre]
+    )
+
+/* Trim non-contacted by 2%–98% */
+VAR Perc10_NC = PERCENTILEX.INC ( CustMonth_NC, [TMD_DIFF], 0.02 )
+VAR Perc95_NC = PERCENTILEX.INC ( CustMonth_NC, [TMD_DIFF], 0.98 )
+VAR Trimmed_NC =
+    FILTER ( CustMonth_NC, [TMD_DIFF] >= Perc10_NC && [TMD_DIFF] <= Perc95_NC )
+
+VAR SumDiff_NC = SUMX ( Trimmed_NC, [TMD_DIFF] )
+VAR Cnt_NC     = COUNTROWS ( Trimmed_NC )
+VAR AvgDiff_NC = DIVIDE ( SumDiff_NC, Cnt_NC )
+
+/* ---------- Uplift and Impact ---------- */
+VAR Uplift      = AvgDiff_C - AvgDiff_NC
+VAR ImpactRs    = Uplift * Cnt_C                      -- apply uplift to contacted base
+VAR ImpactCr    = DIVIDE ( ImpactRs, 10000000 )       -- convert to Crore
+
+RETURN
+    IF (
+        ISBLANK ( ImpactCr ),
+        "₹0 Cr",
+        "₹" & FORMAT ( MAX ( ImpactCr, 0 ), "0.00" ) & " Cr"
+    )
+
+
+
+
+
+
+
+
+
+
 ABSOLUTE CASA =
 VAR BaseTable =
     CALCULATETABLE (
