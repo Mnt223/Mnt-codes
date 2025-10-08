@@ -1,4 +1,66 @@
 TMD Gain =
+/* Base under current report context */
+VAR BaseAll =
+    CALCULATETABLE ( 'MSD Trigger Conversion' )
+
+/* Contacted vs Not Contacted splits */
+VAR ContactedBase =
+    FILTER ( BaseAll, 'MSD Trigger Conversion'[Contacted_Flag] = 1 )
+VAR NotContactedBase =
+    FILTER ( BaseAll, 'MSD Trigger Conversion'[Contacted_Flag] = 0 )
+
+/* Customer × Month collapse */
+VAR CustMonth_Contacted =
+    SUMMARIZE (
+        ContactedBase,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "Cnt", MAX ( 'MSD Trigger Conversion'[TMD_SALES_COUNT] ),
+        "Val", MAX ( 'MSD Trigger Conversion'[TMD_SALES_VALUE] )
+    )
+
+VAR CustMonth_NotContacted =
+    SUMMARIZE (
+        NotContactedBase,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "Cnt", MAX ( 'MSD Trigger Conversion'[TMD_SALES_COUNT] )
+    )
+
+/* Conversions */
+VAR ContactedSales    = SUMX ( CustMonth_Contacted, [Cnt] )
+VAR TotalContacted    = COUNTROWS ( CustMonth_Contacted )
+
+VAR NotContactedSales = SUMX ( CustMonth_NotContacted, [Cnt] )
+VAR TotalNotContacted = COUNTROWS ( CustMonth_NotContacted )
+
+VAR A = DIVIDE ( ContactedSales,    TotalContacted )
+VAR B = DIVIDE ( NotContactedSales, TotalNotContacted )
+VAR Uplift = A - B
+
+/* Avg Cross-sell Value */
+VAR CrossSaleValue_Contacted = SUMX ( CustMonth_Contacted, [Val] )
+VAR CrossSaleCount_Contacted = SUMX ( CustMonth_Contacted, [Cnt] )
+VAR AvgXsellPerCustomer      = DIVIDE ( CrossSaleValue_Contacted, CrossSaleCount_Contacted )
+
+/* Final Impact in Crore */
+VAR FinalImpact   = Uplift * AvgXsellPerCustomer * TotalContacted
+VAR FinalImpactCr = DIVIDE ( FinalImpact, 10000000 )
+
+RETURN
+    IF (
+        ISBLANK ( FinalImpactCr ) || FinalImpactCr <= 0,
+        "₹0 Cr",
+        "₹" & FORMAT ( FinalImpactCr, "0.00" ) & " Cr"
+    )
+
+
+
+
+
+
+
+TMD Gain =
 /* Base under current report context (KM/Region, Month slicer, etc.) */
 VAR BaseAll :=
     CALCULATETABLE ( 'MSD Trigger Conversion' )
