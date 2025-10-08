@@ -1,3 +1,78 @@
+
+Inc_TMD_Lift_no_outlier =
+VAR SelMonths :=
+    DISTINCT ( ALLSELECTED ( 'Datedim_msd'[MonthStart] ) )
+
+/* ----- CONTACTED across selected months (Customer × Month collapse) ----- */
+VAR CBase :=
+    CALCULATETABLE (
+        'MSD Trigger Conversion',
+        KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ),
+        TREATAS ( SelMonths, 'MSD Trigger Conversion'[MonthStart] )
+    )
+VAR C_ByCustMonth :=
+    SUMMARIZE (
+        CBase,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "Post", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+        "Pre",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] )
+    )
+VAR C_WithDiff := ADDCOLUMNS ( C_ByCustMonth, "TMD_DIFF", [Post] - [Pre] )
+VAR C_Clean    := FILTER ( C_WithDiff, NOT ISBLANK ( [TMD_DIFF] ) )
+
+/* Trim 2%–98% on the combined (multi-month) contacted distribution */
+VAR C_p10 := PERCENTILEX.INC ( C_Clean, [TMD_DIFF], 0.02 )
+VAR C_p98 := PERCENTILEX.INC ( C_Clean, [TMD_DIFF], 0.98 )
+VAR C_Trim :=
+    IF ( COUNTROWS ( C_Clean ) <= 1, C_Clean,
+        FILTER ( C_Clean, [TMD_DIFF] >= C_p10 && [TMD_DIFF] <= C_p98 )
+    )
+VAR C_Cnt := COUNTROWS ( C_Trim )
+VAR C_Avg := DIVIDE ( SUMX ( C_Trim, [TMD_DIFF] ), C_Cnt )
+
+/* ----- NON-CONTACTED across selected months ----- */
+VAR NCBase :=
+    CALCULATETABLE (
+        'MSD Trigger Conversion',
+        KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 0 ),
+        TREATAS ( SelMonths, 'MSD Trigger Conversion'[MonthStart] )
+    )
+VAR NC_ByCustMonth :=
+    SUMMARIZE (
+        NCBase,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "Post", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+        "Pre",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] )
+    )
+VAR NC_WithDiff := ADDCOLUMNS ( NC_ByCustMonth, "TMD_DIFF", [Post] - [Pre] )
+VAR NC_Clean    := FILTER ( NC_WithDiff, NOT ISBLANK ( [TMD_DIFF] ) )
+
+VAR NC_p10 := PERCENTILEX.INC ( NC_Clean, [TMD_DIFF], 0.02 )
+VAR NC_p98 := PERCENTILEX.INC ( NC_Clean, [TMD_DIFF], 0.98 )
+VAR NC_Trim :=
+    IF ( COUNTROWS ( NC_Clean ) <= 1, NC_Clean,
+        FILTER ( NC_Clean, [TMD_DIFF] >= NC_p10 && [TMD_DIFF] <= NC_p98 )
+    )
+VAR NC_Avg := DIVIDE ( SUMX ( NC_Trim, [TMD_DIFF] ), COUNTROWS ( NC_Trim ) )
+
+/* ----- One combined uplift over the selection; scale by contacted base ----- */
+VAR Uplift   := C_Avg - NC_Avg
+VAR ImpactRs := Uplift * C_Cnt
+VAR ImpactCr := DIVIDE ( ImpactRs, 10000000 )
+
+RETURN
+    IF ( ISBLANK ( ImpactCr ) || ImpactCr <= 0,
+        "₹0 Cr",
+        "₹" & FORMAT ( ImpactCr, "0.00" ) & " Cr"
+    )
+
+
+
+
+
+
 Inc_TMD_lift_no_outlier =
 VAR Months =
     VALUES ( 'Datedim_msd'[MonthStart] )   -- months selected on the slicer
