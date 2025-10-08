@@ -1,3 +1,63 @@
+TMD Gain =
+/* Base under current report context (KM/Region, Month slicer, etc.) */
+VAR BaseAll :=
+    CALCULATETABLE ( 'MSD Trigger Conversion' )
+
+/* Split by contact status */
+VAR ContactedBase :=
+    FILTER ( BaseAll, 'MSD Trigger Conversion'[Contacted_Flag] = 1 )
+VAR NotContactedBase :=
+    FILTER ( BaseAll, 'MSD Trigger Conversion'[Contacted_Flag] = 0 )
+
+/* ---- Customer × Month collapse (take MAX at that grain) ---- */
+VAR CustMonth_Contacted :=
+    SUMMARIZE (
+        ContactedBase,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "Cnt",   MAX ( 'MSD Trigger Conversion'[TMD_SALES_COUNT] ),
+        "Val",   MAX ( 'MSD Trigger Conversion'[TMD_SALES_VALUE] )
+    )
+
+VAR CustMonth_NotContacted :=
+    SUMMARIZE (
+        NotContactedBase,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "Cnt",   MAX ( 'MSD Trigger Conversion'[TMD_SALES_COUNT] )
+    )
+
+/* ---- Conversions (A for contacted, B for not-contacted) ---- */
+VAR ContactedSales     = SUMX ( CustMonth_Contacted, [Cnt] )
+VAR TotalContacted     = COUNTROWS ( CustMonth_Contacted )
+
+VAR NotContactedSales  = SUMX ( CustMonth_NotContacted, [Cnt] )
+VAR TotalNotContacted  = COUNTROWS ( CustMonth_NotContacted )
+
+VAR A = DIVIDE ( ContactedSales,    TotalContacted )
+VAR B = DIVIDE ( NotContactedSales, TotalNotContacted )
+VAR Uplift = A - B
+
+/* ---- Avg x-sell value (₹ per sale) from contacted cohort ---- */
+VAR CrossSaleValue_Contacted = SUMX ( CustMonth_Contacted, [Val] )
+VAR CrossSaleCount_Contacted = SUMX ( CustMonth_Contacted, [Cnt] )
+VAR AvgXsellPerCustomer = DIVIDE ( CrossSaleValue_Contacted, CrossSaleCount_Contacted )
+
+/* ---- Final impact ---- */
+VAR FinalImpact   = Uplift * AvgXsellPerCustomer * TotalContacted
+VAR FinalImpactCr = DIVIDE ( FinalImpact, 10000000 )
+
+RETURN
+    COALESCE ( FinalImpactCr, 0 )
+
+
+
+
+
+
+
+
+
 Xsell Product Sales Value Cr =
 VAR SelectedProduct =
     SELECTEDVALUE ( 'PRODUCT SELECTOR'[Metric] )
