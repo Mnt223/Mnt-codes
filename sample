@@ -1,3 +1,38 @@
+ABSOLUTE CASA =
+VAR BaseTable =
+    CALCULATETABLE (
+        'MSD Trigger Conversion',
+        KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 )
+    )
+
+-- Collapse to Customer × Month and take one value per customer-month
+VAR CustMonthAgg =
+    SUMMARIZE (
+        BaseTable,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "Post", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_CASA] ),
+        "Pre",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_CASA] )
+    )
+
+-- Sum of (Post - Pre) over selected months
+VAR RawDiff = SUMX ( CustMonthAgg, [Post] - [Pre] )
+VAR DiffCr  = DIVIDE ( RawDiff, 10000000 )
+
+RETURN
+    IF (
+        ISBLANK ( DiffCr ) || DiffCr <= 0,
+        "₹0 Cr",
+        "₹" & FORMAT ( DiffCr, "0.00" ) & " Cr"
+    )
+
+
+
+
+
+
+
+
 KYC =
 VAR BaseTable =
     CALCULATETABLE (
