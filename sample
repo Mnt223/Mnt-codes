@@ -1,3 +1,27 @@
+KYC =
+VAR BaseTable =
+    CALCULATETABLE (
+        'MSD Trigger Conversion',
+        KEEPFILTERS ( 'MSD Trigger Conversion'[Contacted_Flag] = 1 )
+    )
+
+-- Collapse to Customer × Month and take one value per customer-month
+VAR CustMonthAgg =
+    SUMMARIZE (
+        BaseTable,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        "Val", MAX ( 'MSD Trigger Conversion'[KYC_ACTIVATION] )
+    )
+
+VAR Result = SUMX ( CustMonthAgg, [Val] )
+RETURN IF ( Result <= 0, 0, Result )
+
+
+
+
+
+
 Xsell Product Gain =
 VAR SelectedProduct =
     SELECTEDVALUE ( 'PRODUCT SELECTOR'[Metric] )
