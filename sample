@@ -1,3 +1,67 @@
+
+Inc_TMD_Lift_no_outlier =
+VAR SummaryTable =
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        RELATED ( 'DateDim_MSD'[MonthStart] ),
+        "PostTMD",  MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+        "PreTMD",   MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] ),
+        "Contacted",MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+
+-- Contacted cohort
+VAR Diff_Contacted =
+    ADDCOLUMNS (
+        FILTER ( SummaryTable, [Contacted] = 1 ),
+        "TMD_DIFF", [PostTMD] - [PreTMD]
+    )
+VAR C_Clean   = FILTER ( Diff_Contacted, NOT ISBLANK ( [TMD_DIFF] ) )
+VAR C_cnt_all = COUNTROWS ( C_Clean )
+VAR C_p02     = PERCENTILEX.INC ( C_Clean, [TMD_DIFF], 0.02 )
+VAR C_p98     = PERCENTILEX.INC ( C_Clean, [TMD_DIFF], 0.98 )
+VAR C_Trim    =
+    IF ( C_cnt_all <= 1,
+         C_Clean,
+         FILTER ( C_Clean, [TMD_DIFF] >= C_p02 && [TMD_DIFF] <= C_p98 )
+    )
+VAR C_cnt     = COUNTROWS ( C_Trim )
+VAR C_avg     = DIVIDE ( SUMX ( C_Trim, [TMD_DIFF] ), C_cnt )
+
+-- Non-contacted cohort
+VAR Diff_NonContacted =
+    ADDCOLUMNS (
+        FILTER ( SummaryTable, [Contacted] <> 1 ),
+        "TMD_DIFF", [PostTMD] - [PreTMD]
+    )
+VAR NC_Clean  = FILTER ( Diff_NonContacted, NOT ISBLANK ( [TMD_DIFF] ) )
+VAR NC_cnt_all= COUNTROWS ( NC_Clean )
+VAR NC_p02    = PERCENTILEX.INC ( NC_Clean, [TMD_DIFF], 0.02 )
+VAR NC_p98    = PERCENTILEX.INC ( NC_Clean, [TMD_DIFF], 0.98 )
+VAR NC_Trim   =
+    IF ( NC_cnt_all <= 1,
+         NC_Clean,
+         FILTER ( NC_Clean, [TMD_DIFF] >= NC_p02 && [TMD_DIFF] <= NC_p98 )
+    )
+VAR NC_avg    = DIVIDE ( SUMX ( NC_Trim, [TMD_DIFF] ), COUNTROWS ( NC_Trim ) )
+
+-- Uplift applied to contacted base
+VAR Uplift     = C_avg - NC_avg
+VAR Impact_Rs  = Uplift * C_cnt
+VAR Impact_Cr  = DIVIDE ( Impact_Rs, 10000000 )
+
+RETURN
+    IF (
+        ISBLANK ( Impact_Cr ) || Impact_Cr <= 0,
+        "₹0 Cr",
+        "₹" & FORMAT ( Impact_Cr, "0.00" ) & " Cr"
+    )
+
+
+
+
+
+
 Inc_TMD_Lift_no_outlier =
 /* Collapse fact to Customer × Month to avoid duplicate inflation */
 VAR SummaryTable =
