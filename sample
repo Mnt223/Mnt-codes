@@ -1,3 +1,47 @@
+Inc INV Lift (Trim 2%) :=
+VAR SummaryTable =
+    // Customer × MonthStart with month slicer respected
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'DateDim_MSD'[MonthStart],
+        "PostTRB",   MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_INVNT] ),
+        "PreTRB",    MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_INVNT] ),
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+
+VAR WithDiff =
+    ADDCOLUMNS ( SummaryTable, "Diff", [PostTRB] - [PreTRB] )
+
+/* ------------ CONTACTED (trim 2% tails) ------------ */
+VAR C_All      = FILTER ( WithDiff, [Contacted] = 1 )
+VAR C_CountAll = COUNTROWS ( C_All )
+VAR C_P02      = IF ( C_CountAll > 0, PERCENTILEX.INC ( C_All, [Diff], 0.02 ) )
+VAR C_P98      = IF ( C_CountAll > 0, PERCENTILEX.INC ( C_All, [Diff], 0.98 ) )
+VAR C_Trim     = FILTER ( C_All, [Diff] >= C_P02 && [Diff] <= C_P98 )
+VAR C_Count    = COUNTROWS ( C_Trim )
+VAR A          = DIVIDE ( SUMX ( C_Trim, [Diff] ), C_Count )        // trimmed mean
+
+/* --------- NON-CONTACTED (trim 2% tails) ----------- */
+VAR NC_All      = FILTER ( WithDiff, [Contacted] <> 1 )
+VAR NC_CountAll = COUNTROWS ( NC_All )
+VAR NC_P02      = IF ( NC_CountAll > 0, PERCENTILEX.INC ( NC_All, [Diff], 0.02 ) )
+VAR NC_P98      = IF ( NC_CountAll > 0, PERCENTILEX.INC ( NC_All, [Diff], 0.98 ) )
+VAR NC_Trim     = FILTER ( NC_All, [Diff] >= NC_P02 && [Diff] <= NC_P98 )
+VAR B           = DIVIDE ( SUMX ( NC_Trim, [Diff] ), COUNTROWS ( NC_Trim ) )   // trimmed mean
+
+/* ----------------- RESULT (₹ Cr) ------------------- */
+VAR LiftPerCust = MAX ( 0, A - B )
+VAR LiftCr      = DIVIDE ( LiftPerCust * C_Count, 10000000 )         // × Contacted count, in Crore
+
+RETURN
+IF ( C_Count > 0, "₹ " & FORMAT ( LiftCr, "#,##0.00" ) & " Cr", BLANK () )
+
+
+
+
+
+
 Inc_INV_Lift_no_outlier :=
 VAR CustMonth   =
     // Reduce to unique Customer × MonthStart using MAX for that month
