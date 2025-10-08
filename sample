@@ -1,3 +1,58 @@
+Inc_INV_lift_no_outlier :=
+VAR Base_CustMonth =
+    // Unique Customer × Month with MAX per month and computed INV_DIFF
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CUSTOMER_ID],          -- << change if needed
+        Datedim_msd[MonthStart],
+        "POST_MAX", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_INVT] ),
+        "PRE_MAX",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_INVT] ),
+        "CONTACTED", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+VAR DiffTable =
+    ADDCOLUMNS (
+        Base_CustMonth,
+        "INV_DIFF", [POST_MAX] - [PRE_MAX]
+    )
+
+/************ Contacted (CONTACTED = 1) ************/
+VAR Diff_Contacted =
+    FILTER ( DiffTable, [CONTACTED] = 1 )
+VAR P02_C  = PERCENTILEX.INC ( Diff_Contacted, [INV_DIFF], 0.02 )
+VAR P98_C  = PERCENTILEX.INC ( Diff_Contacted, [INV_DIFF], 0.98 )
+VAR Trim_Contacted =
+    FILTER ( Diff_Contacted, [INV_DIFF] >= P02_C && [INV_DIFF] <= P98_C )
+VAR Sum_C  = SUMX ( Trim_Contacted, [INV_DIFF] )
+VAR Cnt_C  = COUNTROWS ( Trim_Contacted )
+VAR Avg_C  = DIVIDE ( Sum_C, Cnt_C )
+
+/************ Non-contacted (CONTACTED <> 1 or blank) ************/
+VAR Diff_NC =
+    FILTER ( DiffTable, NOT ( [CONTACTED] = 1 ) )
+VAR P02_NC = PERCENTILEX.INC ( Diff_NC, [INV_DIFF], 0.02 )
+VAR P98_NC = PERCENTILEX.INC ( Diff_NC, [INV_DIFF], 0.98 )
+VAR Trim_NC =
+    FILTER ( Diff_NC, [INV_DIFF] >= P02_NC && [INV_DIFF] <= P98_NC )
+VAR Sum_NC = SUMX ( Trim_NC, [INV_DIFF] )
+VAR Cnt_NC = COUNTROWS ( Trim_NC )
+VAR Avg_NC = DIVIDE ( Sum_NC, Cnt_NC )
+
+/************ Lift and formatted ₹ Cr ************/
+VAR Lift_Value = MAX ( 0, ( Avg_C - Avg_NC ) * Cnt_C )       -- amount in rupees
+RETURN
+IF (
+    Cnt_C > 0 && Cnt_NC > 0,
+    UNICHAR(8377) & " " & FORMAT ( DIVIDE ( Lift_Value, 10000000 ), "0.00" ) & " Cr",
+    BLANK()
+)
+
+
+
+
+
+
+
+
 Inc INV Lift (Trim 2%) :=
 VAR SummaryTable =
     // Customer × MonthStart with month slicer respected
