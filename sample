@@ -1,5 +1,84 @@
 Inc_TMD_lift_no_outlier =
 VAR Months =
+    VALUES ( 'Datedim_msd'[MonthStart] )   -- months selected on the slicer
+
+VAR ImpactCrTotal =
+    SUMX (
+        Months,
+        VAR m = 'Datedim_msd'[MonthStart]
+
+        /* ===== CONTACTED cohort, month m ===== */
+        VAR CBase =
+            CALCULATETABLE (
+                'MSD Trigger Conversion',
+                KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 1 ),
+                KEEPFILTERS ( 'MSD Trigger Conversion'[MonthStart] = m )   -- robust even if relationship is inactive
+            )
+
+        /* Collapse to Customer (for this month) and take MAX per customer */
+        VAR C_ByCust =
+            GROUPBY (
+                CBase,
+                'MSD Trigger Conversion'[GA_CUST_ID],
+                "Post", MAXX ( CURRENTGROUP (), 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+                "Pre",  MAXX ( CURRENTGROUP (), 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] )
+            )
+        VAR C_WithDiff = ADDCOLUMNS ( C_ByCust, "TMD_DIFF", [Post] - [Pre] )
+
+        /* Trim 2%–98% within month m */
+        VAR C_p10 = PERCENTILEX.INC ( C_WithDiff, [TMD_DIFF], 0.02 )
+        VAR C_p98 = PERCENTILEX.INC ( C_WithDiff, [TMD_DIFF], 0.98 )
+        VAR C_Trim =
+            FILTER ( C_WithDiff, NOT ISBLANK ( [TMD_DIFF] ) && [TMD_DIFF] >= C_p10 && [TMD_DIFF] <= C_p98 )
+
+        VAR C_Cnt = COUNTROWS ( C_Trim )
+        VAR C_Avg = DIVIDE ( SUMX ( C_Trim, [TMD_DIFF] ), C_Cnt )
+
+        /* ===== NON-CONTACTED cohort, month m ===== */
+        VAR NCBase =
+            CALCULATETABLE (
+                'MSD Trigger Conversion',
+                KEEPFILTERS ( 'MSD Trigger Conversion'[CONTACTED_FLAG] = 0 ),
+                KEEPFILTERS ( 'MSD Trigger Conversion'[MonthStart] = m )
+            )
+
+        VAR NC_ByCust =
+            GROUPBY (
+                NCBase,
+                'MSD Trigger Conversion'[GA_CUST_ID],
+                "Post", MAXX ( CURRENTGROUP (), 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+                "Pre",  MAXX ( CURRENTGROUP (), 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] )
+            )
+        VAR NC_WithDiff = ADDCOLUMNS ( NC_ByCust, "TMD_DIFF", [Post] - [Pre] )
+
+        VAR NC_p10 = PERCENTILEX.INC ( NC_WithDiff, [TMD_DIFF], 0.02 )
+        VAR NC_p98 = PERCENTILEX.INC ( NC_WithDiff, [TMD_DIFF], 0.98 )
+        VAR NC_Trim =
+            FILTER ( NC_WithDiff, NOT ISBLANK ( [TMD_DIFF] ) && [TMD_DIFF] >= NC_p10 && [TMD_DIFF] <= NC_p98 )
+
+        VAR NC_Avg = DIVIDE ( SUMX ( NC_Trim, [TMD_DIFF] ), COUNTROWS ( NC_Trim ) )
+
+        /* ===== Month m impact (₹) and convert to Cr ===== */
+        VAR Uplift_m   = C_Avg - NC_Avg
+        VAR ImpactRs_m = Uplift_m * C_Cnt            -- scale uplift by contacted base for month m
+        VAR ImpactCr_m = DIVIDE ( ImpactRs_m, 10000000 )
+        RETURN COALESCE ( ImpactCr_m, 0 )
+    )
+
+RETURN
+    IF ( ISBLANK ( ImpactCrTotal ) || ImpactCrTotal <= 0,
+        "₹0 Cr",
+        "₹" & FORMAT ( ImpactCrTotal, "0.00" ) & " Cr"
+    )
+
+
+
+
+
+
+
+Inc_TMD_lift_no_outlier =
+VAR Months =
     VALUES ( 'Datedim_msd'[MonthStart] )        -- months currently selected
 
 /* Sum impact across each selected month */
