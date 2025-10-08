@@ -1,3 +1,81 @@
+Inc TMD Lift =
+VAR SummaryTable =
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'DateDim_MSD'[MonthStart],
+        "PostTRB", MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+        "PreTRB",  MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] ),
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+
+/* ---- Contacted averages ---- */
+VAR A_Post =
+    DIVIDE (
+        SUMX ( FILTER ( SummaryTable, [Contacted] = 1 ), [PostTRB] ),
+        COUNTROWS ( FILTER ( SummaryTable, [Contacted] = 1 ) )
+    )
+VAR A_Pre =
+    DIVIDE (
+        SUMX ( FILTER ( SummaryTable, [Contacted] = 1 ), [PreTRB] ),
+        COUNTROWS ( FILTER ( SummaryTable, [Contacted] = 1 ) )
+    )
+VAR A = A_Post - A_Pre
+
+/* ---- Non-contacted averages ---- */
+VAR B_Post =
+    DIVIDE (
+        SUMX ( FILTER ( SummaryTable, [Contacted] <> 1 ), [PostTRB] ),
+        COUNTROWS ( FILTER ( SummaryTable, [Contacted] <> 1 ) )
+    )
+VAR B_Pre =
+    DIVIDE (
+        SUMX ( FILTER ( SummaryTable, [Contacted] <> 1 ), [PreTRB] ),
+        COUNTROWS ( FILTER ( SummaryTable, [Contacted] <> 1 ) )
+    )
+VAR B = B_Post - B_Pre
+
+/* ---- Contacted count ---- */
+VAR ContactedCount =
+    COUNTROWS ( FILTER ( SummaryTable, [Contacted] = 1 ) )
+
+/* ---- New: Outlier-trimmed variable (Contacted set only) ---- */
+VAR DiffTable =
+    ADDCOLUMNS (
+        FILTER ( SummaryTable, [Contacted] = 1 ),
+        "TMD_DIFF", [PostTRB] - [PreTRB]
+    )
+
+VAR PctlLow  = PERCENTILEX.INC ( DiffTable, [TMD_DIFF], 0.02 )
+VAR PctlHigh = PERCENTILEX.INC ( DiffTable, [TMD_DIFF], 0.98 )
+
+VAR DiffTableTrim =
+    FILTER ( DiffTable, [TMD_DIFF] >= PctlLow && [TMD_DIFF] <= PctlHigh )
+
+VAR TrimmedCount = COUNTROWS ( DiffTableTrim )
+VAR AvgDiffTrim  = DIVIDE ( SUMX ( DiffTableTrim, [TMD_DIFF] ), TrimmedCount )
+
+/* ---- Final Result (with trimming uplift applied) ---- */
+VAR Result =
+    IF (
+        ContactedCount <> 0,
+        "₹" &
+            FORMAT (
+                MAX ( 0, (AvgDiffTrim - B) * ContactedCount / 10000000 ),
+                "0.00"
+            ) & " Cr",
+        BLANK ()
+    )
+
+RETURN
+    Result
+
+
+
+
+
+
+
 
 Inc_TMD_Lift_no_outlier =
 VAR SelMonths :=
