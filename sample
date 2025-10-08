@@ -1,3 +1,64 @@
+Inc_TMD_Lift_no_outlier :=
+VAR pLow  = 0.02   -- bottom 2%
+VAR pHigh = 0.98   -- top 98%
+
+/* 1) Make customer × month table (dedupe per month with MAX) */
+VAR CustMonth =
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[GA_CUST_ID],
+        'DateDim_MSD'[MonthStart],                     -- month comes from date dim
+        "Contacted", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] ),
+        "PostTMD",  MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_TMD] ),
+        "PreTMD",   MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_TMD] )
+    )
+
+/* 2) Add per-row diff at this grain */
+VAR WithDiff = ADDCOLUMNS ( CustMonth, "TMD_DIFF", [PostTMD] - [PreTMD] )
+
+/* 3) Compute lift per month, then sum across selected months */
+VAR TotalLift :=
+    SUMX (
+        VALUES ( 'DateDim_MSD'[MonthStart] ),
+        VAR m = 'DateDim_MSD'[MonthStart]
+        VAR MonthTbl = FILTER ( WithDiff, 'DateDim_MSD'[MonthStart] = m )
+
+        /* ----- Contacted ----- */
+        VAR C_Tbl   = FILTER ( MonthTbl, [Contacted] = 1 )
+        VAR C_Low   = PERCENTILEX.INC ( C_Tbl, [TMD_DIFF], pLow )
+        VAR C_High  = PERCENTILEX.INC ( C_Tbl, [TMD_DIFF], pHigh )
+        VAR C_Trim  = FILTER ( C_Tbl, [TMD_DIFF] >= C_Low && [TMD_DIFF] <= C_High )
+        VAR C_Sum   = SUMX ( C_Trim, [TMD_DIFF] )
+        VAR C_Cnt   = COUNTROWS ( C_Trim )
+        VAR C_Avg   = DIVIDE ( C_Sum, C_Cnt )
+
+        /* scale by total contacted customers in that month (untrimmed, customer×month) */
+        VAR ContactedCount = COUNTROWS ( C_Tbl )
+
+        /* ----- Non-Contacted ----- */
+        VAR NC_Tbl   = FILTER ( MonthTbl, [Contacted] <> 1 )
+        VAR NC_Low   = PERCENTILEX.INC ( NC_Tbl, [TMD_DIFF], pLow )
+        VAR NC_High  = PERCENTILEX.INC ( NC_Tbl, [TMD_DIFF], pHigh )
+        VAR NC_Trim  = FILTER ( NC_Tbl, [TMD_DIFF] >= NC_Low && [TMD_DIFF] <= NC_High )
+        VAR NC_Sum   = SUMX ( NC_Trim, [TMD_DIFF] )
+        VAR NC_Cnt   = COUNTROWS ( NC_Trim )
+        VAR NC_Avg   = DIVIDE ( NC_Sum, NC_Cnt )
+
+        /* month lift (matches your Result block style) */
+        VAR MonthLift =
+            IF ( ContactedCount <> 0, MAX ( 0, C_Avg - NC_Avg ) * ContactedCount )
+
+        RETURN MonthLift
+    )
+
+RETURN TotalLift
+
+
+
+
+
+
+
 Inc_TMD_Lift_NoOutlier :=
 VAR pLow  = 0.02     -- 2nd percentile
 VAR pHigh = 0.98     -- 98th percentile
