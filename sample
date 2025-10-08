@@ -1,3 +1,65 @@
+Inc_INV_Lift_no_outlier :=
+VAR CustMonth   =
+    // Reduce to unique Customer × MonthStart using MAX for that month
+    SUMMARIZE (
+        'MSD Trigger Conversion',
+        'MSD Trigger Conversion'[CUSTOMER_ID],          // <-- use your customer key
+        'Datedim_msd'[MonthStart],                      // respects the month slicer
+        "POST_M",      MAX ( 'MSD Trigger Conversion'[POST_2_MON_AVG_INVNT] ),
+        "PRE_M",       MAX ( 'MSD Trigger Conversion'[PRE_2_MON_AVG_INVNT] ),
+        "CONTACTED_M", MAX ( 'MSD Trigger Conversion'[CONTACTED_FLAG] )
+    )
+
+VAR WithDiff =
+    ADDCOLUMNS ( CustMonth, "INV_DIFF", [POST_M] - [PRE_M] )
+
+/* ---------------- Contacted ---------------- */
+VAR Diff_Contacted =
+    FILTER ( WithDiff, [CONTACTED_M] = 1 )
+
+VAR P10_C = PERCENTILEX.INC ( Diff_Contacted, [INV_DIFF], 0.02 )
+VAR P98_C = PERCENTILEX.INC ( Diff_Contacted, [INV_DIFF], 0.98 )
+
+VAR Trim_C =
+    FILTER ( Diff_Contacted, [INV_DIFF] >= P10_C && [INV_DIFF] <= P98_C )
+
+VAR SUM_C   = SUMX ( Trim_C, [INV_DIFF] )
+VAR CNT_C   = COUNTX ( Trim_C, [INV_DIFF] )
+VAR AVG_C   = DIVIDE ( SUM_C, CNT_C )      // trimmed mean for Contacted
+
+/* --------------- Non-Contacted ------------- */
+VAR Diff_NC =
+    FILTER ( WithDiff, [CONTACTED_M] <> 1 )
+
+VAR P10_NC = PERCENTILEX.INC ( Diff_NC, [INV_DIFF], 0.02 )
+VAR P98_NC = PERCENTILEX.INC ( Diff_NC, [INV_DIFF], 0.98 )
+
+VAR Trim_NC =
+    FILTER ( Diff_NC, [INV_DIFF] >= P10_NC && [INV_DIFF] <= P98_NC )
+
+VAR SUM_NC  = SUMX ( Trim_NC, [INV_DIFF] )
+VAR CNT_NC  = COUNTX ( Trim_NC, [INV_DIFF] )
+VAR AVG_NC  = DIVIDE ( SUM_NC, CNT_NC )    // trimmed mean for Non-Contacted
+
+/* ---------------- Result ------------------- */
+VAR UpliftPerCust =
+    MAX ( 0, AVG_C - AVG_NC )              // guard against negative lift
+
+VAR UpliftTotalCr =
+    DIVIDE ( UpliftPerCust * CNT_C, 10000000 )   // convert to Crore (₹ Cr)
+
+RETURN
+IF (
+    CNT_C > 0,
+    "₹ " & FORMAT ( UpliftTotalCr, "#,##0.00" ) & " Cr",
+    BLANK ()
+)
+
+
+
+
+
+
 
 Inc_TMD_Lift_no_outlier =
 VAR SummaryTable =
