@@ -1,3 +1,44 @@
+Xsell Product Gain =
+VAR SelectedProduct =
+    SELECTEDVALUE ( 'PRODUCT SELECTOR'[Metric] )
+
+/* pick the product-specific Gain measure */
+VAR RawValueAny =
+    SWITCH (
+        SelectedProduct,
+        "TMD",        CALCULATE ( [TMD Gain] ),
+        "INV",        CALCULATE ( [Inv Gain] ),
+        "LI/GI",      CALCULATE ( [Ins Gain] ),
+        "PIL",        CALCULATE ( [PIL Gain] ),
+        "CARD",       CALCULATE ( [CARD Gain] ),
+        "AIF/PMS",    CALCULATE ( [AIF_PMS Gain] ),
+        "HML",        CALCULATE ( [HML Gain] ),
+        "PREM CARD",  CALCULATE ( [PREMIER CARD Gain] ),
+        BLANK ()
+    )
+
+/* ensure we have a numeric value in Crore even if source is already "₹… Cr" text */
+VAR RawValueNum =
+    IF (
+        ISNUMBER ( RawValueAny ),
+        RawValueAny,
+        VAR Stripped1 = SUBSTITUTE ( RawValueAny, "₹", "" )
+        VAR Stripped2 = SUBSTITUTE ( Stripped1, " Cr", "" )
+        RETURN VALUE ( Stripped2 )
+    )
+
+VAR FinalValue = IF ( ISBLANK ( RawValueNum ) || RawValueNum <= 0, 0, RawValueNum )
+
+RETURN
+    "₹" & FORMAT ( FinalValue, "0.00" ) & " Cr"
+
+
+
+
+
+
+
+
 TMD Gain =
 /* Base under current report context */
 VAR BaseAll =
