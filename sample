@@ -1,3 +1,57 @@
+
+Xsell Product Sales Count =
+VAR SelectedProduct =
+    SELECTEDVALUE ( 'PRODUCT SELECTOR'[Metric] )
+
+/* respect current slicers (month, region, etc.) and keep only contacted rows */
+VAR BaseTable :=
+    CALCULATETABLE (
+        'MSD Trigger Conversion',
+        KEEPFILTERS ( 'MSD Trigger Conversion'[Contacted_Flag] = 1 )
+    )
+
+/* build a Customer x Month table and take MAX at that grain */
+VAR CustMonthAgg :=
+    SUMMARIZE (
+        BaseTable,
+        'Datedim_msd'[MonthStart],
+        'MSD Trigger Conversion'[Customer_ID],
+        "Val",
+            SWITCH (
+                TRUE (),
+                SelectedProduct = "TMD",
+                    MAX ( 'MSD Trigger Conversion'[TMD_SALES_COUNT] ),
+                SelectedProduct = "INV",
+                    MAX ( 'MSD Trigger Conversion'[INV_SALES_COUNT] ),
+                SelectedProduct = "LI/GI",
+                    MAX ( 'MSD Trigger Conversion'[LI_GI_SALES_COUNT] ),
+                SelectedProduct = "PIL",
+                    MAX ( 'MSD Trigger Conversion'[PIL_SALES_COUNT] ),
+                SelectedProduct = "AIF/PMS",
+                    MAX ( 'MSD Trigger Conversion'[AIF_PMS_SALES_COUNT] ),
+                SelectedProduct = "HML",
+                    MAX ( 'MSD Trigger Conversion'[HML_SALES_COUNT] ),
+                SelectedProduct = "CARD",
+                    MAX ( 'MSD Trigger Conversion'[CARD_SALES_COUNT] ),
+                SelectedProduct = "PREM CARD",
+                    MAX ( 'MSD Trigger Conversion'[PREMIER_CARD_SALES_COUNT] ),
+                0
+            )
+    )
+
+RETURN
+IF (
+    ISBLANK ( SelectedProduct ),
+    BLANK (),
+    /* sum the customer-month maxima across the months currently selected (e.g., June + July) */
+    VAR Result = SUMX ( CustMonthAgg, [Val] )
+    RETURN IF ( Result <= 0, 0, Result )
+)
+
+
+
+
+
 Inc_TMD_Lift_no_outlier :=
 VAR pLow  = 0.02   -- bottom 2%
 VAR pHigh = 0.98   -- top 98%
